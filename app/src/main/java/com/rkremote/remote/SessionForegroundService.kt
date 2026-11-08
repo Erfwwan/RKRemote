@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.rkremote.MainActivity
 
@@ -56,7 +57,7 @@ class SessionForegroundService : Service() {
         }
 
         val notification = buildNotification()
-        val foregroundStarted = runCatching {
+        val foregroundStart = runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 startForeground(
                     NOTIFICATION_ID,
@@ -66,8 +67,9 @@ class SessionForegroundService : Service() {
             } else {
                 startForeground(NOTIFICATION_ID, notification)
             }
-        }.isSuccess
-        if (!foregroundStarted) {
+        }
+        if (foregroundStart.isFailure) {
+            Log.e(TAG, "Unable to enter foreground state; session is retained for manual retry", foregroundStart.exceptionOrNull())
             // Keep the encrypted owner session for a later manual retry, but do not
             // leave a partially started service running without its foreground state.
             stopSelf(startId)
@@ -139,5 +141,6 @@ class SessionForegroundService : Service() {
         const val EXTRA_TOKEN = "session_token"
         private const val CHANNEL_ID = "rkremote_active_session"
         private const val NOTIFICATION_ID = 4201
+        private const val TAG = "RKRemoteSession"
     }
 }
