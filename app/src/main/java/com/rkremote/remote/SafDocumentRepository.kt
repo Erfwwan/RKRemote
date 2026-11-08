@@ -12,7 +12,9 @@ import java.io.IOException
  * owner through ACTION_OPEN_DOCUMENT_TREE. No filesystem-path or private-app
  * storage access is attempted.
  */
-class SafDocumentRepository(context: Context) {\n    private val resolver: ContentResolver = context.contentResolver\n    private val appContext: Context = context.applicationContext
+class SafDocumentRepository(context: Context) {
+    private val resolver: ContentResolver = context.contentResolver
+    private val appContext: Context = context.applicationContext
     data class Entry(
         val uri: Uri,
         val name: String,
@@ -66,7 +68,7 @@ class SafDocumentRepository(context: Context) {\n    private val resolver: Conte
     }
 
     fun delete(uri: Uri): Boolean {
-        val document = DocumentFile.fromSingleUri(resolver.contextOrNull(), uri)
+        val document = DocumentFile.fromSingleUri(appContext, uri)
             ?: return false
         if (!document.canWrite()) throw SecurityException("Document is not writable")
         return document.delete()
