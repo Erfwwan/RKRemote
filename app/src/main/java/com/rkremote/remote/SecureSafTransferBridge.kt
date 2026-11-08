@@ -131,13 +131,15 @@ class SecureSafTransferBridge(context: Context) {
     fun streamFile(
         transferId: String,
         documentId: String,
+        startOffset: Long = 0L,
         onStart: (FileMetadata) -> Boolean,
         onChunk: (Long, ByteArray) -> Boolean,
         onComplete: (String) -> Unit
     ) {
+        require(startOffset >= 0L)
         require(downloadCancellations.register(transferId)) { "This file transfer ID is already active" }
         try {
-            streamFileRegistered(transferId, documentId, onStart, onChunk, onComplete)
+            streamFileRegistered(transferId, documentId, startOffset, onStart, onChunk, onComplete)
         } finally {
             downloadCancellations.finish(transferId)
         }
@@ -146,6 +148,7 @@ class SecureSafTransferBridge(context: Context) {
     private fun streamFileRegistered(
         transferId: String,
         documentId: String,
+        startOffset: Long,
         onStart: (FileMetadata) -> Boolean,
         onChunk: (Long, ByteArray) -> Boolean,
         onComplete: (String) -> Unit
@@ -169,11 +172,23 @@ class SecureSafTransferBridge(context: Context) {
         } ?: throw IOException("Document is unavailable")
         require(metadata.mimeType != DocumentsContract.Document.MIME_TYPE_DIR) { "Folders cannot be downloaded" }
         require(metadata.sizeBytes in 0L..MAX_FILE_BYTES) { "File is larger than the secure transfer limit" }
+        require(startOffset <= metadata.sizeBytes) { "Resume offset is outside the source file" }
         check(!downloadCancellations.isCancelled(transferId)) { "File transfer was cancelled" }
         check(onStart(metadata)) { "Controller rejected the file transfer" }
         val digest = MessageDigest.getInstance("SHA-256")
         var total = 0L
         resolver.openInputStream(uri)?.use { input ->
+            // Re-read and hash the prefix before resuming. This makes the final
+            // digest cover the complete source, not just the resumed suffix.
+            val prefixBuffer = ByteArray(64 * 1024)
+            while (total < startOffset) {
+                check(!downloadCancellations.isCancelled(transferId)) { "File transfer was cancelled" }
+                val wanted = minOf(prefixBuffer.size.toLong(), startOffset - total).toInt()
+                val count = input.read(prefixBuffer, 0, wanted)
+                if (count < 0) throw IOException("Source file ended before the resume offset")
+                digest.update(prefixBuffer, 0, count)
+                total += count.toLong()
+            }
             val buffer = ByteArray(MAX_CHUNK_BYTES)
             while (true) {
                 check(!downloadCancellations.isCancelled(transferId)) { "File transfer was cancelled" }
