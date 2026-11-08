@@ -165,3 +165,15 @@ Validation for this pass: source and JVM tests were committed, but no Gradle bui
 - Added JVM tests for out-of-order reassembly, duplicate fragment rejection, corrupted headers, and oversized payload rejection. Test execution for the current head is pending.
 - Added optional TURN URL/username/credential fields to the secure connection panel. These values are passed only to libwebrtc and are not sent to the Cloudflare Worker. The user must supply credentials from a TURN service they control; none is hosted or provisioned by this repository.
 - This remains a transport milestone. Existing remote-control routes and media pipelines are not yet migrated to the WebRTC DataChannel. Do not use the insecure LAN TCP server over the public internet.
+
+
+## Secure P2P application-message protocol · first integration pass
+
+- Added a bounded versioned application-message layer on top of the established DTLS DataChannel using the existing RemoteMessage envelope.
+- The two peers derive the same per-room session identifier from the shared high-entropy room ID. Messages carry UUID message IDs, monotonic per-sender sequence numbers and send timestamps.
+- Incoming messages are bounded to 64 KiB, checked against the current room session, rejected when timestamps differ by more than ten minutes, and rejected on duplicate IDs or non-increasing sequence numbers. A bounded 512-ID LRU prevents repeated message IDs within the connection.
+- Added secure.ping / secure.pong message types and a UI test action that sends a ping and automatically returns a pong. This exercises bidirectional application framing after the Noise/SAS/DTLS connection.
+- Extended the allow-list with explicit future request/result types for diagnostics, screen snapshots/input, and file transfer. Allow-list membership alone does not authorize an operation; feature dispatch is intentionally not connected yet.
+- Added JVM tests for the new secure message type and oversized nested payload rejection.
+- Still not migrated: actual screen input/video, SAF file operations, notification history, camera, microphone, and PTT. No privileged command is executed from this message layer. Each feature still requires explicit owner-granted capabilities, Android permission/state checks, a target-side dispatcher and per-operation validation before it can be safely exposed over the Internet.
+- The room ID is used as a shared session namespace; use a fresh random 256-bit room ID for each session. Noise XX mutual approval and WebRTC DTLS remain the cryptographic/session transport layers. The legacy TCP 18765 path remains plaintext and LAN-only.
