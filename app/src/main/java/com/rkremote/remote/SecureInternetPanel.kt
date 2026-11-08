@@ -696,15 +696,31 @@ fun SecureInternetPanel() {
                                             "command.result" -> {
                                                 if (message.payload.optString("commandType").startsWith("file.")) {
                                                     val accepted = message.payload.optBoolean("accepted")
+                                                    val transferId = message.payload.optString("transferId")
                                                     mainHandler.post {
-                                                        if (!accepted) fileUploadStatus.value =
-                                                            message.payload.optString("reason", "Target rejected file upload")
-                                                        else if (message.payload.optString("commandType") == "file.transfer.complete")
+                                                        if (!accepted) {
+                                                            if (transferId.isNotBlank() && activeTransferId.get() == transferId) {
+                                                                transferActive.set(false)
+                                                                activeTransferId.compareAndSet(transferId, null)
+                                                                downloadReceiver.abort()
+                                                            }
+                                                            fileUploadStatus.value =
+                                                                message.payload.optString("reason", "Target rejected file transfer")
+                                                        } else if (message.payload.optString("commandType") == "file.transfer.complete") {
                                                             fileUploadStatus.value = "Target verified and saved uploaded file"
+                                                            if (transferId.isNotBlank()) {
+                                                                transferActive.set(false)
+                                                                activeTransferId.compareAndSet(transferId, null)
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }
                                             "file.download.begin" -> runCatching {
+                                                val transferId = message.payload.getString("transferId")
+                                                check(activeTransferId.get() == transferId && transferActive.get()) {
+                                                    "Download response does not match the active transfer"
+                                                }
                                                 downloadReceiver.begin(message.payload)
                                             }.onSuccess {
                                                 mainHandler.post {
@@ -712,6 +728,11 @@ fun SecureInternetPanel() {
                                                 }
                                             }.onFailure {
                                                 downloadReceiver.abort()
+                                                val transferId = message.payload.optString("transferId")
+                                                if (transferId.isNotBlank()) {
+                                                    activeTransferId.compareAndSet(transferId, null)
+                                                    transferActive.set(false)
+                                                }
                                                 mainHandler.post { fileDownloadStatus.value = it.message ?: "Could not start download" }
                                             }
                                             "file.download.chunk" -> runCatching {
@@ -723,13 +744,28 @@ fun SecureInternetPanel() {
                                             "file.download.complete" -> runCatching {
                                                 downloadReceiver.complete(message.payload)
                                             }.onSuccess { saved ->
+                                                val transferId = message.payload.optString("transferId")
+                                                if (transferId.isNotBlank()) {
+                                                    activeTransferId.compareAndSet(transferId, null)
+                                                    transferActive.set(false)
+                                                }
                                                 mainHandler.post { fileDownloadStatus.value = "Saved: $saved" }
                                             }.onFailure {
                                                 downloadReceiver.abort()
+                                                val transferId = message.payload.optString("transferId")
+                                                if (transferId.isNotBlank()) {
+                                                    activeTransferId.compareAndSet(transferId, null)
+                                                    transferActive.set(false)
+                                                }
                                                 mainHandler.post { fileDownloadStatus.value = it.message ?: "Download verification failed" }
                                             }
                                             "file.download.error" -> {
                                                 downloadReceiver.fail(message.payload)
+                                                val transferId = message.payload.optString("transferId")
+                                                if (transferId.isNotBlank()) {
+                                                    activeTransferId.compareAndSet(transferId, null)
+                                                    transferActive.set(false)
+                                                }
                                                 mainHandler.post {
                                                     fileDownloadStatus.value = message.payload.optString("reason", "Remote file transfer failed")
                                                 }
