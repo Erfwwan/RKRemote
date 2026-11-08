@@ -452,6 +452,9 @@ fun SecureInternetPanel() {
                                         check(PttAudioQueue.isEnabled()) {
                                             "Enable the PTT speaker locally on the target first"
                                         }
+                                        check(!audioRelayActive.get() && !MicrophoneChunkStore.isCapturing()) {
+                                            "Stop target microphone monitoring before push-to-talk to keep audio half-duplex"
+                                        }
                                         check(pttRelayActive.compareAndSet(false, true)) {
                                             "A push-to-talk transmission is already active"
                                         }
@@ -463,6 +466,9 @@ fun SecureInternetPanel() {
                                         null
                                     }
                                     register("audio.start.request", RemoteCapability.MICROPHONE) {
+                                        check(!pttRelayActive.get()) {
+                                            "Stop push-to-talk before starting microphone monitoring"
+                                        }
                                         check(MicrophoneChunkStore.isCapturing()) {
                                             "Start microphone capture locally on the target first"
                                         }
