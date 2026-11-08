@@ -1,13 +1,17 @@
 name: Android build
 
 on:
-  # Verify background-authorized instant location and independently revocable microphone stream.
   push:
     branches:
       - feature/remote-agent-foundation
     paths:
-      - '.github/workflows/android-build.yml'
-  # Manual builds remain available after explicit owner approval.
+      - "app/**"
+      - "gradle/**"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - "gradle.properties"
+      - "gradlew"
+      - ".github/workflows/android-build.yml"
   workflow_dispatch:
 
 permissions:
@@ -28,11 +32,11 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.11.1'
+          gradle-version: "8.11.1"
       - name: Assemble debug APK
         run: gradle --no-daemon :app:assembleDebug
       - name: Upload installable debug APK
@@ -44,7 +48,7 @@ jobs:
           retention-days: 14
       - name: Run unit tests
         run: gradle --no-daemon :app:testDebugUnitTest
-      - name: Assemble release APK (unsigned unless operator credentials are configured)
+      - name: Assemble release APK (unsigned unless signing credentials are configured)
         run: gradle --no-daemon :app:assembleRelease
       - name: Upload release APK
         uses: actions/upload-artifact@v4
