@@ -12,13 +12,20 @@ Consent-based Android remote-device management for devices owned by the operator
 
 ## Cloudflare account integration
 
-Each user deploys the Worker into their own Cloudflare account using the manual Deploy button below. RKRemote then needs only the Worker WSS address for normal pairing and encrypted relay operation.
+Each user deploys a separate Worker into their own Cloudflare account. **GitHub account linking is not required.** The old Cloudflare Deploy button used GitHub's import integration; instead, download the public source ZIP and deploy the included Worker with Wrangler CLI:
 
-An optional, user-owned Cloudflare API Token can be entered in the app to update the already-created `rkremote-signaling` Worker. The token is encrypted locally with AES-GCM and an Android Keystore key; it is not shared with the paired phone. The app does not use OAuth, a shared developer token, a Global API Key, or the user's Cloudflare password. The token is optional: users who only want to connect can leave it blank.
+```sh
+cd cloudflare/worker
+npm install
+npx wrangler login
+npx wrangler deploy
+```
 
-Create a token with **Workers Editor** access scoped to the existing `rkremote-signaling` Worker only. The manual Deploy step creates the Worker first; the in-app token operation only updates that existing Worker. See [Cloudflare manual setup](docs/CLOUDFLARE_SETUP.md).
+Wrangler authenticates directly with Cloudflare. The Worker source is available in the [public source ZIP](https://github.com/Erfwwan/RKRemote/archive/refs/heads/feature/remote-agent-foundation.zip). On Android, the same commands can be run from Termux after installing Node.js and extracting the ZIP.
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Erfwwan/RKRemote/tree/feature/remote-agent-foundation/cloudflare/worker)
+RKRemote then needs only the Worker WSS address for normal pairing and encrypted relay operation. An optional, user-owned Cloudflare API Token can be entered in the app to update the already-created `rkremote-signaling` Worker. The token is encrypted locally with AES-GCM and an Android Keystore key; it is not shared with the paired phone. The token is optional: users who only want to connect can leave it blank.
+
+Create a token only if you want in-app Worker updates. Use **Workers Editor** access scoped to the existing `rkremote-signaling` Worker only. See [Cloudflare manual setup](docs/CLOUDFLARE_SETUP.md).
 
 ## Feature boundaries
 
