@@ -436,6 +436,11 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
         persistentReportConsent.revoke(peer, capabilities)
         if (session.value?.authenticatedPeerId() == peer) {
             session.value?.revokeOwnerApprovedCapabilities(capabilities)
+            if (RemoteCapability.MICROPHONE in capabilities) {
+                microphoneStreamActive.set(false)
+                microphonePlayback.close()
+                microphoneStreamStatus.value = "مجوز میکروفن این کنترل‌کننده لغو شد"
+            }
         }
         refreshRememberedReportGrants()
     }
@@ -940,6 +945,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                         Thread.currentThread().interrupt()
                                                     } finally {
                                                         microphoneStreamActive.set(false)
+                                                        activePeer?.sendMessage("microphone.stream.ended", JSONObject())
                                                         mainHandler.post { microphoneStreamStatus.value = "ارسال میکروفن مستقل متوقف شد" }
                                                     }
                                                 }
@@ -1136,6 +1142,13 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                     pttStatus.value = failure.message ?: "PTT audio rejected"
                                                     }
                                                             }
+                                                        }
+                                                    }
+                                                    "microphone.stream.ended" -> {
+                                                        if (role.value == CloudflareSignalingClient.Role.CONTROLLER) {
+                                                            microphoneStreamActive.set(false)
+                                                            microphonePlayback.close()
+                                                            mainHandler.post { if (activePeerRef.get() === activePeer) microphoneStreamStatus.value = "میکروفن مستقل در دستگاه مقصد متوقف شد" }
                                                         }
                                                     }
                                                     "microphone.audio.chunk" -> {
@@ -1916,15 +1929,11 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 val sessionLocationGranted =
                     ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
                         ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-                val sessionBackgroundLocationGranted = Build.VERSION.SDK_INT < 29 ||
-                    ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
                 OutlinedButton(
-                    enabled = session.value != null && secureRelayConnected.value &&
-                        sessionLocationGranted && sessionBackgroundLocationGranted,
+                    enabled = session.value != null && secureRelayConnected.value && sessionLocationGranted,
                     onClick = {
                         runCatching {
                             grantRememberedReportCapability(RemoteCapability.LOCATION)
-                            LocationCaptureScheduler.start(context)
                         }.onSuccess {
                             status.value = "گزارش موقعیت برای این کنترل‌کننده مجاز شد؛ داده فقط در پاسخ به درخواست ارسال می‌شود."
                         }.onFailure {
@@ -1932,8 +1941,8 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                         }
                     }
                 ) { Text("اجازه گزارش موقعیت برای این کنترل‌کننده") }
-                if (!sessionLocationGranted || !sessionBackgroundLocationGranted) {
-                    Text("برای فعال‌کردن گزارش موقعیت، مجوز موقعیت و دسترسی پس‌زمینه را در بخش مجوزهای اندروید فعال کن.",
+                if (!sessionLocationGranted) {
+                    Text("برای درخواست موقعیت فعلی، مجوز موقعیت را در بخش مجوزهای اندروید فعال کن. دسترسی پس‌زمینه فقط برای ثبت دوره‌ای اختیاری لازم است.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
@@ -1965,7 +1974,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 Text("Saved report permissions by paired device", style = MaterialTheme.typography.titleSmall)
                 Text(persistentReportConsentStatus.value, style = MaterialTheme.typography.bodySmall)
                 if (rememberedReportGrants.value.isEmpty()) {
-                    Text("No persistent contacts, SMS, call-history or location grants are saved.", style = MaterialTheme.typography.bodySmall)
+                    Text("No persistent per-peer report, location or microphone grants are saved.", style = MaterialTheme.typography.bodySmall)
                 } else {
                     rememberedReportGrants.value.toSortedMap().forEach { (savedPeer, savedCapabilities) ->
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
