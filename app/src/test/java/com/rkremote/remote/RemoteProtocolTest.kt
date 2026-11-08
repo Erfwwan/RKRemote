@@ -82,6 +82,25 @@ class RemoteProtocolTest {
     }
 
     @Test
+    fun rejectsRemovedScreenshotAndLegacyScreenCommands() {
+        listOf("screen.snapshot.request", "screen.snapshot.result", "screen.start.request", "screen.stop")
+            .forEach { type ->
+                val raw = JSONObject()
+                    .put("protocolVersion", 1)
+                    .put("type", type)
+                    .put("sessionId", "s")
+                    .put("messageId", "m-$type")
+                    .put("sequence", 0)
+                    .put("sentAt", System.currentTimeMillis())
+                    .put("payload", JSONObject())
+                    .toString()
+                assertThrows(IllegalArgumentException::class.java) {
+                    RemoteMessage.parse(raw)
+                }
+            }
+    }
+
+    @Test
     fun rejectsUnknownMessageType() {
         val raw = JSONObject()
             .put("protocolVersion", 1)
