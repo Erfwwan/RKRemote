@@ -39,3 +39,15 @@ The current executable LAN path is raw HTTP with a temporary bearer token and no
 ## Current implementation status
 
 This file records the agreed Section 2 specification only. The current executable implementation still captures JPEG snapshots up to 1600 pixels and the controller polls them approximately once per second. No continuous H.264 stream or 480-pixel cap is implemented yet. Do not describe the requested live-video feature as implemented until the sequence and acceptance criteria above have been completed and tested.
+
+
+## Implementation progress (2026-11-08)
+
+The first implementation pass is now committed:
+- ScreenCaptureService captures the owner-approved projection into an AVC MediaCodec input surface, with the longest side capped at 480 px.
+- ScreenVideoStore retains only the latest encoded access unit and codec configuration.
+- LanAgentServer exposes a persistent /screen/video H.264 stream using the RKV1 header and length-framed access units.
+- RemoteVideoPlayer connects, decodes H.264 to a Surface, and retries interrupted connections.
+- The controller preview UI no longer polls JPEGs; it renders a SurfaceView and maps tap, long-press, and drag gestures to the target.
+
+This is an initial code implementation, not yet a verified release. Android CI and physical two-device validation are still required. The current stream uses the existing bearer-token HTTP/TCP LAN transport; restrict it to a trusted private network until Section 1 replaces that transport with authenticated encryption. Some Android secure surfaces and system-owned dialogs remain inaccessible by design.
