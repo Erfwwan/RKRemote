@@ -826,8 +826,17 @@ fun SecureInternetPanel() {
                                         streamSender.value?.close()
                                         streamSender.value = null
                                         mainHandler.post {
-                                            dataChannelConnected.value = false
-                                            status.value = reason
+                                            // Ignore late callbacks from a session that has already
+                                            // been stopped or replaced by a newer connection.
+                                            if (session.value === activePeer) {
+                                                session.value = null
+                                                dataChannelConnected.value = false
+                                                peerId.value = null
+                                                sas.value = null
+                                                renderer.value?.close()
+                                                renderer.value = null
+                                                status.value = reason
+                                            }
                                         }
                                     }
                                     override fun onFailure(failure: Throwable) {
@@ -844,8 +853,17 @@ fun SecureInternetPanel() {
                                         streamSender.value?.close()
                                         streamSender.value = null
                                         mainHandler.post {
-                                            dataChannelConnected.value = false
-                                            error.value = failure.message ?: "Secure connection failed"
+                                            // A delayed failure from an old peer must not tear down
+                                            // the UI state of a newer secure session.
+                                            if (session.value === activePeer) {
+                                                session.value = null
+                                                dataChannelConnected.value = false
+                                                peerId.value = null
+                                                sas.value = null
+                                                renderer.value?.close()
+                                                renderer.value = null
+                                                error.value = failure.message ?: "Secure connection failed"
+                                            }
                                         }
                                     }
                                 }
