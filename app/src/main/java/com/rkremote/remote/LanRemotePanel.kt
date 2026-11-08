@@ -8,6 +8,7 @@ import android.graphics.BitmapFactory
 import android.media.projection.MediaProjectionManager
 import android.content.pm.PackageManager
 import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -45,6 +46,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.security.SecureRandom
 import java.util.Base64
 
@@ -60,6 +62,8 @@ fun LanRemotePanel() {
     var screenBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var previewJob by remember { mutableStateOf<Job?>(null) }
     var previewRunning by remember { mutableStateOf(false) }
+    var tapX by remember { mutableStateOf("0.5") }
+    var tapY by remember { mutableStateOf("0.5") }
     DisposableEffect(Unit) { onDispose { previewJob?.cancel() } }
     val projectionManager = remember { context.getSystemService(MediaProjectionManager::class.java) }
     val screenConsentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -212,10 +216,55 @@ fun LanRemotePanel() {
             screenBitmap?.let { bitmap ->
                 Image(bitmap = bitmap.asImageBitmap(), contentDescription = "Remote phone screen snapshot", modifier = Modifier.fillMaxWidth(), contentScale = ContentScale.Fit)
             }
+            Spacer(Modifier.height(4.dp))
+            Text("REMOTE TOUCH · TARGET PHONE", fontWeight = FontWeight.SemiBold)
+            Text(
+                "On the target phone, enable RKRemote touch control manually in Android Accessibility settings. Android will show that this service can perform gestures. You can disable it there at any time.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            OutlinedButton(onClick = {
+                context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }) { Text("Open Accessibility settings") }
+            Text("Touch position on target screen (normalized 0.0–1.0)")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = tapX, onValueChange = { tapX = it },
+                    modifier = Modifier.weight(1f), singleLine = true,
+                    label = { Text("X · left to right") }
+                )
+                OutlinedTextField(
+                    value = tapY, onValueChange = { tapY = it },
+                    modifier = Modifier.weight(1f), singleLine = true,
+                    label = { Text("Y · top to bottom") }
+                )
+            }
+            OutlinedButton(enabled = !busy, onClick = {
+                val x = tapX.toFloatOrNull()
+                val y = tapY.toFloatOrNull()
+                if (x == null || y == null || x !in 0f..1f || y !in 0f..1f) {
+                    output = "Touch coordinates must be numbers between 0.0 and 1.0."
+                } else {
+                    busy = true
+                    scope.launch {
+                        output = runCatching {
+                            withContext(Dispatchers.IO) {
+                                LanControllerClient.postJson(
+                                    targetIp.trim(), targetToken.trim(), "/input/tap",
+                                    JSONObject().put("x", x).put("y", y)
+                                )
+                            }
+                        }.getOrElse { "Touch command failed: ${it.message}" }
+                        busy = false
+                    }
+                }
+            }) { Text("Send one tap") }
+            Text("Example: X=0.5 and Y=0.5 taps the center of the target display. This first version sends taps only; no swipe, typing, or continuous control yet.", style = MaterialTheme.typography.bodySmall)
+            Spacer(Modifier.height(4.dp))
             Text("Result", fontWeight = FontWeight.SemiBold)
             Text(output, style = MaterialTheme.typography.bodySmall)
             Text(
-                "Prototype boundary: local trusted Wi-Fi only; read-only folder listing and status. No internet relay, camera, microphone or file download. Screen sharing uses owner-approved JPEG snapshots; live preview polls snapshots about once per second and is not a continuous video stream or remote input.",
+                "Prototype boundary: local trusted Wi-Fi only; read-only folder listing and status. No internet relay, camera, microphone or file download. Screen sharing uses owner-approved JPEG snapshots; live preview polls snapshots about once per second. Remote taps require the target owner to enable the RKRemote Accessibility service manually.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
