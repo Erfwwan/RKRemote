@@ -211,7 +211,16 @@ fun SecureInternetPanel() {
                                     override fun onRemoteMessage(message: RemoteMessage) {
                                         if (message.type == "notifications.sync.result") {
                                             val events = message.payload.optJSONArray("events")
-                                            mainHandler.post { notificationSummary.value = "Received " + (events?.length() ?: 0) + " recent notification events" }
+                                            mainHandler.post {
+                                                val preview = buildList {
+                                                    val count = (events?.length() ?: 0).coerceAtMost(5)
+                                                    for (index in 0 until count) {
+                                                        val item = events?.optJSONObject(index) ?: continue
+                                                        add(item.optString("title") + ": " + item.optString("text"))
+                                                    }
+                                                }
+                                                notificationSummary.value = if (preview.isEmpty()) "No recent notification events" else preview.joinToString("\n")
+                                            }
                                         }
                                         if (message.type.startsWith("screen.video.")) {
                                             renderer.value?.accept(message)
