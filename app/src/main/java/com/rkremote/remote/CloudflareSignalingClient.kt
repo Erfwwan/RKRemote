@@ -5,15 +5,17 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import okio.ByteString
 import org.json.JSONObject
 import java.net.URI
 import java.security.SecureRandom
 import java.util.concurrent.TimeUnit
 
 /**
- * Cloudflare is used only as an ephemeral WebRTC signaling rendezvous.
- * It must never carry RKRemote commands, files, notifications, or media.
- * Signaling messages are not yet authenticated end-to-end by this class.
+ * Opaque binary rendezvous transport for the RK-SecureLink Noise handshake.
+ * This class does not implement cryptography: callers must pass only Noise
+ * handshake/transport frames produced and authenticated by the secure-session layer.
+ * Server text messages are restricted to non-sensitive room lifecycle events.
  */
 class CloudflareSignalingClient(
     private val baseWssUrl: String,
@@ -25,7 +27,8 @@ class CloudflareSignalingClient(
 
     interface Listener {
         fun onConnected()
-        fun onSignal(type: String, payload: JSONObject)
+        fun onEncryptedFrame(frame: ByteArray)
+        fun onRoomEvent(type: String, payload: JSONObject)
         fun onDisconnected(reason: String)
         fun onFailure(error: Throwable)
     }
@@ -56,23 +59,27 @@ class CloudflareSignalingClient(
                 listener.onConnected()
             }
 
+            override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
+                if (bytes.size == 0 || bytes.size > MAX_FRAME_BYTES) {
+                    webSocket.close(1009, "Invalid encrypted frame size")
+                    listener.onFailure(IllegalArgumentException("Encrypted signaling frame size is invalid"))
+                    return
+                }
+                listener.onEncryptedFrame(bytes.toByteArray())
+            }
+
             override fun onMessage(webSocket: WebSocket, text: String) {
-                if (text.toByteArray(Charsets.UTF_8).size > MAX_MESSAGE_BYTES) {
-                    webSocket.close(1009, "Message too large")
-                    listener.onFailure(IllegalArgumentException("Signaling message too large"))
+                if (text.toByteArray(Charsets.UTF_8).size > MAX_CONTROL_BYTES) {
+                    webSocket.close(1009, "Control message too large")
+                    listener.onFailure(IllegalArgumentException("Room control message too large"))
                     return
                 }
                 runCatching {
                     val message = JSONObject(text)
-                    require(message.optInt("v") == 1) { "Unsupported signaling version" }
+                    require(message.optInt("v") == 1) { "Unsupported room-control version" }
                     val type = message.optString("type")
-                    require(type in ALLOWED_TYPES) { "Unsupported signaling message" }
-                    val payload = message.optJSONObject("payload") ?: JSONObject()
-                    if (type == "peer-joined" || type == "peer-left" || type == "peer-not-ready") {
-                        listener.onSignal(type, payload)
-                    } else {
-                        listener.onSignal(type, payload)
-                    }
+                    require(type in ROOM_EVENTS) { "Unexpected text message from signaling server" }
+                    listener.onRoomEvent(type, message.optJSONObject("payload") ?: JSONObject())
                 }.onFailure(listener::onFailure)
             }
 
@@ -88,11 +95,10 @@ class CloudflareSignalingClient(
         })
     }
 
-    fun send(type: String, payload: JSONObject = JSONObject()): Boolean {
-        require(type in ALLOWED_TYPES) { "Unsupported signaling message" }
-        val text = JSONObject().put("v", 1).put("type", type).put("payload", payload).toString()
-        require(text.toByteArray(Charsets.UTF_8).size <= MAX_MESSAGE_BYTES) { "Signaling message too large" }
-        return socket?.send(text) ?: false
+    /** Send one complete opaque Noise frame. Never pass plaintext SDP, ICE, or app data. */
+    fun sendEncryptedFrame(frame: ByteArray): Boolean {
+        require(frame.isNotEmpty() && frame.size <= MAX_FRAME_BYTES) { "Invalid encrypted frame size" }
+        return socket?.send(ByteString.of(*frame)) ?: false
     }
 
     @Synchronized
@@ -102,8 +108,9 @@ class CloudflareSignalingClient(
     }
 
     companion object {
-        private const val MAX_MESSAGE_BYTES = 12 * 1024
-        private val ALLOWED_TYPES = setOf("offer", "answer", "ice", "ready", "reject", "bye")
+        private const val MAX_FRAME_BYTES = 12 * 1024
+        private const val MAX_CONTROL_BYTES = 1024
+        private val ROOM_EVENTS = setOf("peer-joined", "peer-left", "peer-not-ready")
 
         /** Generate a private, unguessable room identifier. Share it only with the intended peer. */
         fun newRoomId(): String = ByteArray(32).also(SecureRandom()::nextBytes)
