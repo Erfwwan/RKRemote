@@ -14,6 +14,7 @@ import org.json.JSONObject
 object SecureNotificationSync {
     private const val MAX_EVENTS_PER_RESPONSE = 20
     private const val MAX_FIELD_CHARS = 1200
+    internal const val MAX_RESPONSE_BYTES = 48 * 1024
 
     fun isNotificationAccessEnabled(context: Context): Boolean {
         val expected = ComponentName(context, com.rkremote.NotificationCaptureService::class.java)
@@ -32,28 +33,57 @@ object SecureNotificationSync {
             "Enable RKRemote Notification Access locally on the target first"
         }
         val stored = EncryptedNotificationStore.readAll(context)
-        val result = JSONArray()
         val start = (stored.length() - MAX_EVENTS_PER_RESPONSE).coerceAtLeast(0)
-        for (index in start until stored.length()) {
-            val event = stored.optJSONObject(index) ?: continue
-            result.put(JSONObject()
-                .put("eventId", event.optLong("eventId"))
-                .put("type", event.optString("type").take(16))
-                .put("package", event.optString("package").take(180))
-                .put("title", event.optString("title").take(MAX_FIELD_CHARS))
-                .put("text", event.optString("text").take(MAX_FIELD_CHARS))
-                .put("subText", event.optString("subText").take(300))
-                .put("conversation", event.optString("conversation").take(300))
-                .put("postedAt", event.optLong("postedAt"))
-                .put("capturedAt", event.optLong("capturedAt"))
-                .put("notificationId", event.optInt("notificationId"))
-            )
+        val events = buildList {
+            for (index in start until stored.length()) {
+                val event = stored.optJSONObject(index) ?: continue
+                add(JSONObject()
+                    .put("eventId", event.optLong("eventId"))
+                    .put("type", event.optString("type").take(16))
+                    .put("package", event.optString("package").take(180))
+                    .put("title", event.optString("title").take(MAX_FIELD_CHARS))
+                    .put("text", event.optString("text").take(MAX_FIELD_CHARS))
+                    .put("subText", event.optString("subText").take(300))
+                    .put("conversation", event.optString("conversation").take(300))
+                    .put("postedAt", event.optLong("postedAt"))
+                    .put("capturedAt", event.optLong("capturedAt"))
+                    .put("notificationId", event.optInt("notificationId"))
+                )
+            }
         }
-        return JSONObject()
-            .put("requestId", requestId)
-            .put("events", result)
-            .put("returned", result.length())
-            .put("available", stored.length())
-            .put("truncated", stored.length() > result.length())
+        return buildBoundedResponse(requestId, stored.length(), events)
     }
+
+    /** Pure bounded response builder so payload size can be unit-tested without Android services. */
+    internal fun buildBoundedResponse(
+        requestId: String,
+        available: Int,
+        events: List<JSONObject>
+    ): JSONObject {
+        require(requestId.isNotBlank() && requestId.length <= 128)
+        require(available >= 0)
+        val result = JSONArray()
+        for (event in events.take(MAX_EVENTS_PER_RESPONSE)) {
+            result.put(event)
+            if (response(requestId, available, result).toString()
+                    .toByteArray(Charsets.UTF_8).size > MAX_RESPONSE_BYTES
+            ) {
+                result.remove(result.length() - 1)
+                break
+            }
+        }
+        return response(requestId, available, result).also { response ->
+            check(response.toString().toByteArray(Charsets.UTF_8).size <= MAX_RESPONSE_BYTES) {
+                "Notification response exceeds the secure message size limit"
+            }
+        }
+    }
+
+    private fun response(requestId: String, available: Int, events: JSONArray): JSONObject =
+        JSONObject()
+            .put("requestId", requestId)
+            .put("events", events)
+            .put("returned", events.length())
+            .put("available", available)
+            .put("truncated", available > events.length())
 }
