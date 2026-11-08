@@ -36,18 +36,19 @@ class SecurePayload(
         cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(TAG_BITS, nonce))
         if (associatedData.isNotEmpty()) cipher.updateAAD(associatedData)
         val ciphertext = cipher.doFinal(plaintext)
-        return JSONObject()
-            .put("v", VERSION)
-            .put("alg", "A256GCM")
-            .put("nonce", android.util.Base64.encodeToString(nonce, android.util.Base64.NO_WRAP))
-            .put("ciphertext", android.util.Base64.encodeToString(ciphertext, android.util.Base64.NO_WRAP))
+        return EncryptedPayload(
+            version = VERSION,
+            algorithm = "A256GCM",
+            nonceBase64 = java.util.Base64.getEncoder().withoutPadding().encodeToString(nonce),
+            ciphertextBase64 = java.util.Base64.getEncoder().withoutPadding().encodeToString(ciphertext)
+        )
     }
 
     fun decrypt(envelope: EncryptedPayload, associatedData: ByteArray = byteArrayOf()): ByteArray {
         require(envelope.version == VERSION) { "Unsupported encrypted payload version" }
         require(envelope.algorithm == "A256GCM") { "Unsupported encryption algorithm" }
-        val nonce = android.util.Base64.decode(envelope.nonceBase64, android.util.Base64.NO_WRAP)
-        val ciphertext = android.util.Base64.decode(envelope.ciphertextBase64, android.util.Base64.NO_WRAP)
+        val nonce = java.util.Base64.getDecoder().decode(envelope.nonceBase64)
+        val ciphertext = java.util.Base64.getDecoder().decode(envelope.ciphertextBase64)
         require(nonce.size == NONCE_BYTES) { "Invalid nonce" }
         require(ciphertext.size <= MAX_PLAINTEXT_BYTES + TAG_BYTES) { "Payload too large" }
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
