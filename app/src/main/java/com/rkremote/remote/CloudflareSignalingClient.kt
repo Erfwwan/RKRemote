@@ -119,10 +119,10 @@ class CloudflareSignalingClient(
         socket = null
         // This client belongs to one terminal session; cancel rather than leaving an
         // asynchronous WebSocket close handshake and dispatcher thread behind.
-        activeSocket?.cancel()
-        client.dispatcher.cancelAll()
-        client.dispatcher.executorService.shutdown()
-        client.connectionPool.evictAll()
+        runCatching { activeSocket?.cancel() }
+        runCatching { client.dispatcher.cancelAll() }
+        runCatching { client.dispatcher.executorService.shutdown() }
+        runCatching { client.connectionPool.evictAll() }
     }
 
     companion object {
