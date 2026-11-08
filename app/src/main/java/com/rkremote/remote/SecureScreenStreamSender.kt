@@ -47,6 +47,7 @@ class SecureScreenStreamSender(
             onState("Secure screen stream started")
             val codec = SecureVideoFrameCodec()
             while (running.get()) {
+                if (!ScreenVideoStore.hasConfig()) break
                 val frame = ScreenVideoStore.awaitNext(lastSequence, FRAME_WAIT_MS) ?: continue
                 lastSequence = frame.sequence
                 val encoded = SecureVideoFrameCodec.EncodedFrame(
