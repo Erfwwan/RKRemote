@@ -55,7 +55,7 @@ The notification listener captures posted and removed events only after the devi
 
 The controller's **Auto reconnect** control performs idempotent `/health` probes. After a failed probe it retries with bounded backoff of 1, 2, 4, 8, then 15 seconds; after a successful probe it checks every 5 seconds. The live screen stream retries after transient network errors. **Check now** performs a single manual health probe. Both automatic and manual diagnostics display agent uptime, active client count, queued client count, and any reported listener error. The target foreground notification is updated if the LAN listener fails to bind or terminates unexpectedly. Accepted sockets use TCP_NODELAY/keepalive and the client uses separate timeouts for PTT, media, file and normal requests. Retry logic is limited to read-only health checks and screen snapshots; non-idempotent commands and file transfers are never automatically replayed.
 
-The target agent remains START_NOT_STICKY by design: if Android terminates the target process, it does not silently restore remote access or reuse a previous token. The owner must reopen RKRemote, generate a fresh temporary token and start a new visible session. No battery-optimization exemption is requested automatically. OEM power management can still suspend background work; manual battery settings may be needed during long sessions. The retry schedule is covered by JVM unit tests. Physical-device and long-duration tests remain outstanding.
+The original Section 7 START_NOT_STICKY behavior has been superseded by Section 8. The LAN session now uses START_REDELIVER_INTENT and can recover its active token after a system process reclaim. Reboot restoration is separately opt-in and documented below. Force-stop, permission revocation, OEM task killers and device shutdown remain outside the restart guarantee. No battery-optimization exemption is requested automatically. The retry schedule is covered by JVM unit tests. Physical-device and long-duration tests remain outstanding.
 
 
 ## Section 2 · agreed continuous video specification (not yet implemented)
@@ -66,3 +66,14 @@ The user has approved replacing screen JPEG snapshots/polling with a continuous 
 ## Section 2 · implementation pass committed (2026-11-08)
 
 The first executable implementation is now present: MediaProjection -> AVC MediaCodec -> latest-only frame store -> persistent /screen/video RKV1 stream -> controller MediaCodec decoder -> SurfaceView. The stream is capped at 480 px on its longest side. The old screen JPEG endpoint and periodic controller polling UI have been removed. The live surface supports tap, long-press, and drag gesture forwarding. Automatic reconnect is in the video player. CI and real two-device validation are pending; do not call this production-verified. The existing bearer-token HTTP/TCP transport is still plaintext, so this video feature must remain on a trusted private LAN until the Section 1 encrypted transport work is completed.
+
+
+## Section 8 · owner-approved service recovery
+
+The LAN session foreground service now returns START_REDELIVER_INTENT after a valid owner-started session. If Android reclaims the app process under memory pressure, the system can recreate the service and redeliver the start intent. A null-intent recreation can also recover the active token from the encrypted session store. The token is encrypted with an AES-GCM key held by Android Keystore; it is not written to preferences as plaintext.
+
+The target UI includes an explicit **Start agent after phone reboot** option, disabled by default. When enabled, BOOT_COMPLETED restores only the owner-approved LAN agent and its active session. The camera, microphone, MediaProjection/screen capture and PTT playback services are never auto-started. The persistent foreground notification and local Stop action remain visible. Stop clears the active encrypted token so the session cannot be restored after a later reboot; the reboot preference itself remains selected until the owner turns it off.
+
+This does not bypass Android's force-stop state. A user force-stop, app-data clear, uninstall, revoked permissions, an invalidated Keystore key, OEM power-management termination, or system policy can prevent restoration. Android may delay a sticky service restart until resources are available. Reboot restoration is also subject to the device's foreground-service and boot policies; failures must be diagnosed on the actual device. No permanent always-on guarantee is made. Battery-optimization settings remain an explicit owner choice.
+
+Validation status: source changes committed, but no Gradle build, CI workflow result, reboot test, process-kill test, or physical Samsung-device test has yet verified this implementation.
