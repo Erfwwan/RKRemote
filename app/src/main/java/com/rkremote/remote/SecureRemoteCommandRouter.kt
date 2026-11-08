@@ -82,15 +82,18 @@ class SecureRemoteCommandRouter(
         if (requestId.isBlank() || requestId.length > 128) {
             return Result(false, "A bounded requestId is required")
         }
+
+        // Consume the authenticated sequence before duplicate-ID rejection.
+        // This keeps the router safe even when exercised without the outer
+        // SecureMessageGuard used by the production peer transport.
+        val decision = gate.authorize(authenticatedPeerId, message.sequence, route.capability)
+        if (!decision.allowed) return Result(false, decision.reason)
         if (seenRequests.containsKey(requestId)) {
             return Result(false, "Duplicate requestId")
         }
 
-        val decision = gate.authorize(authenticatedPeerId, message.sequence, route.capability)
-        if (!decision.allowed) return Result(false, decision.reason)
-
-        // Remember only after authorization. Handler failure still consumes the
-        // sequence and request ID, so an attacker cannot replay a side effect.
+        // Handler failure still consumes the sequence and request ID, so an
+        // attacker cannot replay a side effect.
         seenRequests[requestId] = true
         return try {
             val responseType = route.handler.handle(message)
