@@ -153,6 +153,7 @@ fun SecureInternetPanel() {
                             )) { "Could not start secure upload" }
                             val digest = MessageDigest.getInstance("SHA-256")
                             var total = 0L
+                            var lastReportedPercent = -1
                             context.contentResolver.openInputStream(uri)?.use { input ->
                                 val buffer = ByteArray(SecureSafTransferBridge.MAX_CHUNK_BYTES)
                                 while (true) {
@@ -172,6 +173,16 @@ fun SecureInternetPanel() {
                                             .put("offset", total - count)
                                             .put("data", Base64.getEncoder().encodeToString(bytes))
                                     )) { "Secure upload stopped or connection was lost" }
+                                    val percent = if (sizeBytes == 0L) 100 else
+                                        ((total * 100L) / sizeBytes).toInt().coerceIn(0, 100)
+                                    if (percent != lastReportedPercent) {
+                                        lastReportedPercent = percent
+                                        mainHandler.post {
+                                            if (outgoingUploadIds.contains(transferId)) {
+                                                fileUploadStatus.value = "Uploading $displayName · $percent%"
+                                            }
+                                        }
+                                    }
                                 }
                             } ?: error("Could not open the selected file")
                             check(total == sizeBytes) { "File size changed during upload" }
@@ -432,13 +443,14 @@ fun SecureInternetPanel() {
                                             error("Another file transfer is already active")
                                         }
                                         transferExecutor.execute {
+                                            var retryableNetworkFailure = false
                                             try {
                                                 safBridge.streamFile(
                                                     transferId = transferId,
                                                     documentId = documentId,
                                                     startOffset = message.payload.optLong("offset", 0L),
                                                     onStart = { metadata ->
-                                                        activeTransferId.get() == transferId && transferActive.get() &&
+                                                        val started = activeTransferId.get() == transferId && transferActive.get() &&
                                                             activePeer?.sendMessage(
                                                             "file.download.begin",
                                                             JSONObject()
@@ -447,6 +459,8 @@ fun SecureInternetPanel() {
                                                                 .put("mimeType", metadata.mimeType)
                                                                 .put("totalBytes", metadata.sizeBytes)
                                                         ) == true
+                                                        if (!started) retryableNetworkFailure = true
+                                                        started
                                                     },
                                                     onChunk = { offset, bytes ->
                                                         var sent = false
@@ -465,14 +479,17 @@ fun SecureInternetPanel() {
                                                                 Thread.sleep(100)
                                                             }
                                                         }
+                                                        if (!sent) retryableNetworkFailure = true
                                                         sent && transferActive.get() && activeTransferId.get() == transferId
                                                     },
                                                     onComplete = { hash ->
                                                         if (transferActive.get() && activeTransferId.get() == transferId) {
-                                                            check(activePeer?.sendMessage(
+                                                            val completed = activePeer?.sendMessage(
                                                                 "file.download.complete",
                                                                 JSONObject().put("transferId", transferId).put("sha256", hash)
-                                                            ) == true) { "Could not send file-transfer completion" }
+                                                            ) == true
+                                                            if (!completed) retryableNetworkFailure = true
+                                                            check(completed) { "Could not send file-transfer completion" }
                                                         }
                                                     }
                                                 )
@@ -481,6 +498,7 @@ fun SecureInternetPanel() {
                                                     "file.download.error",
                                                     JSONObject()
                                                         .put("transferId", transferId)
+                                                        .put("retryable", retryableNetworkFailure)
                                                         .put("reason", failure.message ?: "File transfer failed")
                                                 )
                                             } finally {
@@ -850,6 +868,15 @@ fun SecureInternetPanel() {
                                             }
                                             "file.download.chunk" -> runCatching {
                                                 downloadReceiver.chunk(message.payload)
+                                            }.onSuccess {
+                                                val percent = downloadReceiver.progressPercent()
+                                                val received = downloadReceiver.receivedBytes()
+                                                val total = downloadReceiver.totalBytes()
+                                                mainHandler.post {
+                                                    if (activePeerRef.get() !== activePeer) return@post
+                                                    fileDownloadStatus.value =
+                                                        "Downloading · $percent% ($received/$total bytes)"
+                                                }
                                             }.onFailure {
                                                 downloadReceiver.abort()
                                                 downloadResumePrefs.edit().remove("document_id").commit()
@@ -904,18 +931,26 @@ fun SecureInternetPanel() {
                                             }
                                             }
                                             "file.download.error" -> {
-                                                downloadReceiver.fail(message.payload)
-                                                downloadResumePrefs.edit().remove("document_id").commit()
-                                                pendingDownloadId.value = null
-                                                pendingDownloadDocumentId.value = null
+                                                val retryable = message.payload.optBoolean("retryable", false)
+                                                if (retryable) {
+                                                    downloadReceiver.pause()
+                                                } else {
+                                                    downloadReceiver.fail(message.payload)
+                                                    downloadResumePrefs.edit().remove("document_id").commit()
+                                                    pendingDownloadId.value = null
+                                                    pendingDownloadDocumentId.value = null
+                                                }
                                                 val transferId = message.payload.optString("transferId")
                                                 if (transferId.isNotBlank()) {
                                                     activeTransferId.compareAndSet(transferId, null)
                                                     transferActive.set(false)
                                                 }
                                                 mainHandler.post {
-                                            if (activePeerRef.get() !== activePeer) return@post
-                                                    fileDownloadStatus.value = message.payload.optString("reason", "Remote file transfer failed")
+                                                    if (activePeerRef.get() !== activePeer) return@post
+                                                    val reason = message.payload.optString("reason", "Remote file transfer failed")
+                                                    fileDownloadStatus.value = if (retryable)
+                                                        "Connection interrupted · ${downloadReceiver.pendingOffset()} bytes saved · resume after reconnect"
+                                                    else reason
                                                 }
                                             }
                                             "notifications.sync.result" -> {
