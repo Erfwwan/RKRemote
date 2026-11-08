@@ -2293,7 +2293,22 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     notificationSummary.value = if (sendInput("notifications.sync.request", JSONObject()))
                         "Notification sync requested" else "Could not request notification sync"
                 }) { Text("Fetch recent notifications") }
-                Text(notificationSummary.value, style = MaterialTheme.typography.bodySmall)
+                Card(
+                    modifier = Modifier.fillMaxWidth().animateContentSize(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+                ) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text("اعلان‌های دستگاه مقصد", fontWeight = FontWeight.Bold)
+                        Text(notificationSummary.value, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                        if (role.value == CloudflareSignalingClient.Role.CONTROLLER &&
+                            notificationSummary.value.contains("No notification", true)
+                        ) {
+                            Text("هنوز اعلانی دریافت نشده است. پس از درخواست، اعلان‌های مجاز در همین قسمت نمایش داده می‌شوند.",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
                 }
                 if (feature == SecureFeatureSection.SMS_MESSAGES) {
                     if (role.value == CloudflareSignalingClient.Role.CONTROLLER) {
@@ -2664,7 +2679,20 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                         if (sent) fileStatus.value = "Returned to selected root folder"
                     }
                 ) { Text("Selected root") }
-                Text(fileStatus.value, style = MaterialTheme.typography.bodySmall)
+                Card(
+                    modifier = Modifier.fillMaxWidth().animateContentSize(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+                ) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text("محتوای پوشه دستگاه مقصد", fontWeight = FontWeight.Bold)
+                        Text(fileStatus.value, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                        if (fileItems.value.isEmpty()) {
+                            Text("هنوز فایلی دریافت نشده است. برای مشاهده فهرست، درخواست مرور پوشه را ارسال کن.",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
                 fileItems.value.take(40).forEach { item ->
                     Card(
                         modifier = Modifier.fillMaxWidth().animateContentSize(),
@@ -2753,11 +2781,6 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         enabled = session.value != null && secureRelayConnected.value &&
-                            outgoingUploadIds.size < SecureSafTransferBridge.MAX_ACTIVE_UPLOADS,
-                        onClick = { uploadPicker.launch(arrayOf("*/*")) }
-                    ) { Text("Upload files (up to 3)") }
-                    OutlinedButton(
-                        enabled = session.value != null && secureRelayConnected.value &&
                             (outgoingUploadIds.isNotEmpty() || activeTransferId.get() != null),
                         onClick = {
                             outgoingUploadIds.toList().forEach { transferId ->
@@ -2844,7 +2867,18 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     }
                 }
             )
-            Text(streamStatus.value, style = MaterialTheme.typography.bodySmall)
+            Card(
+                modifier = Modifier.fillMaxWidth().animateContentSize(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+            ) {
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text("تصویر زنده دستگاه مقصد", fontWeight = FontWeight.Bold)
+                    Text(streamStatus.value, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                    Text("با ارسال درخواست نمایش زنده، تصویر رمزنگاری‌شده دستگاه مقصد در کادر بالا ظاهر می‌شود.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
                 }
             }
             if (role.value == CloudflareSignalingClient.Role.TARGET &&
