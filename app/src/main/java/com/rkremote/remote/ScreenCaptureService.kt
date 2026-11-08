@@ -174,8 +174,9 @@ class ScreenCaptureService : Service() {
         runCatching { reader?.setOnImageAvailableListener(null, null) }
         runCatching { reader?.close() }
         reader = null
-        runCatching { projection?.stop() }
+        val oldProjection = projection
         projection = null
+        runCatching { oldProjection?.stop() }
         worker?.quitSafely()
         worker = null
         ScreenFrameStore.clear()
