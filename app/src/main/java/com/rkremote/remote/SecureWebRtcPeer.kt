@@ -10,7 +10,6 @@ import org.webrtc.PeerConnectionFactory
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
 import java.nio.ByteBuffer
-import java.security.MessageDigest
 import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicBoolean
 
