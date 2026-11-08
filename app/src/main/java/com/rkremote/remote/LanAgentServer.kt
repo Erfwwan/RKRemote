@@ -333,6 +333,18 @@ class LanAgentServer(
                 streamScreenVideo(client, output)
                 return
             }
+            if (endpoint == "/screenshot.jpg") {
+                val screenshot = runCatching { RemoteScreenshotStore.captureJpeg() }.getOrNull()
+                if (screenshot == null) {
+                    respond(output, 503, JSONObject().put(
+                        "error",
+                        "Screenshot standby is not active or no display frame is ready. Enable screenshot standby on the target phone."
+                    ))
+                } else {
+                    respondBytes(output, screenshot)
+                }
+                return
+            }
             if (endpoint == "/camera.jpg") {
                 val frame = CameraFrameStore.latestJpeg
                 if (frame == null) {
