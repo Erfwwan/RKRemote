@@ -199,8 +199,11 @@ fun SecureInternetPanel() {
             streamSender.value = null
             val disposingSession = session.value
             activePeerRef.compareAndSet(disposingSession, null)
-            disposingSession?.revokeOwnerApprovedCommands()
-            disposingSession?.close()
+            if (disposingSession != null) {
+                SessionForegroundService.stopInternetSession(context)
+                disposingSession.revokeOwnerApprovedCommands()
+                disposingSession.close()
+            }
             session.value = null
             renderer.value?.close()
             renderer.value = null
@@ -886,6 +889,7 @@ fun SecureInternetPanel() {
                                             safBridge.abortUpload()
                                             streamSender.value?.close()
                                             streamSender.value = null
+                                            SessionForegroundService.stopInternetSession(context)
                                             activePeerRef.compareAndSet(activePeer, null)
                                             session.value = null
                                             dataChannelConnected.value = false
@@ -913,6 +917,8 @@ fun SecureInternetPanel() {
                                             safBridge.abortUpload()
                                             streamSender.value?.close()
                                             streamSender.value = null
+                                            SessionForegroundService.stopInternetSession(context)
+                                            activePeerRef.compareAndSet(activePeer, null)
                                             session.value = null
                                             dataChannelConnected.value = false
                                             peerId.value = null
