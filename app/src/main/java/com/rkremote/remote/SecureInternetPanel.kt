@@ -81,10 +81,11 @@ fun SecureInternetPanel() {
     val fileUploadStatus = remember { mutableStateOf("No upload active") }
     val downloadReceiver = remember(context) { SecureDownloadReceiver(context) }
     val safBridge = remember(context) { SecureSafTransferBridge(context) }
-    val transferExecutor = remember { Executors.newSingleThreadExecutor() }
+    val transferExecutor = remember { Executors.newFixedThreadPool(SecureSafTransferBridge.MAX_ACTIVE_UPLOADS) }
     val transferActive = remember { AtomicBoolean(false) }
     val activeTransferId = remember { AtomicReference<String?>(null) }
-    val activeUploadIds = remember { java.util.concurrent.ConcurrentHashMap.newKeySet<String>() }
+    val targetActiveUploadIds = remember { java.util.concurrent.ConcurrentHashMap.newKeySet<String>() }
+    val outgoingUploadIds = remember { java.util.concurrent.ConcurrentHashMap.newKeySet<String>() }
     val audioRelayActive = remember { AtomicBoolean(false) }
     val pttRelayActive = remember { AtomicBoolean(false) }
     val pttStatus = remember { mutableStateOf("Push-to-talk idle") }
@@ -93,102 +94,110 @@ fun SecureInternetPanel() {
     val audioStatus = remember { mutableStateOf("Microphone stream idle") }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
 
-    val uploadPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        if (uri != null) {
+    val uploadPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
             val peer = session.value
-            if (peer == null || !transferActive.compareAndSet(false, true)) {
-                fileUploadStatus.value = "A secure transfer is already active or disconnected"
+            val availableSlots = SecureSafTransferBridge.MAX_ACTIVE_UPLOADS - outgoingUploadIds.size
+            if (peer == null || uris.size > availableSlots) {
+                fileUploadStatus.value = if (peer == null) "Not connected" else "Only $availableSlots upload slot(s) available"
             } else {
-                val destinationParent = fileParentId.value.ifBlank { fileRootId.value }
-                val transferId = UUID.randomUUID().toString()
-                activeTransferId.set(transferId)
-                transferExecutor.execute {
-                    try {
-                        var displayName = "upload.bin"
-                        var sizeBytes = -1L
-                        context.contentResolver.query(
-                            uri,
-                            arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
-                            null,
-                            null,
-                            null
-                        )?.use { cursor ->
-                            if (cursor.moveToFirst()) {
-                                displayName = cursor.getString(0) ?: displayName
-                                sizeBytes = if (cursor.isNull(1)) -1L else cursor.getLong(1)
-                            }
-                        }
-                        require(sizeBytes in 0L..SecureSafTransferBridge.MAX_FILE_BYTES) {
-                            "File size is unknown or exceeds 50 MiB"
-                        }
-                        val mime = context.contentResolver.getType(uri) ?: "application/octet-stream"
-                        fun sendWithRetry(type: String, payload: JSONObject): Boolean {
-                            var attempt = 0
-                            while (transferActive.get() && activeTransferId.get() == transferId && attempt < 300) {
-                                if (peer.sendMessage(type, payload)) return true
-                                attempt++
-                                Thread.sleep(100)
-                            }
-                            return false
-                        }
-                        check(sendWithRetry(
-                            "file.upload.begin",
-                            JSONObject()
-                                .put("requestId", UUID.randomUUID().toString())
-                                .put("transferId", transferId)
-                                .put("name", displayName)
-                                .put("mimeType", mime)
-                                .put("totalBytes", sizeBytes)
-                                .put("parentId", destinationParent)
-                        )) { "Could not start secure upload" }
-                        val digest = MessageDigest.getInstance("SHA-256")
-                        var total = 0L
-                        context.contentResolver.openInputStream(uri)?.use { input ->
-                            val buffer = ByteArray(SecureSafTransferBridge.MAX_CHUNK_BYTES)
-                            while (true) {
-                                val count = input.read(buffer)
-                                if (count < 0) break
-                                total += count
-                                require(total <= SecureSafTransferBridge.MAX_FILE_BYTES) {
-                                    "File grew beyond the 50 MiB transfer limit"
+                uris.forEach { uri ->
+                    val transferId = UUID.randomUUID().toString()
+                    if (!outgoingUploadIds.add(transferId)) return@forEach
+                    transferExecutor.execute {
+                        try {
+                            var displayName = "upload.bin"
+                            var sizeBytes = -1L
+                            context.contentResolver.query(
+                                uri,
+                                arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
+                                null,
+                                null,
+                                null
+                            )?.use { cursor ->
+                                if (cursor.moveToFirst()) {
+                                    displayName = cursor.getString(0) ?: displayName
+                                    sizeBytes = if (cursor.isNull(1)) -1L else cursor.getLong(1)
                                 }
-                                digest.update(buffer, 0, count)
-                                val bytes = buffer.copyOf(count)
-                                check(sendWithRetry(
-                                    "file.transfer.chunk",
-                                    JSONObject()
-                                        .put("requestId", UUID.randomUUID().toString())
-                                        .put("transferId", transferId)
-                                        .put("offset", total - count)
-                                        .put("data", Base64.getEncoder().encodeToString(bytes))
-                                )) { "Secure upload stopped or connection was lost" }
                             }
-                        } ?: error("Could not open the selected file")
-                        check(total == sizeBytes) { "File size changed during upload" }
-                        check(sendWithRetry(
-                            "file.transfer.complete",
-                            JSONObject()
-                                .put("requestId", UUID.randomUUID().toString())
-                                .put("transferId", transferId)
-                                .put("sha256", digest.digest().joinToString("") { "%02x".format(it) })
-                        )) { "Could not finalize secure upload" }
-                        mainHandler.post { fileUploadStatus.value = "Upload sent · waiting for target confirmation" }
-                    } catch (failure: Throwable) {
-                        // Cancel a partially-created target file if upload fails.
-                        runCatching {
-                            peer.sendMessage(
-                                "file.transfer.cancel",
+                            require(sizeBytes in 0L..SecureSafTransferBridge.MAX_FILE_BYTES) {
+                                "File size is unknown or exceeds 50 MiB"
+                            }
+                            val mime = context.contentResolver.getType(uri) ?: "application/octet-stream"
+                            fun sendWithRetry(type: String, payload: JSONObject): Boolean {
+                                var attempt = 0
+                                while (outgoingUploadIds.contains(transferId) && attempt < 300) {
+                                    if (peer.sendMessage(type, payload)) return true
+                                    attempt++
+                                    Thread.sleep(100)
+                                }
+                                return false
+                            }
+                            check(sendWithRetry(
+                                "file.upload.begin",
                                 JSONObject()
                                     .put("requestId", UUID.randomUUID().toString())
                                     .put("transferId", transferId)
-                            )
+                                    .put("name", displayName)
+                                    .put("mimeType", mime)
+                                    .put("totalBytes", sizeBytes)
+                                    .put("parentId", fileParentId.value.ifBlank { fileRootId.value })
+                            )) { "Could not start secure upload" }
+                            val digest = MessageDigest.getInstance("SHA-256")
+                            var total = 0L
+                            context.contentResolver.openInputStream(uri)?.use { input ->
+                                val buffer = ByteArray(SecureSafTransferBridge.MAX_CHUNK_BYTES)
+                                while (true) {
+                                    val count = input.read(buffer)
+                                    if (count < 0) break
+                                    total += count
+                                    require(total <= SecureSafTransferBridge.MAX_FILE_BYTES) {
+                                        "File grew beyond the 50 MiB transfer limit"
+                                    }
+                                    digest.update(buffer, 0, count)
+                                    val bytes = buffer.copyOf(count)
+                                    check(sendWithRetry(
+                                        "file.transfer.chunk",
+                                        JSONObject()
+                                            .put("requestId", UUID.randomUUID().toString())
+                                            .put("transferId", transferId)
+                                            .put("offset", total - count)
+                                            .put("data", Base64.getEncoder().encodeToString(bytes))
+                                    )) { "Secure upload stopped or connection was lost" }
+                                }
+                            } ?: error("Could not open the selected file")
+                            check(total == sizeBytes) { "File size changed during upload" }
+                            check(sendWithRetry(
+                                "file.transfer.complete",
+                                JSONObject()
+                                    .put("requestId", UUID.randomUUID().toString())
+                                    .put("transferId", transferId)
+                                    .put("sha256", digest.digest().joinToString("") { "%02x".format(it) })
+                            )) { "Could not finalize secure upload" }
+                            mainHandler.post {
+                                fileUploadStatus.value = "Upload sent · ${outgoingUploadIds.size} transfer(s) active or awaiting confirmation"
+                            }
+                        } catch (failure: Throwable) {
+                            runCatching {
+                                peer.sendMessage(
+                                    "file.transfer.cancel",
+                                    JSONObject()
+                                        .put("requestId", UUID.randomUUID().toString())
+                                        .put("transferId", transferId)
+                                )
+                            }
+                            mainHandler.post { fileUploadStatus.value = failure.message ?: "Upload failed" }
+                        } finally {
+                            outgoingUploadIds.remove(transferId)
+                            mainHandler.post {
+                                if (outgoingUploadIds.isEmpty()) {
+                                    fileUploadStatus.value = "No outgoing uploads active"
+                                }
+                            }
                         }
-                        mainHandler.post { fileUploadStatus.value = failure.message ?: "Upload failed" }
-                    } finally {
-                        transferActive.set(false)
-                        activeTransferId.compareAndSet(transferId, null)
                     }
                 }
+                fileUploadStatus.value = "Queued ${uris.size} secure upload(s)"
             }
         }
     }
@@ -197,6 +206,8 @@ fun SecureInternetPanel() {
         onDispose {
             transferActive.set(false)
             activeTransferId.set(null)
+            outgoingUploadIds.clear()
+            targetActiveUploadIds.clear()
             safBridge.cancelAllTransfers()
             cameraTransferActive.set(false)
             imageAssembler.abort()
@@ -306,7 +317,7 @@ fun SecureInternetPanel() {
                                     }
                                     register("file.upload.begin", RemoteCapability.FILES) { message ->
                                         val transferId = message.payload.getString("transferId")
-                                        check(activeUploadIds.size < SecureSafTransferBridge.MAX_ACTIVE_UPLOADS) {
+                                        check(targetActiveUploadIds.size < SecureSafTransferBridge.MAX_ACTIVE_UPLOADS) {
                                             "Too many concurrent uploads"
                                         }
                                         check(activeUploadIds.add(transferId)) {
