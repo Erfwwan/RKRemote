@@ -71,8 +71,10 @@ class SecureWebRtcPeer(
                 }
                 PeerConnection.IceConnectionState.DISCONNECTED ->
                     listener.onDisconnected("WebRTC ICE connection disconnected")
-                PeerConnection.IceConnectionState.FAILED ->
+                PeerConnection.IceConnectionState.FAILED -> {
                     listener.onFailure(IllegalStateException("WebRTC ICE connectivity failed"))
+                    close()
+                }
                 PeerConnection.IceConnectionState.CLOSED -> Unit
                 else -> Unit
             }
@@ -110,6 +112,7 @@ class SecureWebRtcPeer(
         override fun onConnectionChange(newState: PeerConnection.PeerConnectionState) {
             if (newState == PeerConnection.PeerConnectionState.FAILED) {
                 listener.onFailure(IllegalStateException("WebRTC peer connection failed"))
+                close()
             }
         }
     }
