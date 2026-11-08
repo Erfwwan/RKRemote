@@ -1,5 +1,6 @@
 package com.rkremote.remote
 
+import com.rkremote.BuildConfig
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -89,6 +90,36 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
     val cloudflareAccessToken = remember { mutableStateOf(CloudflareTokenStore.accessToken(context)) }
     val coroutineScope = rememberCoroutineScope()
     val oauthService = remember(context) { AuthorizationService(context) }
+    fun deployUsingCloudflareToken(token: String) {
+        coroutineScope.launch {
+            cloudflareOAuthBusy.value = true
+            try {
+                cloudflareOAuthStatus.value = "در حال دریافت حساب‌های Cloudflare..."
+                val accounts = withContext(Dispatchers.IO) {
+                    CloudflareAccountApi.listAccounts(token)
+                }
+                cloudflareAccounts.value = accounts
+                if (accounts.isEmpty()) {
+                    cloudflareOAuthStatus.value = "هیچ حسابی با مجوزهای انتخاب‌شده پیدا نشد."
+                } else if (accounts.size == 1) {
+                    selectedCloudflareAccount.value = accounts.first().id
+                    cloudflareOAuthStatus.value = "در حال ساخت یا به‌روزرسانی Worker..."
+                    val workerUrl = withContext(Dispatchers.IO) {
+                        CloudflareAccountApi.deployWorker(context, token, accounts.first().id)
+                    }
+                    url.value = workerUrl
+                    setupPrefs.edit().putString("worker_url", workerUrl).apply()
+                    cloudflareOAuthStatus.value = "Worker با موفقیت مستقر شد."
+                } else {
+                    cloudflareOAuthStatus.value = "حساب موردنظر را انتخاب کن و دکمه استقرار را بزن."
+                }
+            } catch (failure: Throwable) {
+                cloudflareOAuthStatus.value = failure.message ?: "استقرار Worker ناموفق بود."
+            } finally {
+                cloudflareOAuthBusy.value = false
+            }
+        }
+    }
     val cloudflareOAuthLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val authResponse = AuthorizationResponse.fromIntent(result.data)
         val authException = AuthorizationException.fromIntent(result.data)
@@ -1424,17 +1455,24 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
             Button(
                 enabled = !cloudflareOAuthBusy.value && BuildConfig.CLOUDFLARE_OAUTH_CLIENT_ID.isNotBlank(),
                 onClick = {
-                    runCatching {
-                        cloudflareOAuthLauncher.launch(
-                            oauthService.getAuthorizationRequestIntent(
-                                CloudflareOAuth.authorizationRequest(BuildConfig.CLOUDFLARE_OAUTH_CLIENT_ID)
+                    val existingToken = cloudflareAccessToken.value
+                    if (existingToken != null &&
+                        CloudflareTokenStore.expiresAt(context) > System.currentTimeMillis() + 30_000L
+                    ) {
+                        deployUsingCloudflareToken(existingToken)
+                    } else {
+                        runCatching {
+                            cloudflareOAuthLauncher.launch(
+                                oauthService.getAuthorizationRequestIntent(
+                                    CloudflareOAuth.authorizationRequest(BuildConfig.CLOUDFLARE_OAUTH_CLIENT_ID)
+                                )
                             )
-                        )
-                    }.onFailure { cloudflareOAuthStatus.value = it.message ?: "شروع ورود Cloudflare ناموفق بود." }
+                        }.onFailure { cloudflareOAuthStatus.value = it.message ?: "شروع ورود Cloudflare ناموفق بود." }
+                    }
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(if (cloudflareOAuthBusy.value) "در حال انجام..." else "ورود به Cloudflare و ساخت خودکار Worker")
+                Text(if (cloudflareOAuthBusy.value) "در حال انجام..." else if (cloudflareAccessToken.value != null) "استقرار یا به‌روزرسانی خودکار Worker" else "ورود به Cloudflare و ساخت خودکار Worker")
             }
             if (BuildConfig.CLOUDFLARE_OAUTH_CLIENT_ID.isBlank()) {
                 Text(
