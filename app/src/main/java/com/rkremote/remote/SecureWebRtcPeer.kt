@@ -1,0 +1,353 @@
+package com.rkremote.remote
+
+import android.content.Context
+import org.json.JSONObject
+import org.webrtc.DataChannel
+import org.webrtc.IceCandidate
+import org.webrtc.PeerConnection
+import org.webrtc.PeerConnectionFactory
+import org.webrtc.SdpObserver
+import org.webrtc.SessionDescription
+import java.nio.ByteBuffer
+import java.security.MessageDigest
+import java.util.ArrayDeque
+import java.util.concurrent.atomic.AtomicBoolean
+
+/**
+ * WebRTC direct-peer transport layered on the mutually-approved RK-SecureLink channel.
+ *
+ * SDP and ICE candidates are sent only inside Noise-encrypted application frames.
+ * WebRTC then provides DTLS for DataChannel traffic (and SRTP if media tracks are
+ * added in a later feature). The remote SDP fingerprint is therefore authenticated
+ * by the already-approved Noise peer identity; libwebrtc validates the DTLS cert
+ * against the fingerprint in the remote SDP during the DTLS handshake.
+ *
+ * No TURN credentials are embedded. Supply a TURN server from infrastructure
+ * controlled by the user if symmetric NAT/firewall conditions require relay.
+ */
+class SecureWebRtcPeer(
+    context: Context,
+    private val secureLink: SecureLinkCloudflareSession,
+    private val authenticatedPeerId: String,
+    private val role: Role,
+    turnServers: List<TurnServer> = emptyList(),
+    private val listener: Listener
+) : AutoCloseable {
+
+    enum class Role { CONTROLLER, TARGET }
+
+    data class TurnServer(
+        val urls: List<String>,
+        val username: String,
+        val credential: String
+    ) {
+        init {
+            require(urls.isNotEmpty())
+            require(username.isNotBlank() && credential.isNotBlank())
+            require(urls.all { it.startsWith("turn:") || it.startsWith("turns:") })
+        }
+    }
+
+    interface Listener {
+        fun onConnecting()
+        fun onConnected()
+        fun onData(payload: ByteArray)
+        fun onDisconnected(reason: String)
+        fun onFailure(error: Throwable)
+    }
+
+    private val appContext = context.applicationContext
+    private val closed = AtomicBoolean(false)
+    private val remoteDescriptionSet = AtomicBoolean(false)
+    private val pendingRemoteIce = ArrayDeque<IceCandidate>()
+    private val lock = Any()
+    private var peerConnection: PeerConnection? = null
+    private var dataChannel: DataChannel? = null
+    private var localFingerprint: String? = null
+    private var remoteFingerprint: String? = null
+    private var remoteDescriptionType: SessionDescription.Type? = null
+
+    init {
+        require(authenticatedPeerId.matches(Regex("[a-f0-9]{64}"))) {
+            "Authenticated peer ID must be a SHA-256 hex identity"
+        }
+        initializeFactory(appContext)
+        val iceServers = mutableListOf(
+            PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
+        )
+        turnServers.forEach { server ->
+            iceServers += PeerConnection.IceServer.builder(server.urls)
+                .setUsername(server.username)
+                .setPassword(server.credential)
+                .createIceServer()
+        }
+        val rtcConfig = PeerConnection.RTCConfiguration(iceServers).apply {
+            sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
+            continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
+            bundlePolicy = PeerConnection.BundlePolicy.MAXBUNDLE
+            rtcpMuxPolicy = PeerConnection.RtcpMuxPolicy.REQUIRE
+            tcpCandidatePolicy = PeerConnection.TcpCandidatePolicy.ENABLED
+        }
+        peerConnection = factory!!.createPeerConnection(rtcConfig, observer)
+            ?: error("WebRTC could not create a PeerConnection")
+    }
+
+    /** Call after SecureLink reports mutual owner approval and onSecureReady. */
+    fun start() {
+        check(!closed.get()) { "WebRTC peer is closed" }
+        listener.onConnecting()
+        if (role == Role.CONTROLLER) {
+            val init = DataChannel.Init().apply {
+                ordered = true
+                negotiated = false
+            }
+            dataChannel = peerConnection!!.createDataChannel(DATA_CHANNEL_LABEL, init)
+                ?: error("Could not create WebRTC data channel")
+            observeDataChannel(dataChannel!!)
+            peerConnection!!.createOffer(sdpObserver { description ->
+                setLocalAndSignal(description, "offer")
+            }, MediaConstraints())
+        }
+        // Target waits for the encrypted offer and accepts the incoming DataChannel.
+    }
+
+    fun send(payload: ByteArray): Boolean {
+        if (closed.get() || payload.isEmpty() || payload.size > MAX_DATA_BYTES) return false
+        val channel = dataChannel ?: return false
+        if (channel.state() != DataChannel.State.OPEN) return false
+        return channel.send(DataChannel.Buffer(ByteBuffer.wrap(payload), false))
+    }
+
+    private val observer = object : PeerConnection.Observer {
+        override fun onSignalingChange(state: PeerConnection.SignalingState) = Unit
+        override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {
+            when (state) {
+                PeerConnection.IceConnectionState.CONNECTED,
+                PeerConnection.IceConnectionState.COMPLETED -> {
+                    if (dataChannel?.state() == DataChannel.State.OPEN) listener.onConnected()
+                }
+                PeerConnection.IceConnectionState.DISCONNECTED ->
+                    listener.onDisconnected("WebRTC ICE connection disconnected")
+                PeerConnection.IceConnectionState.FAILED ->
+                    listener.onFailure(IllegalStateException("WebRTC ICE connectivity failed"))
+                PeerConnection.IceConnectionState.CLOSED -> Unit
+                else -> Unit
+            }
+        }
+        override fun onIceConnectionReceivingChange(receiving: Boolean) = Unit
+        override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) = Unit
+        override fun onIceCandidate(candidate: IceCandidate) {
+            sendSignal(JSONObject()
+                .put("type", "ice")
+                .put("peerId", authenticatedPeerId)
+                .put("mid", candidate.sdpMid)
+                .put("mLine", candidate.sdpMLineIndex)
+                .put("candidate", candidate.sdp))
+        }
+        override fun onIceCandidatesRemoved(candidates: Array<IceCandidate>) = Unit
+        override fun onAddStream(stream: org.webrtc.MediaStream) = Unit
+        override fun onRemoveStream(stream: org.webrtc.MediaStream) = Unit
+        override fun onDataChannel(channel: DataChannel) {
+            if (role != Role.TARGET || channel.label() != DATA_CHANNEL_LABEL || dataChannel != null) {
+                channel.close()
+                channel.dispose()
+                return
+            }
+            dataChannel = channel
+            observeDataChannel(channel)
+        }
+        override fun onRenegotiationNeeded() = Unit
+        override fun onAddTrack(receiver: org.webrtc.RtpReceiver, streams: Array<out org.webrtc.MediaStream>) = Unit
+        override fun onTrack(transceiver: org.webrtc.RtpTransceiver) = Unit
+        override fun onConnectionChange(newState: PeerConnection.PeerConnectionState) {
+            if (newState == PeerConnection.PeerConnectionState.FAILED) {
+                listener.onFailure(IllegalStateException("WebRTC peer connection failed"))
+            }
+        }
+    }
+
+    private fun observeDataChannel(channel: DataChannel) {
+        channel.registerObserver(object : DataChannel.Observer {
+            override fun onBufferedAmountChange(previousAmount: Long) = Unit
+            override fun onStateChange() {
+                if (channel.state() == DataChannel.State.OPEN &&
+                    peerConnection?.iceConnectionState() in setOf(
+                        PeerConnection.IceConnectionState.CONNECTED,
+                        PeerConnection.IceConnectionState.COMPLETED
+                    )) listener.onConnected()
+            }
+            override fun onMessage(buffer: DataChannel.Buffer) {
+                if (buffer.binary && buffer.data.remaining() <= MAX_DATA_BYTES) {
+                    val payload = ByteArray(buffer.data.remaining())
+                    buffer.data.get(payload)
+                    listener.onData(payload)
+                } else {
+                    listener.onFailure(IllegalArgumentException("Invalid WebRTC data-channel frame"))
+                    close()
+                }
+            }
+        })
+    }
+
+    private fun handleSecureSignal(payload: ByteArray) {
+        if (closed.get() || payload.size > MAX_SIGNAL_BYTES) return
+        try {
+            val message = JSONObject(payload.toString(Charsets.UTF_8))
+            require(message.getString("peerId") == authenticatedPeerId) {
+                "Signaling message peer identity mismatch"
+            }
+            when (message.getString("type")) {
+                "offer" -> {
+                    require(role == Role.TARGET) { "Controller cannot accept a remote offer" }
+                    val sdp = message.getString("sdp")
+                    val fingerprint = message.getString("fingerprint")
+                    requireFingerprintMatches(sdp, fingerprint)
+                    remoteFingerprint = fingerprint
+                    remoteDescriptionType = SessionDescription.Type.OFFER
+                    peerConnection!!.setRemoteDescription(sdpObserver {
+                        remoteDescriptionSet.set(true)
+                        flushRemoteIce()
+                        peerConnection!!.createAnswer(sdpObserver { answer ->
+                            setLocalAndSignal(answer, "answer")
+                        }, MediaConstraints())
+                    }, SessionDescription(SessionDescription.Type.OFFER, sdp))
+                }
+                "answer" -> {
+                    require(role == Role.CONTROLLER) { "Target cannot accept an answer" }
+                    val sdp = message.getString("sdp")
+                    val fingerprint = message.getString("fingerprint")
+                    requireFingerprintMatches(sdp, fingerprint)
+                    remoteFingerprint = fingerprint
+                    remoteDescriptionType = SessionDescription.Type.ANSWER
+                    peerConnection!!.setRemoteDescription(sdpObserver {
+                        remoteDescriptionSet.set(true)
+                        flushRemoteIce()
+                    }, SessionDescription(SessionDescription.Type.ANSWER, sdp))
+                }
+                "ice" -> {
+                    val candidate = IceCandidate(
+                        message.getString("mid"),
+                        message.getInt("mLine"),
+                        message.getString("candidate")
+                    )
+                    synchronized(lock) {
+                        if (remoteDescriptionSet.get()) {
+                            require(peerConnection!!.addIceCandidate(candidate)) {
+                                "WebRTC rejected remote ICE candidate"
+                            }
+                        } else {
+                            require(pendingRemoteIce.size < MAX_PENDING_ICE) {
+                                "Too many ICE candidates arrived before remote SDP"
+                            }
+                            pendingRemoteIce.addLast(candidate)
+                        }
+                    }
+                }
+                else -> error("Unknown encrypted WebRTC signaling message")
+            }
+        } catch (error: Throwable) {
+            listener.onFailure(error)
+            close()
+        }
+    }
+
+    private fun flushRemoteIce() {
+        synchronized(lock) {
+            while (pendingRemoteIce.isNotEmpty()) {
+                val candidate = pendingRemoteIce.removeFirst()
+                require(peerConnection!!.addIceCandidate(candidate)) {
+                    "WebRTC rejected queued ICE candidate"
+                }
+            }
+        }
+    }
+
+    private fun setLocalAndSignal(description: SessionDescription, type: String) {
+        val fingerprint = extractSha256Fingerprint(description.description)
+        localFingerprint = fingerprint
+        peerConnection!!.setLocalDescription(sdpObserver {
+            sendSignal(JSONObject()
+                .put("type", type)
+                .put("peerId", authenticatedPeerId)
+                .put("fingerprint", fingerprint)
+                .put("sdp", description.description))
+        }, description)
+    }
+
+    private fun sendSignal(message: JSONObject) {
+        val bytes = message.toString().toByteArray(Charsets.UTF_8)
+        require(bytes.size <= MAX_SIGNAL_BYTES) { "WebRTC signaling description exceeds secure tunnel limit" }
+        check(secureLink.sendApplication(bytes)) { "SecureLink is not ready; refusing plaintext signaling fallback" }
+    }
+
+    private fun requireFingerprintMatches(sdp: String, envelopeFingerprint: String) {
+        val fromSdp = extractSha256Fingerprint(sdp)
+        require(MessageDigest.isEqual(
+            fromSdp.toByteArray(Charsets.US_ASCII),
+            envelopeFingerprint.uppercase().toByteArray(Charsets.US_ASCII)
+        )) { "Authenticated DTLS fingerprint does not match SDP fingerprint" }
+    }
+
+    private fun extractSha256Fingerprint(sdp: String): String {
+        val matches = Regex("(?im)^a=fingerprint:sha-256 ([0-9A-F:]{95})\\s*$")
+            .findAll(sdp).map { it.groupValues[1].uppercase() }.distinct().toList()
+        require(matches.isNotEmpty() && matches.size == 1) {
+            "SDP must contain one consistent SHA-256 DTLS fingerprint"
+        }
+        return matches.single()
+    }
+
+    private fun sdpObserver(onSuccess: (SessionDescription) -> Unit = {}): SdpObserver =
+        object : SdpObserver {
+            override fun onCreateSuccess(description: SessionDescription) = onSuccess(description)
+            override fun onSetSuccess() = Unit
+            override fun onCreateFailure(error: String) {
+                listener.onFailure(IllegalStateException("WebRTC SDP creation failed: $error"))
+                close()
+            }
+            override fun onSetFailure(error: String) {
+                listener.onFailure(IllegalStateException("WebRTC SDP setup failed: $error"))
+                close()
+            }
+        }
+
+    override fun close() {
+        if (!closed.compareAndSet(false, true)) return
+        synchronized(lock) { pendingRemoteIce.clear() }
+        dataChannel?.unregisterObserver()
+        dataChannel?.close()
+        dataChannel?.dispose()
+        dataChannel = null
+        peerConnection?.close()
+        peerConnection?.dispose()
+        peerConnection = null
+    }
+
+    companion object {
+        private const val DATA_CHANNEL_LABEL = "rkremote-secure-v1"
+        private const val MAX_SIGNAL_BYTES = 10 * 1024
+        private const val MAX_DATA_BYTES = 12 * 1024
+        private const val MAX_PENDING_ICE = 128
+
+        @Volatile private var factory: PeerConnectionFactory? = null
+
+        @Synchronized
+        private fun initializeFactory(context: Context) {
+            if (factory != null) return
+            PeerConnectionFactory.initialize(
+                PeerConnectionFactory.InitializationOptions.builder(context)
+                    .setEnableInternalTracer(false)
+                    .createInitializationOptions()
+            )
+            factory = PeerConnectionFactory.builder().createPeerConnectionFactory()
+        }
+
+        /**
+         * Attach the SecureLink callback after creating this object, then forward
+         * every onApplicationFrame payload to onSecureSignal. This explicit wiring
+         * avoids exposing any unencrypted SDP/ICE callback path.
+         */
+        fun signalReceiver(peer: SecureWebRtcPeer): (ByteArray) -> Unit =
+            { payload -> peer.handleSecureSignal(payload) }
+    }
+}
