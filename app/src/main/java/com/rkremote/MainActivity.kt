@@ -22,6 +22,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.IconButton
 import androidx.compose.ui.graphics.Brush
 import com.rkremote.ui.theme.RKRemoteTheme
+import com.rkremote.remote.PermissionRequestPolicy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -153,10 +154,6 @@ private fun LocalSetupScreen(darkMode: Boolean, onToggleTheme: () -> Unit) {
     }
     var refreshKey by remember { mutableIntStateOf(0) }
     var selectedFolder by remember { mutableStateOf(readSavedFolder(context)) }
-    val permissionRequestPrefs = remember {
-        context.getSharedPreferences("rkremote_permission_requests", Context.MODE_PRIVATE)
-    }
-
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { refreshKey++ }
@@ -385,7 +382,7 @@ private fun LocalSetupScreen(darkMode: Boolean, onToggleTheme: () -> Unit) {
                                 ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
                             }
                             val requestedOnce = remember(item.key, refreshKey) {
-                                permissionRequestPrefs.getBoolean("requested_${item.key}", false)
+                                PermissionRequestPolicy.wasRequested(context, item.permissions)
                             }
                             Card {
                                 Column(Modifier.fillMaxWidth().padding(14.dp)) {
@@ -409,9 +406,7 @@ private fun LocalSetupScreen(darkMode: Boolean, onToggleTheme: () -> Unit) {
                                             OutlinedButton(onClick = {
                                                 // Record before launching so dismissing or denying the
                                                 // system dialog cannot cause repeated prompts.
-                                                permissionRequestPrefs.edit()
-                                                    .putBoolean("requested_${item.key}", true)
-                                                    .apply()
+                                                PermissionRequestPolicy.markRequested(context, item.permissions)
                                                 refreshKey++
                                                 permissionLauncher.launch(item.permissions.toTypedArray())
                                             }) {
