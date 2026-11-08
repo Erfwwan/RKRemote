@@ -250,9 +250,7 @@ fun LanRemotePanel() {
                                         connectionStatus = "Disconnected · " +
                                             (error.message ?: "network error") + " · retrying"
                                     }
-                                    val waitMs = if (failures == 0) 5000L
-                                        else (1000L shl (failures - 1).coerceAtMost(4)).coerceAtMost(15000L)
-                                    delay(waitMs)
+                                    delay(ReconnectPolicy.delayMillis(failures))
                                 }
                             }
                         }
@@ -419,6 +417,7 @@ fun LanRemotePanel() {
                     val ip = targetIp.trim()
                     val auth = targetToken.trim()
                     previewJob = scope.launch {
+                        var failures = 0
                         try {
                             while (isActive) {
                                 val bitmap = try {
@@ -429,9 +428,12 @@ fun LanRemotePanel() {
                                 } catch (cancelled: CancellationException) {
                                     throw cancelled
                                 } catch (error: Exception) {
-                                    output = "Live preview stopped: ${error.message}"
-                                    break
+                                    failures++
+                                    output = "Preview connection lost · retry $failures: ${error.message}"
+                                    delay(ReconnectPolicy.delayMillis(failures))
+                                    continue
                                 }
+                                failures = 0
                                 screenBitmap = bitmap
                                 output = "Preview running · JPEG snapshots about once per second."
                                 delay(1000)
