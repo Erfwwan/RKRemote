@@ -1,7 +1,7 @@
 name: Android build
 
 on:
-  # Verify owner revocation, stop acknowledgement and foreground-only instant location.
+  # Verify background-authorized instant location and independently revocable microphone stream.
   push:
     branches:
       - feature/remote-agent-foundation
