@@ -114,6 +114,64 @@ class RemoteProtocolTest {
     }
 
     @Test
+    fun rejectsMalformedJsonAndNonObjectPayloads() {
+        assertThrows(IllegalArgumentException::class.java) {
+            RemoteMessage.parse("{")
+        }
+        val arrayPayload = JSONObject()
+            .put("protocolVersion", 1)
+            .put("type", "secure.ping")
+            .put("sessionId", "s")
+            .put("messageId", "m")
+            .put("sequence", 0)
+            .put("sentAt", 1)
+            .put("payload", org.json.JSONArray())
+            .toString()
+        assertThrows(IllegalArgumentException::class.java) {
+            RemoteMessage.parse(arrayPayload)
+        }
+        val missingPayload = JSONObject()
+            .put("protocolVersion", 1)
+            .put("type", "secure.ping")
+            .put("sessionId", "s")
+            .put("messageId", "m")
+            .put("sequence", 0)
+            .put("sentAt", 1)
+            .toString()
+        assertThrows(IllegalArgumentException::class.java) {
+            RemoteMessage.parse(missingPayload)
+        }
+    }
+
+    @Test
+    fun rejectsStringVersionAndFractionalSequence() {
+        val stringVersion = JSONObject()
+            .put("protocolVersion", "1")
+            .put("type", "secure.ping")
+            .put("sessionId", "s")
+            .put("messageId", "m")
+            .put("sequence", 0)
+            .put("sentAt", 1)
+            .put("payload", JSONObject())
+            .toString()
+        assertThrows(IllegalArgumentException::class.java) {
+            RemoteMessage.parse(stringVersion)
+        }
+        val fractionalSequence = JSONObject()
+            .put("protocolVersion", 1)
+            .put("type", "secure.ping")
+            .put("sessionId", "s")
+            .put("messageId", "m")
+            .put("sequence", 1.5)
+            .put("sentAt", 1)
+            .put("payload", JSONObject())
+            .toString()
+        assertThrows(IllegalArgumentException::class.java) {
+            RemoteMessage.parse(fractionalSequence)
+        }
+    }
+
+    @Test
     fun rejectsOversizedMessage() {
         assertThrows(IllegalArgumentException::class.java) {
             RemoteMessage.parse(" ".repeat(RemoteMessage.MAX_MESSAGE_BYTES + 1))
