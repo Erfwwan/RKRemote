@@ -16,8 +16,8 @@ import org.json.JSONObject
 object SecureSmsSync {
     const val MAX_REMOTE_RECORDS = 25
     const val MAX_LOCAL_RECORDS = 100
-    private const val MAX_ADDRESS_CHARS = 180
-    private const val MAX_BODY_CHARS = 900
+    private const val MAX_ADDRESS_CHARS = 80
+    private const val MAX_BODY_CHARS = 300
 
     data class ReadResult(val records: JSONArray, val totalAvailable: Int)
 
