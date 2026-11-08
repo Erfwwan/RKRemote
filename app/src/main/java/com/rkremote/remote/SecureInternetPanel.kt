@@ -45,6 +45,7 @@ import java.util.UUID
 import java.security.MessageDigest
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 @Composable
 fun SecureInternetPanel() {
@@ -81,6 +82,7 @@ fun SecureInternetPanel() {
     val safBridge = remember(context) { SecureSafTransferBridge(context) }
     val transferExecutor = remember { Executors.newSingleThreadExecutor() }
     val transferActive = remember { AtomicBoolean(false) }
+    val activeTransferId = remember { AtomicReference<String?>(null) }
     val audioRelayActive = remember { AtomicBoolean(false) }
     val pttRelayActive = remember { AtomicBoolean(false) }
     val pttStatus = remember { mutableStateOf("Push-to-talk idle") }
@@ -96,6 +98,8 @@ fun SecureInternetPanel() {
                 fileUploadStatus.value = "A secure transfer is already active or disconnected"
             } else {
                 val destinationParent = fileParentId.value.ifBlank { fileRootId.value }
+                val transferId = UUID.randomUUID().toString()
+                activeTransferId.set(transferId)
                 transferExecutor.execute {
                     try {
                         var displayName = "upload.bin"
@@ -116,10 +120,9 @@ fun SecureInternetPanel() {
                             "File size is unknown or exceeds 50 MiB"
                         }
                         val mime = context.contentResolver.getType(uri) ?: "application/octet-stream"
-                        val transferId = UUID.randomUUID().toString()
                         fun sendWithRetry(type: String, payload: JSONObject): Boolean {
                             var attempt = 0
-                            while (transferActive.get() && attempt < 300) {
+                            while (transferActive.get() && activeTransferId.get() == transferId && attempt < 300) {
                                 if (peer.sendMessage(type, payload)) return true
                                 attempt++
                                 Thread.sleep(100)
@@ -172,6 +175,7 @@ fun SecureInternetPanel() {
                         mainHandler.post { fileUploadStatus.value = failure.message ?: "Upload failed" }
                     } finally {
                         transferActive.set(false)
+                        activeTransferId.compareAndSet(transferId, null)
                     }
                 }
             }
@@ -181,6 +185,8 @@ fun SecureInternetPanel() {
     DisposableEffect(Unit) {
         onDispose {
             transferActive.set(false)
+            activeTransferId.set(null)
+            safBridge.cancelAllDownloads()
             cameraTransferActive.set(false)
             imageAssembler.abort()
             cameraExecutor.shutdownNow()
@@ -282,51 +288,96 @@ fun SecureInternetPanel() {
                                         "file.list.result"
                                     }
                                     register("file.upload.begin", RemoteCapability.FILES) { message ->
-                                        safBridge.beginUpload(
-                                            transferId = message.payload.getString("transferId"),
-                                            rawName = message.payload.getString("name"),
-                                            rawMimeType = message.payload.optString("mimeType", "application/octet-stream"),
-                                            totalBytes = message.payload.getLong("totalBytes"),
-                                            parentId = message.payload.optString("parentId").takeIf { it.isNotBlank() }
-                                        )
+                                        val transferId = message.payload.getString("transferId")
+                                        check(activeTransferId.compareAndSet(null, transferId)) {
+                                            "Another file transfer is already active"
+                                        }
+                                        if (!transferActive.compareAndSet(false, true)) {
+                                            activeTransferId.compareAndSet(transferId, null)
+                                            error("Another file transfer is already active")
+                                        }
+                                        try {
+                                            safBridge.beginUpload(
+                                                transferId = transferId,
+                                                rawName = message.payload.getString("name"),
+                                                rawMimeType = message.payload.optString("mimeType", "application/octet-stream"),
+                                                totalBytes = message.payload.getLong("totalBytes"),
+                                                parentId = message.payload.optString("parentId").takeIf { it.isNotBlank() }
+                                            )
+                                        } catch (failure: Throwable) {
+                                            transferActive.set(false)
+                                            activeTransferId.compareAndSet(transferId, null)
+                                            throw failure
+                                        }
                                         null
                                     }
                                     register("file.transfer.chunk", RemoteCapability.FILES) { message ->
+                                        val transferId = message.payload.getString("transferId")
+                                        check(activeTransferId.get() == transferId && transferActive.get()) {
+                                            "Upload was cancelled or is no longer active"
+                                        }
                                         try {
                                             val bytes = Base64.getDecoder().decode(message.payload.getString("data"))
                                             safBridge.appendUploadChunk(
-                                                message.payload.getString("transferId"),
+                                                transferId,
                                                 message.payload.getLong("offset"),
                                                 bytes
                                             )
                                         } catch (failure: Throwable) {
-                                            safBridge.abortUpload()
+                                            safBridge.abortUpload(transferId)
+                                            activeTransferId.compareAndSet(transferId, null)
+                                            transferActive.set(false)
                                             throw failure
                                         }
                                         null
                                     }
                                     register("file.transfer.complete", RemoteCapability.FILES) { message ->
-                                        safBridge.completeUpload(
-                                            message.payload.getString("transferId"),
-                                            message.payload.getString("sha256")
-                                        )
+                                        val transferId = message.payload.getString("transferId")
+                                        check(activeTransferId.get() == transferId && transferActive.get()) {
+                                            "Upload was cancelled or is no longer active"
+                                        }
+                                        try {
+                                            safBridge.completeUpload(
+                                                transferId,
+                                                message.payload.getString("sha256")
+                                            )
+                                        } finally {
+                                            activeTransferId.compareAndSet(transferId, null)
+                                            transferActive.set(false)
+                                        }
                                         null
                                     }
-                                    register("file.transfer.cancel", RemoteCapability.FILES) {
-                                        safBridge.abortUpload()
+                                    register("file.transfer.cancel", RemoteCapability.FILES) { message ->
+                                        val transferId = message.payload.getString("transferId")
+                                        check(activeTransferId.get() == transferId) {
+                                            "No active file transfer matches this cancellation request"
+                                        }
+                                        // A download may be queued on the executor before its bridge
+                                        // cancellation token is registered; the shared flag also
+                                        // prevents it from starting or sending its next chunk.
+                                        safBridge.cancelTransfer(transferId)
                                         transferActive.set(false)
+                                        activeTransferId.compareAndSet(transferId, null)
                                         null
                                     }
                                     register("file.download.request", RemoteCapability.FILES) { message ->
                                         val transferId = message.payload.getString("requestId")
                                         val documentId = message.payload.getString("documentId")
-                                        check(transferActive.compareAndSet(false, true)) { "Another file transfer is already active" }
+                                        check(activeTransferId.compareAndSet(null, transferId)) {
+                                            "Another file transfer is already active"
+                                        }
+                                        if (!transferActive.compareAndSet(false, true)) {
+                                            activeTransferId.compareAndSet(transferId, null)
+                                            error("Another file transfer is already active")
+                                        }
                                         transferExecutor.execute {
                                             try {
                                                 safBridge.streamFile(
+                                                    transferId = transferId,
                                                     documentId = documentId,
                                                     onStart = { metadata ->
-                                                        activePeer?.sendMessage(
+                                                        activeTransferId.get() == transferId && transferActive.get() &&
+                                                            activePeer?.sendMessage(
                                                             "file.download.begin",
                                                             JSONObject()
                                                                 .put("transferId", transferId)
@@ -338,7 +389,8 @@ fun SecureInternetPanel() {
                                                     onChunk = { offset, bytes ->
                                                         var sent = false
                                                         var attempts = 0
-                                                        while (!sent && attempts < 300 && transferActive.get()) {
+                                                        while (!sent && attempts < 300 &&
+                                                            transferActive.get() && activeTransferId.get() == transferId) {
                                                             sent = activePeer?.sendMessage(
                                                                 "file.download.chunk",
                                                                 JSONObject()
@@ -351,10 +403,10 @@ fun SecureInternetPanel() {
                                                                 Thread.sleep(100)
                                                             }
                                                         }
-                                                        sent && transferActive.get()
+                                                        sent && transferActive.get() && activeTransferId.get() == transferId
                                                     },
                                                     onComplete = { hash ->
-                                                        if (transferActive.get()) {
+                                                        if (transferActive.get() && activeTransferId.get() == transferId) {
                                                             check(activePeer?.sendMessage(
                                                                 "file.download.complete",
                                                                 JSONObject().put("transferId", transferId).put("sha256", hash)
@@ -371,6 +423,7 @@ fun SecureInternetPanel() {
                                                 )
                                             } finally {
                                                 transferActive.set(false)
+                                                activeTransferId.compareAndSet(transferId, null)
                                             }
                                         }
                                         "file.download.begin"
@@ -736,6 +789,8 @@ fun SecureInternetPanel() {
                                     }
                                     override fun onDisconnected(reason: String) {
                                         transferActive.set(false)
+                                        activeTransferId.set(null)
+                                        safBridge.cancelAllDownloads()
                                         cameraTransferActive.set(false)
                                         imageAssembler.abort()
                                         audioRelayActive.set(false)
@@ -752,6 +807,8 @@ fun SecureInternetPanel() {
                                     }
                                     override fun onFailure(failure: Throwable) {
                                         transferActive.set(false)
+                                        activeTransferId.set(null)
+                                        safBridge.cancelAllDownloads()
                                         cameraTransferActive.set(false)
                                         imageAssembler.abort()
                                         audioRelayActive.set(false)
@@ -781,6 +838,8 @@ fun SecureInternetPanel() {
                     enabled = session.value != null,
                     onClick = {
                         transferActive.set(false)
+                        activeTransferId.set(null)
+                        safBridge.cancelAllDownloads()
                         cameraTransferActive.set(false)
                         audioRelayActive.set(false)
                         pttRelayActive.set(false)
@@ -1040,13 +1099,23 @@ fun SecureInternetPanel() {
                             }) { Text("Open") }
                         } else {
                             OutlinedButton(enabled = !transferActive.get(), onClick = {
-                                val sent = session.value?.sendMessage(
-                                    "file.download.request",
-                                    JSONObject().put("requestId", UUID.randomUUID().toString())
-                                        .put("documentId", item.optString("id"))
-                                ) == true
-                                fileDownloadStatus.value = if (sent) "Download requested: " + item.optString("name")
-                                    else "Could not request download"
+                                val transferId = UUID.randomUUID().toString()
+                                if (!transferActive.compareAndSet(false, true)) {
+                                    fileDownloadStatus.value = "Another file transfer is active"
+                                } else {
+                                    activeTransferId.set(transferId)
+                                    val sent = session.value?.sendMessage(
+                                        "file.download.request",
+                                        JSONObject().put("requestId", transferId)
+                                            .put("documentId", item.optString("id"))
+                                    ) == true
+                                    if (!sent) {
+                                        transferActive.set(false)
+                                        activeTransferId.compareAndSet(transferId, null)
+                                    }
+                                    fileDownloadStatus.value = if (sent) "Download requested: " + item.optString("name")
+                                        else "Could not request download"
+                                }
                             }) { Text("Download") }
                         }
                     }
@@ -1060,8 +1129,15 @@ fun SecureInternetPanel() {
                     OutlinedButton(
                         enabled = session.value != null && dataChannelConnected.value,
                         onClick = {
-                            sendInput("file.transfer.cancel", JSONObject())
+                            val transferId = activeTransferId.get()
+                            if (transferId != null) {
+                                sendInput(
+                                    "file.transfer.cancel",
+                                    JSONObject().put("transferId", transferId)
+                                )
+                            }
                             transferActive.set(false)
+                            activeTransferId.set(null)
                             downloadReceiver.abort()
                             fileDownloadStatus.value = "File transfer cancelled"
                             fileUploadStatus.value = "File transfer cancelled"
