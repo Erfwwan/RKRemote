@@ -68,9 +68,10 @@ export class SignalRoom extends DurableObject<Env> {
     this.ctx.acceptWebSocket(server);
     server.serializeAttachment({ role, connectedAt: Date.now() } satisfies SocketMeta);
 
-    if (sockets.length === 0) {
-      await this.ctx.storage.setAlarm(Date.now() + ROOM_TTL_MS);
-    } else {
+    // The room expires after inactivity, not after a fixed ten-minute
+    // lifetime. A long-running approved session can therefore stay connected.
+    await this.ctx.storage.setAlarm(Date.now() + ROOM_TTL_MS);
+    if (sockets.length !== 0) {
       for (const peer of sockets) {
         if (peer.readyState === WebSocket.OPEN) {
           peer.send(JSON.stringify({ v: 1, type: "peer-joined", payload: { role } }));
@@ -93,6 +94,10 @@ export class SignalRoom extends DurableObject<Env> {
       socket.close(1009, "Invalid or oversized encrypted frame");
       return;
     }
+
+    // Refresh the inactivity lease on authenticated-channel traffic. The
+    // worker still cannot inspect the encrypted Noise payload.
+    await this.ctx.storage.setAlarm(Date.now() + ROOM_TTL_MS);
 
     const peers = this.ctx.getWebSockets().filter(
       (peer) => peer !== socket && peer.readyState === WebSocket.OPEN
