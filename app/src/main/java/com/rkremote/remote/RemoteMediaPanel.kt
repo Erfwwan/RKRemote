@@ -224,6 +224,8 @@ fun RemoteMediaPanel(
                 }) { Text("Disable PTT speaker") }
             }
 
+            Text("PART 5 · TWO-WAY AUDIO / PUSH-TO-TALK", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("Hold to talk from the controller to the target. The target microphone can be listened to separately; both directions are owner-enabled and use short PCM chunks.", style = MaterialTheme.typography.bodySmall)
             Text("CONTROLLER PHONE · PUSH TO TALK", fontWeight = FontWeight.SemiBold)
             Card(
                 modifier = Modifier.fillMaxWidth().pointerInput(pttPermissionGranted, targetIp, targetToken) {
@@ -249,7 +251,7 @@ fun RemoteMediaPanel(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        "Press and hold to send microphone audio to the target speaker.",
+                        "Press and hold to send microphone audio to the target speaker. Audio transmission stops when you release.",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
@@ -352,7 +354,7 @@ fun RemoteMediaPanel(
                 }) { Text("Stop listening") }
             }
             Text(
-                "Audio uses mono PCM, 16 kHz, 16-bit. Hold-to-talk sends short chunks; the target must locally enable its speaker. Use headphones to reduce acoustic feedback. Camera frames use lossless WebP when smaller than the original JPEG; otherwise the original JPEG is sent unchanged. This is a LAN prototype, not encrypted internet streaming.",
+                "Audio uses mono PCM, 16 kHz, 16-bit. Hold-to-talk sends short chunks; the target must locally enable its speaker. Use headphones to reduce acoustic feedback. Camera frames are JPEG-compressed at quality 82 before transfer. This is a LAN prototype, not encrypted internet streaming.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
