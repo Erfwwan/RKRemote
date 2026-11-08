@@ -346,6 +346,10 @@ class SecureWebRtcPeer(
                     require(role == Role.TARGET) { "Controller cannot accept a remote offer" }
                     val sdp = message.getString("sdp")
                     requireFingerprintMatches(sdp, message.getString("fingerprint"))
+                    synchronized(lock) {
+                        remoteDescriptionSet.set(false)
+                        pendingRemoteIce.clear()
+                    }
                     peerConnection!!.setRemoteDescription(
                         sdpObserver(onSet = {
                             remoteDescriptionSet.set(true)
@@ -361,6 +365,10 @@ class SecureWebRtcPeer(
                     require(role == Role.CONTROLLER) { "Target cannot accept an answer" }
                     val sdp = message.getString("sdp")
                     requireFingerprintMatches(sdp, message.getString("fingerprint"))
+                    synchronized(lock) {
+                        remoteDescriptionSet.set(false)
+                        pendingRemoteIce.clear()
+                    }
                     peerConnection!!.setRemoteDescription(
                         sdpObserver(onSet = {
                             remoteDescriptionSet.set(true)
