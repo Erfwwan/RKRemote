@@ -794,17 +794,6 @@ fun SecureInternetPanel() {
                                                     }
                                                 }
                                             }
-                                            "command.result" -> {
-                                                if (message.payload.optString("commandType") == "file.transfer.complete") {
-                                                    val accepted = message.payload.optBoolean("accepted")
-                                                    val reason = message.payload.optString("reason")
-                                                    mainHandler.post {
-                                                        fileUploadStatus.value = if (accepted)
-                                                            "Upload completed on target"
-                                                        else "Target rejected upload: " + reason
-                                                    }
-                                                }
-                                            }
                                             "secure.ping" -> {
                                                 val correlation = message.payload.optString("correlationId")
                                                 session.value?.sendMessage(
