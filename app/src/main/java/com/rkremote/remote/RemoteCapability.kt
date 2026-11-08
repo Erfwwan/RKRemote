@@ -9,6 +9,7 @@ enum class RemoteCapability {
     MICROPHONE,
     PUSH_TO_TALK,
     CONTACTS,
+    ADDRESS_BOOK,
     CALL_LOG,
     LOCATION,
     NOTIFICATIONS,
