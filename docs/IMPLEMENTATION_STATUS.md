@@ -124,3 +124,14 @@ Validation for this pass: source and JVM tests were committed, but no Gradle bui
 - Added JVM tests for two-party handshake/transport, matching SAS, wrong pinned peer rejection, and forged binding rejection.
 - **Still not complete:** app-level trust acknowledgement from both peers, persistent paired-peer pin/generation/revocation database, Cloudflare client integration, WebRTC PeerConnection and DTLS fingerprint binding, migration of existing feature traffic, upstream Noise vector run on Android, independent security review, Android build/CI and physical two-device tests.
 - Do not expose the legacy plaintext LAN TCP port 18765. This source implementation is not a production-verified secure Internet connection.
+
+
+## RK-SecureLink · Cloudflare Noise bridge source implementation
+
+- Added `SecureLinkCloudflareSession`, which connects the existing Noise XX handshake state machine to the Cloudflare WSS client's opaque binary-frame interface.
+- Controller initiates the three-message Noise XX exchange; target responds. Noise handshake frames are forwarded as binary WebSocket messages; the Worker does not parse their contents.
+- After handshake completion, the session surfaces the authenticated peer ID and six-digit SAS to the app callback. The caller must present these to the owner and call `approvePeer(code, expectedPeerId)` only after manual comparison.
+- Added a mutual-approval barrier: each locally approved peer sends an encrypted READY frame; application payloads are accepted/sent only after the remote READY arrives too. Encrypted inbound frames received before local approval are buffered up to eight frames; overflow or malformed frames closes the session.
+- Room lifecycle loss closes the Noise session and clears pending ciphertext. The session callback API is currently a source-level integration point; no Compose pairing UI calls it yet.
+- **Not yet implemented:** bridge JVM tests, persistent peer pin/revocation UI and database, WebRTC PeerConnection, authenticated DTLS fingerprint exchange, ICE/STUN/direct path, relay fallback, migration of existing remote-control capabilities, and automatic reconnect/rekey.
+- **Validation:** source committed only. No successful Gradle build, CI result for the current head, deployed Worker, live WSS integration test, Android API 33+ run, or physical two-device test has been verified. Do not expose TCP 18765 or treat this branch as production-secure.
