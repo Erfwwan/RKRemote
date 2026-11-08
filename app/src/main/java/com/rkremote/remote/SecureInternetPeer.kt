@@ -7,6 +7,8 @@ import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /**
  * End-to-end encrypted Cloudflare relay:
@@ -50,6 +52,10 @@ class SecureInternetPeer(
     private val messageGuard = SecureMessageGuard(sessionId)
     private val outboundLock = Any()
     private val relayCodec = SecureRelayFrameCodec()
+    private val heartbeatStarted = AtomicBoolean(false)
+    private val heartbeatExecutor = Executors.newSingleThreadScheduledExecutor { task ->
+        Thread(task, "RKRemote-relay-heartbeat").apply { isDaemon = true }
+    }
     @Volatile private var authenticatedPeerId: String? = null
     private lateinit var secureSession: SecureLinkCloudflareSession
 
@@ -67,6 +73,17 @@ class SecureInternetPeer(
                     try {
                         require(peerId != localPeerId) { "A device cannot connect to itself" }
                         authenticatedPeerId = peerId
+                        if (heartbeatStarted.compareAndSet(false, true)) {
+                            heartbeatExecutor.scheduleAtFixedRate({
+                                if (!closed.get() && !secureSession.sendHeartbeat()) {
+                                    try {
+                                        listener.onDisconnected("Encrypted Cloudflare relay heartbeat failed")
+                                    } finally {
+                                        close()
+                                    }
+                                }
+                            }, HEARTBEAT_INTERVAL_SECONDS, HEARTBEAT_INTERVAL_SECONDS, TimeUnit.SECONDS)
+                        }
                         listener.onSecureSignalingReady(peerId)
                         listener.onWebRtcConnecting()
                         // This callback name is retained for UI compatibility; it now means
@@ -252,6 +269,7 @@ class SecureInternetPeer(
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         try {
+            heartbeatExecutor.shutdownNow()
             relayCodec.clear()
             commandRouter?.endSession()
         } finally {
