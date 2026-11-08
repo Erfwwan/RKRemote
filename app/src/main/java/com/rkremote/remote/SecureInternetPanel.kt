@@ -1680,10 +1680,15 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 OutlinedButton(enabled = session.value == null, onClick = {
                     runCatching {
                         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(
-                            "https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2FErfwwan%2FRKRemote%2Ftree%2Ffeature%2Fremote-agent-foundation%2Fcloudflare%2Fworker"
+                            "https://github.com/Erfwwan/RKRemote/archive/refs/heads/feature/remote-agent-foundation.zip"
                         )))
-                    }.onFailure { error.value = it.message ?: "بازکردن صفحه ساخت Worker ناموفق بود." }
-                }) { Text("ساخت دستی Worker در Cloudflare") }
+                    }.onFailure { error.value = it.message ?: "دانلود بسته Worker ناموفق بود." }
+                }) { Text("دانلود بسته Worker") }
+                OutlinedButton(enabled = session.value == null, onClick = {
+                    runCatching {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://dash.cloudflare.com/")))
+                    }.onFailure { error.value = it.message ?: "بازکردن داشبورد Cloudflare ناموفق بود." }
+                }) { Text("داشبورد Cloudflare") }
                 OutlinedButton(onClick = { guideOpen.value = true }) { Text("راهنمای فارسی") }
             }
             OutlinedTextField(
@@ -1743,12 +1748,12 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     title = { Text("راهنمای ساده اتصال Cloudflare") },
                     text = {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("۱) با دکمه «ساخت دستی Worker در Cloudflare» وارد حساب خودت شو و پروژه RKRemote را Deploy کن. تأیید ایجاد Durable Object لازم است.")
-                            Text("۲) آدرس workers.dev ساخته‌شده را در فیلد «آدرس Worker» وارد کن.")
-                            Text("۳) از صفحه API Tokens یک توکن جداگانه بساز و دسترسی Workers Editor را فقط به Worker مربوط به rkremote-signaling محدود کن. برای ساخت اولیه Worker از لینک Deploy استفاده می‌شود؛ توکن فقط برای به‌روزرسانی کد Worker موجود است.")
-                            Text("۴) Account ID را از صفحه Overview همان حساب کپی کن، سپس Account ID و API Token را در این صفحه وارد و توکن را ذخیره امن کن.")
-                            Text("۵) دکمه «به‌روزرسانی Worker با API Token» فقط کد Worker موجود را به‌روزرسانی می‌کند. توکن با Android Keystore رمزنگاری می‌شود و به گوشی دیگر ارسال نمی‌شود.")
-                            Text("۶) روی گوشی مقصد «شروع اتصال» را بزن. برنامه یک اتاق تصادفی می‌سازد و لینک دعوت را برای اشتراک‌گذاری باز می‌کند.")
+                            Text("۱) دکمه «دانلود بسته Worker» فقط فایل ZIP عمومی سورس را دانلود می‌کند؛ این کار هیچ اتصال یا مجوزی به GitHub نمی‌دهد.")
+                            Text("۲) در Termux یا ترمینال کامپیوتر، پوشه cloudflare/worker را از ZIP باز کن؛ سپس npm install را اجرا کن.")
+                            Text("۳) در همان پوشه دستور npx wrangler login را اجرا کن و فقط حساب Cloudflare خودت را از صفحه رسمی Cloudflare تأیید کن؛ نیازی به ورود یا اتصال GitHub نیست.")
+                            Text("۴) دستور npx wrangler deploy را اجرا کن و ایجاد Durable Object را تأیید کن. Wrangler آدرس Worker را در پایان نمایش می‌دهد.")
+                            Text("۵) آدرس ساخته‌شده را با قالب wss://نام‌Worker.نام‌کاربری‌تو.workers.dev در فیلد آدرس Worker وارد کن. برای اتصال عادی API Token لازم نیست.")
+                            Text("۶) API Token و Account ID فقط برای قابلیت اختیاری به‌روزرسانی Worker از داخل برنامه‌اند؛ برای ساخت اولیه و اتصال دو گوشی آن‌ها را وارد نکن.")
                             Text("۷) گوشی دوم لینک دعوت را باز می‌کند و بدون واردکردن Room ID یا انتخاب نقش، به همان اتاق وصل می‌شود.")
                             Text("۸) هر دو گوشی باید شناسه دستگاه و کد شش‌رقمی یکسان را بررسی و اتصال را جداگانه تأیید کنند.")
                             Text("۹) بعد از اتصال، فقط قابلیت‌هایی را که صاحب گوشی مقصد اجازه می‌دهد فعال کن. دوربین، میکروفن و ضبط صفحه همچنان باید محلی و با اعلان قابل‌مشاهده شروع شوند.")
