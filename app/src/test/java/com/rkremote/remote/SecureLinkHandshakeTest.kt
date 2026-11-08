@@ -91,6 +91,15 @@ class SecureLinkHandshakeTest {
         val encrypted = initiator.encrypt(clear)
         assertTrue(!encrypted.contentEquals(clear))
         assertArrayEquals(clear, responder.decrypt(encrypted))
+
+        // A duplicate/out-of-order handshake frame after establishment must
+        // invalidate the transport, not merely throw while leaving it usable.
+        assertThrows(IllegalStateException::class.java) {
+            initiator.receive(byteArrayOf(0x01))
+        }
+        assertThrows(IllegalStateException::class.java) {
+            initiator.encrypt("must fail closed".toByteArray())
+        }
         initiator.close()
         responder.close()
     }
