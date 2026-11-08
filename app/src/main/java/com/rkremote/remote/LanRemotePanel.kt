@@ -37,6 +37,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CancellationException
@@ -64,6 +66,9 @@ fun LanRemotePanel() {
     var previewRunning by remember { mutableStateOf(false) }
     var tapX by remember { mutableStateOf("0.5") }
     var tapY by remember { mutableStateOf("0.5") }
+    var swipeEndX by remember { mutableStateOf("0.8") }
+    var swipeEndY by remember { mutableStateOf("0.5") }
+    var remoteText by remember { mutableStateOf("") }
     DisposableEffect(Unit) { onDispose { previewJob?.cancel() } }
     val projectionManager = remember { context.getSystemService(MediaProjectionManager::class.java) }
     val screenConsentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -214,7 +219,46 @@ fun LanRemotePanel() {
                 }
             }) { Text("Get one snapshot") }
             screenBitmap?.let { bitmap ->
-                Image(bitmap = bitmap.asImageBitmap(), contentDescription = "Remote phone screen snapshot", modifier = Modifier.fillMaxWidth(), contentScale = ContentScale.Fit)
+                Image(
+                    bitmap = bitmap.asImageBitmap(),
+                    contentDescription = "Remote phone screen. Tap to control; long press for a long press gesture.",
+                    modifier = Modifier.fillMaxWidth().pointerInput(bitmap, targetIp, targetToken) {
+                        detectTapGestures(
+                            onTap = { offset ->
+                                val x = (offset.x / size.width).coerceIn(0f, 1f)
+                                val y = (offset.y / size.height).coerceIn(0f, 1f)
+                                scope.launch {
+                                    output = runCatching {
+                                        withContext(Dispatchers.IO) {
+                                            LanControllerClient.postJson(
+                                                targetIp.trim(), targetToken.trim(), "/input/gesture",
+                                                JSONObject().put("startX", x).put("startY", y)
+                                                    .put("endX", x).put("endY", y).put("durationMs", 80)
+                                            )
+                                        }
+                                    }.getOrElse { "Remote tap failed: ${it.message}" }
+                                }
+                            },
+                            onLongPress = { offset ->
+                                val x = (offset.x / size.width).coerceIn(0f, 1f)
+                                val y = (offset.y / size.height).coerceIn(0f, 1f)
+                                scope.launch {
+                                    output = runCatching {
+                                        withContext(Dispatchers.IO) {
+                                            LanControllerClient.postJson(
+                                                targetIp.trim(), targetToken.trim(), "/input/gesture",
+                                                JSONObject().put("startX", x).put("startY", y)
+                                                    .put("endX", x).put("endY", y).put("durationMs", 650)
+                                            )
+                                        }
+                                    }.getOrElse { "Long press failed: ${it.message}" }
+                                }
+                            }
+                        )
+                    },
+                    contentScale = ContentScale.Fit
+                )
+                Text("Tap directly on the image to tap the target phone. Press and hold on the image for a long press.", style = MaterialTheme.typography.bodySmall)
             }
             Spacer(Modifier.height(4.dp))
             Text("REMOTE TOUCH · TARGET PHONE", fontWeight = FontWeight.SemiBold)
@@ -259,7 +303,57 @@ fun LanRemotePanel() {
                     }
                 }
             }) { Text("Send one tap") }
-            Text("Example: X=0.5 and Y=0.5 taps the center of the target display. This first version sends taps only; no swipe, typing, or continuous control yet.", style = MaterialTheme.typography.bodySmall)
+            Text("Example: X=0.5 and Y=0.5 taps the center of the target display.", style = MaterialTheme.typography.bodySmall)
+            Text("SWIPE · NORMALIZED COORDINATES", fontWeight = FontWeight.SemiBold)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(value = swipeEndX, onValueChange = { swipeEndX = it }, modifier = Modifier.weight(1f), singleLine = true, label = { Text("End X") })
+                OutlinedTextField(value = swipeEndY, onValueChange = { swipeEndY = it }, modifier = Modifier.weight(1f), singleLine = true, label = { Text("End Y") })
+            }
+            OutlinedButton(enabled = !busy, onClick = {
+                val x1 = tapX.toFloatOrNull()
+                val y1 = tapY.toFloatOrNull()
+                val x2 = swipeEndX.toFloatOrNull()
+                val y2 = swipeEndY.toFloatOrNull()
+                if (listOf(x1, y1, x2, y2).any { it == null || it !in 0f..1f }) {
+                    output = "Swipe coordinates must be numbers between 0.0 and 1.0."
+                } else {
+                    busy = true
+                    scope.launch {
+                        output = runCatching {
+                            withContext(Dispatchers.IO) {
+                                LanControllerClient.postJson(
+                                    targetIp.trim(), targetToken.trim(), "/input/gesture",
+                                    JSONObject().put("startX", x1).put("startY", y1)
+                                        .put("endX", x2).put("endY", y2).put("durationMs", 350)
+                                )
+                            }
+                        }.getOrElse { "Swipe failed: ${it.message}" }
+                        busy = false
+                    }
+                }
+            }) { Text("Send swipe") }
+            Text("Swipe starts at the X/Y values above and ends at End X/End Y. Direct long press is available on the screen image.", style = MaterialTheme.typography.bodySmall)
+            Text("TYPE INTO THE FOCUSED FIELD", fontWeight = FontWeight.SemiBold)
+            OutlinedTextField(
+                value = remoteText, onValueChange = { if (it.length <= 4096) remoteText = it },
+                modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 4,
+                label = { Text("Text to insert on target phone") }
+            )
+            OutlinedButton(enabled = !busy && remoteText.isNotEmpty(), onClick = {
+                busy = true
+                scope.launch {
+                    output = runCatching {
+                        withContext(Dispatchers.IO) {
+                            LanControllerClient.postJson(
+                                targetIp.trim(), targetToken.trim(), "/input/text",
+                                JSONObject().put("text", remoteText)
+                            )
+                        }
+                    }.getOrElse { "Text insertion failed: ${it.message}" }
+                    busy = false
+                }
+            }) { Text("Insert into focused field") }
+            Text("Before sending, tap an editable text field on the target phone so it has focus. Text is inserted using Android Accessibility ACTION_SET_TEXT; it does not simulate individual key presses.", style = MaterialTheme.typography.bodySmall)
             Spacer(Modifier.height(4.dp))
             Text("Result", fontWeight = FontWeight.SemiBold)
             Text(output, style = MaterialTheme.typography.bodySmall)
