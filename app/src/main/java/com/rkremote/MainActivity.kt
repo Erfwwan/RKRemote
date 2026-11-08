@@ -134,6 +134,7 @@ class MainActivity : ComponentActivity() {
 }
 
 private data class PermissionItem(
+    val key: String,
     val title: String,
     val description: String,
     val permissions: List<String>
@@ -152,6 +153,9 @@ private fun LocalSetupScreen(darkMode: Boolean, onToggleTheme: () -> Unit) {
     }
     var refreshKey by remember { mutableIntStateOf(0) }
     var selectedFolder by remember { mutableStateOf(readSavedFolder(context)) }
+    val permissionRequestPrefs = remember {
+        context.getSharedPreferences("rkremote_permission_requests", Context.MODE_PRIVATE)
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -175,37 +179,44 @@ private fun LocalSetupScreen(darkMode: Boolean, onToggleTheme: () -> Unit) {
     val permissionItems = remember {
         buildList {
             add(PermissionItem(
+                "camera",
                 "دوربین",
                 "فقط هنگام شروع آگاهانه نشست دوربین توسط صاحب گوشی لازم است.",
                 listOf(Manifest.permission.CAMERA)
             ))
             add(PermissionItem(
+                "contacts",
                 "مخاطبان",
                 "برای نمایش دفترچه مخاطبین؛ دسترسی و ارسال فهرست فقط با تأیید مستقل صاحب گوشی انجام می‌شود.",
                 listOf(Manifest.permission.READ_CONTACTS)
             ))
             add(PermissionItem(
+                "sms",
                 "پیامک‌ها",
                 "برای نمایش پیامک‌های همین گوشی و ارسال گزارش فقط پس از تأیید جداگانه مالک دستگاه لازم است. Android ممکن است این مجوز را به‌دلیل محدودیت‌های امنیتی یا روش نصب برنامه مسدود کند.",
                 listOf(Manifest.permission.READ_SMS)
             ))
             add(PermissionItem(
+                "location",
                 "موقعیت مکانی",
                 "برای ثبت موقعیت لازم است؛ ثبت دوره‌ای در پس‌زمینه به مجوز جداگانه «همیشه مجاز» نیاز دارد.",
                 listOf(Manifest.permission.ACCESS_COARSE_LOCATION)
             ))
             add(PermissionItem(
+                "call_log",
                 "تاریخچه تماس‌ها",
                 "برای نمایش گزارش تماس‌ها روی همین گوشی و ارسال گزارش فقط پس از تأیید جداگانه همان نشست لازم است. امکان اعطای این مجوز ممکن است با محدودیت‌های نسخه اندروید یا روش نصب برنامه روبه‌رو شود.",
                 listOf(Manifest.permission.READ_CALL_LOG)
             ))
             add(PermissionItem(
+                "microphone",
                 "میکروفن",
                 "فقط برای نشست صوتی یا واکی‌تاکی که خودت شروع می‌کنی لازم است.",
                 listOf(Manifest.permission.RECORD_AUDIO)
             ))
             if (Build.VERSION.SDK_INT >= 33) {
                 add(PermissionItem(
+                    "notifications",
                     "اعلان‌ها",
                     "مجوز اعلان برنامه؛ خواندن اعلان برنامه‌های دیگر به فعال‌سازی جداگانه Notification Access نیاز دارد.",
                     listOf(Manifest.permission.POST_NOTIFICATIONS)
@@ -373,6 +384,9 @@ private fun LocalSetupScreen(darkMode: Boolean, onToggleTheme: () -> Unit) {
                             val granted = item.permissions.all { permission ->
                                 ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
                             }
+                            val requestedOnce = remember(item.key, refreshKey) {
+                                permissionRequestPrefs.getBoolean("requested_${item.key}", false)
+                            }
                             Card {
                                 Column(Modifier.fillMaxWidth().padding(14.dp)) {
                                     Row(
@@ -391,8 +405,33 @@ private fun LocalSetupScreen(darkMode: Boolean, onToggleTheme: () -> Unit) {
                                     Text(item.description, style = MaterialTheme.typography.bodySmall)
                                     if (!granted) {
                                         Spacer(Modifier.height(8.dp))
-                                        OutlinedButton(onClick = { permissionLauncher.launch(item.permissions.toTypedArray()) }) {
-                                            Text("درخواست مجوز")
+                                        if (!requestedOnce) {
+                                            OutlinedButton(onClick = {
+                                                // Record before launching so dismissing or denying the
+                                                // system dialog cannot cause repeated prompts.
+                                                permissionRequestPrefs.edit()
+                                                    .putBoolean("requested_${item.key}", true)
+                                                    .apply()
+                                                refreshKey++
+                                                permissionLauncher.launch(item.permissions.toTypedArray())
+                                            }) {
+                                                Text("درخواست مجوز (فقط یک‌بار)")
+                                            }
+                                        } else {
+                                            OutlinedButton(onClick = {
+                                                context.startActivity(
+                                                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                                        data = Uri.fromParts("package", context.packageName, null)
+                                                    }
+                                                )
+                                            }) {
+                                                Text("باز کردن تنظیمات برنامه")
+                                            }
+                                            Text(
+                                                "درخواست سیستمی قبلاً انجام شده؛ برای تغییر دسترسی، آن را از تنظیمات اندروید مدیریت کن.",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
                                         }
                                     }
                                 }
