@@ -312,6 +312,11 @@ fun SecureInternetPanel() {
                                         )
                                         null
                                     }
+                                    register("file.transfer.cancel", RemoteCapability.FILES) {
+                                        safBridge.abortUpload()
+                                        transferActive.set(false)
+                                        null
+                                    }
                                     register("file.download.request", RemoteCapability.FILES) { message ->
                                         val transferId = message.payload.getString("requestId")
                                         val documentId = message.payload.getString("documentId")
@@ -1047,10 +1052,22 @@ fun SecureInternetPanel() {
                     }
                 }
                 Text(fileDownloadStatus.value, style = MaterialTheme.typography.bodySmall)
-                OutlinedButton(
-                    enabled = session.value != null && dataChannelConnected.value && !transferActive.get(),
-                    onClick = { uploadPicker.launch(arrayOf("*/*")) }
-                ) { Text("Upload a file to target") }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        enabled = session.value != null && dataChannelConnected.value && !transferActive.get(),
+                        onClick = { uploadPicker.launch(arrayOf("*/*")) }
+                    ) { Text("Upload a file to target") }
+                    OutlinedButton(
+                        enabled = session.value != null && dataChannelConnected.value,
+                        onClick = {
+                            sendInput("file.transfer.cancel", JSONObject())
+                            transferActive.set(false)
+                            downloadReceiver.abort()
+                            fileDownloadStatus.value = "File transfer cancelled"
+                            fileUploadStatus.value = "File transfer cancelled"
+                        }
+                    ) { Text("Cancel transfer") }
+                }
                 Text(fileUploadStatus.value, style = MaterialTheme.typography.bodySmall)
             }
 
