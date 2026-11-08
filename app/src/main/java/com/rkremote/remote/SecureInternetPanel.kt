@@ -963,6 +963,7 @@ fun SecureInternetPanel() {
                                             if (activePeerRef.get() !== activePeer) return@post
                                             transferActive.set(false)
                                             activeTransferId.set(null)
+                                            downloadReceiver.pause()
                                             safBridge.cancelAllTransfers()
                                             targetActiveUploadIds.clear()
                                             cameraTransferActive.set(false)
