@@ -1,45 +1,48 @@
-# Section 1 revision — persistent single-target pairing
+# Section 1 — persistent identity and internet P2P
 
-## Agreed product scope
+## Product scope
 
-RKRemote will manage exactly one target phone from one controller phone. The controller is the primary management surface. After an explicit one-time pairing performed by the device owner, ordinary reconnection should require no manual token copying or repeated approval.
+RKRemote manages one target phone from one controller phone. The devices are paired explicitly by their owners. After pairing, the controller should rediscover and reconnect without manual IP or bearer-token copying.
 
-The intended behavior is:
-
-- Pair one controller identity with one target identity.
-- Persist the pairing across app restarts and device reboots, subject to Android lifecycle and permission rules.
-- Keep the target address discoverable or refreshable on the trusted local network; do not assume a DHCP address is permanent.
-- Establish a fresh, short-lived session credential for each authenticated connection. The credential is negotiated automatically from the persistent paired identity; it is not a static token copied between phones.
-- Reconnect automatically after temporary Wi-Fi loss, IP changes, or transient server errors.
-- Let the controller display connection state and manage ordinary connection settings.
-- Do not require the target owner to repeat pairing for every connection.
+The intended network is decentralized P2P:
+- Kademlia DHT for discovery of signed, short-lived peer records.
+- Direct encrypted peer connection as the preferred data path.
+- Temporary, end-to-end encrypted community relay only when direct connectivity fails.
+- No RKRemote-operated central server or central media/file store.
 
 ## Security and Android boundaries
 
-- The target must retain a visible, owner-approved agent service and Android's normal foreground-service notification.
-- The target owner must retain a local emergency stop and the ability to revoke the paired controller. These controls cannot be hidden, disabled, or made impossible to use.
-- Android runtime permissions, MediaProjection consent, Notification Access, and Accessibility enablement remain governed by Android and the device owner. Pairing does not grant or silently renew those permissions.
-- Android may stop background work or require the app to be reopened after force-stop, permission revocation, or OEM power management. Persistent pairing does not guarantee uninterrupted execution.
-- Only one target is in scope for this revision; multi-target management is not required.
+- The target retains a visible owner-approved foreground service and a local emergency stop.
+- The owner can revoke the paired controller at any time.
+- Android runtime permissions, MediaProjection, Notification Access, and Accessibility remain controlled by Android and the device owner.
+- Pairing does not silently grant or reactivate camera, microphone, screen capture, notifications, files, or Accessibility.
+- No plaintext downgrade is permitted. If secure direct/relay transport cannot be established, the connection remains offline.
+- DHT records contain public identity and short-lived connection hints only; never publish session keys, bearer tokens, media, notification contents, or file data.
 
-## Required implementation sequence
+## Implemented — Stage 1
 
-The existing executable LAN protocol is raw HTTP with a bearer token and no TLS. It cannot safely carry a persistent pairing secret or automatically negotiated session tokens: credentials and commands would be observable and replayable by an attacker on an untrusted network.
+- `P2pIdentityStore.kt` creates a persistent P-256 signing identity in Android Keystore. The private key is non-exportable.
+- The peer ID is SHA-256 of the encoded public key.
+- `P2pPeerRecord.kt` defines a bounded, versioned, signed ECDSA/SHA-256 advertisement containing peer ID, public key, sequence, issue/expiry times and transport multiaddresses.
+- Record verification checks signature, peer-ID/public-key binding, expiry, clock skew, maximum 10-minute lifetime, record size and address syntax.
+- `P2pPeerRecordTest.kt` covers valid round-trip, tampering, expiry, invalid TTL and invalid address syntax.
 
-Therefore implementation must proceed in this order:
+Stage 1 is a cryptographic identity and record-format foundation only. It does not publish/query a DHT, perform NAT traversal, create an internet socket, or make existing LAN routes internet-safe.
 
-1. Integrate an authenticated encrypted transport for the LAN path (TLS with certificate/public-key pinning, or an equivalently reviewed authenticated channel).
-2. Implement a first-time pairing handshake that explicitly binds the controller's public identity to the target.
-3. Persist private identity material using Android Keystore-backed encryption; never store pairing secrets in source control or plaintext preferences.
-4. Add a challenge-response handshake that derives a fresh, short-lived per-connection credential and rejects replayed challenges.
-5. Persist the single target's identity and network-discovery hints on the controller; automatically reconnect with bounded backoff.
-6. Add tests for pairing, restart persistence, token freshness, replay rejection, revoked identities, and network changes.
-7. Validate on two physical Android devices before describing the feature as production-ready.
+## Remaining stages
 
-## Current implementation status (important)
+1. **DHT discovery:** integrate a maintained Android-compatible Kademlia implementation, publish only signed short-lived records, and support multiple bootstrap peers.
+2. **Direct transport:** add authenticated NAT traversal/hole punching and a peer channel with fresh session keys, replay protection and bounded binary streams.
+3. **Relay fallback:** use independently operated/community Circuit Relay v2 peers only when direct connectivity fails; preserve end-to-end encryption and expose relay status.
+4. **Feature migration:** move video, audio, camera, notifications, input and SAF file streams onto the authenticated peer channel.
+5. **Revocation and validation:** test peer revocation, replay, key rotation, network changes, reconnect, relay fallback and two physical Android devices.
 
-This document records the agreed design, not a claim that it is already implemented.
+## Library evaluation
 
-The current app still uses a manually generated temporary bearer token for the LAN agent. The pairing-code UI is a local prototype and is not connected to the LAN authentication flow. The existing reconnect monitor still requires the target IP and token to be entered on the controller. The AES-GCM utility, TLS WebSocket transport primitive, and capability gate are not yet integrated into the executable LAN path.
+The JVM libp2p implementation was inspected as a possible dependency. Its current component matrix does not list Kademlia DHT as implemented and lists Circuit Relay v2 as prototype/beta. It is not approved as the production transport until these gaps are resolved and Android compatibility is validated. See [the P2P migration plan](INTERNET_P2P_MIGRATION.md).
 
-The current target-side stop action and Android permission controls remain in place. This revision does not remove or bypass them.
+## Current critical limitation
+
+The executable app still uses the legacy plaintext bearer-token HTTP/TCP agent on port 18765. It remains LAN-only and must not be exposed to the public internet, port-forwarded, or used on untrusted networks. Existing TLS WebSocket and AES-GCM utilities are not integrated into that executable path. The new P2P identity does not change this boundary.
+
+The target-side stop action, foreground notification, Android permission controls and local revocation boundary remain mandatory.
