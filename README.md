@@ -46,3 +46,13 @@ Open the repository in Android Studio and run the app configuration on an Androi
 - Local notification history is bounded to the latest 500 events and encrypted at rest.
 - No credentials, pairing secrets, or private keys belong in source control.
 - Never expose a relay or admin endpoint to the public internet without authentication, rate limits, and TLS.
+
+## Engineering documentation
+
+- [Security model](docs/SECURITY.md)
+- [Remote-control protocol and milestone design](docs/REMOTE_CONTROL_DESIGN.md)
+
+A GitHub Actions workflow now runs a debug APK compilation on pushes, pull requests, and manual dispatches. The workflow uses Gradle 8.11.1 with JDK 17.
+
+**Important:** the repository is not yet a complete remote-control product. The current Android application is the local capability-setup milestone. Remote pairing, authenticated network transport, remote screen interaction, camera/audio streaming, and push-to-talk remain future implementation work. Do not rely on the app for remote access until those features are implemented and tested on real devices.
+
