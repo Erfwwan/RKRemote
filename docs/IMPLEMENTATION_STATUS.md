@@ -348,3 +348,10 @@ At commit `34cc4a6`, WebRTC DataChannel sends serialize concurrent writers and p
 - The Android network callback is unregistered during WebRTC teardown. A persistent loss beyond the existing 12-second grace period still closes the secure session; a fresh Noise/SAS-approved session is required after terminal failure.
 - Current CI is checking the ICE-restart and UI integration commits. Do not call this feature build-verified until CI for the exact branch tip passes.
 - Network handoff recovery is source-integrated only. Real Wi-Fi-to-cellular transitions, captive portals, VPN changes, ICE restart timing, NAT combinations, and TURN fallback still require two-device testing. This does not guarantee recovery from every carrier NAT or network outage.
+
+## Cloudflare room lease and deployment guide · 2026-11-08
+
+- The Cloudflare Durable Object room lease is now a 10-minute **inactivity timeout**, not a fixed ten-minute session lifetime. It is refreshed when the second peer joins and on every valid binary Noise frame. An active signaling session is therefore not terminated solely because ten minutes have elapsed; a completely idle room is still reclaimed.
+- Added `cloudflare/worker/README.md` with deployment commands, endpoint format, room limits, privacy metadata, and TURN provisioning guidance. Cloudflare deployment remains an owner-operated step; no Worker URL or TURN service has been provisioned by this repository change.
+- The Android unit-test and debug-APK CI run for commit `e4eefe1` completed successfully and uploaded artifact `RKRemote-debug-apk`. The subsequent Worker lease and documentation commits do not change Android source, but CI for the current branch tip must still complete before claiming the whole branch is green.
+- The secure Internet session is still owned by the visible Compose panel. The existing `SessionForegroundService` protects the LAN agent only; it does not own or preserve the Cloudflare/Noise/WebRTC session. Android process death or leaving the panel closes the Internet session. No hidden background capture or permission bypass is implemented.
