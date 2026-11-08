@@ -121,6 +121,7 @@ class MainActivity : ComponentActivity() {
                 .putString("worker_url", worker)
                 .putString("room_id", room)
                 .putString("role", "controller")
+                .putBoolean("role_choice_confirmed", true)
                 .putBoolean("auto_connect", true)
                 .apply()
         }
@@ -148,7 +149,11 @@ private fun LocalSetupScreen(darkMode: Boolean, onToggleTheme: () -> Unit) {
         context.getSharedPreferences("rkremote_cloudflare_setup", Context.MODE_PRIVATE)
     }
     var selectedRole by remember {
-        mutableStateOf(setupPrefs.getString("role", null)?.takeIf { it == "controller" || it == "target" })
+        mutableStateOf(
+            if (setupPrefs.getBoolean("role_choice_confirmed", false)) {
+                setupPrefs.getString("role", null)?.takeIf { it == "controller" || it == "target" }
+            } else null
+        )
     }
     val visiblePages = remember(selectedRole) {
         if (selectedRole == "target") {
@@ -262,7 +267,11 @@ private fun LocalSetupScreen(darkMode: Boolean, onToggleTheme: () -> Unit) {
     if (selectedRole == null) {
         RoleSelectionScreen(
             onSelect = { chosen ->
-                setupPrefs.edit().putString("role", chosen).putBoolean("auto_connect", false).apply()
+                setupPrefs.edit()
+                    .putString("role", chosen)
+                    .putBoolean("role_choice_confirmed", true)
+                    .putBoolean("auto_connect", false)
+                    .apply()
                 selectedRole = chosen
                 currentPage = if (chosen == "target") AppPage.CONNECTIONS else AppPage.HOME
             }
