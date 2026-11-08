@@ -56,7 +56,7 @@ class SecureAudioPlayback : AutoCloseable {
                         val written = created.write(
                             chunk, offset, chunk.size - offset, AudioTrack.WRITE_BLOCKING
                         )
-                        if (written <= 0) break
+                        check(written > 0) { "Secure AudioTrack stopped accepting PCM data" }
                         offset += written
                     }
                 }
