@@ -308,7 +308,7 @@ class LanAgentServer(
             .getString("selected_tree_uri", null) ?: throw SecurityException("No owner-selected folder")
         val tree = DocumentFile.fromTreeUri(context, Uri.parse(raw))
             ?: throw java.io.IOException("Selected folder is unavailable")
-        if (!tree.canRead() || !tree.canWrite()) throw SecurityException("Selected folder must be readable and writable")
+        if (!tree.canRead()) throw SecurityException("Selected folder is not readable")
         return tree
     }
 
@@ -345,6 +345,7 @@ class LanAgentServer(
 
     private fun saveUploadedFile(name: String, mime: String, bytes: ByteArray) {
         val tree = selectedTree()
+        if (!tree.canWrite()) throw SecurityException("Selected folder is not writable")
         if (tree.findFile(name) != null) throw java.io.IOException("A file with this name already exists")
         val created = tree.createFile(mime, name) ?: throw java.io.IOException("Unable to create file in selected folder")
         try {
