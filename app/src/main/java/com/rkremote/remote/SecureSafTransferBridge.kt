@@ -203,7 +203,7 @@ class SecureSafTransferBridge(context: Context) {
         val digest: MessageDigest,
         var nextOffset: Long = 0L
     )
-    private var pendingUpload: PendingUpload? = null
+    private val pendingUploads = LinkedHashMap<String, PendingUpload>()
 
     @Synchronized
     fun beginUpload(
@@ -215,7 +215,7 @@ class SecureSafTransferBridge(context: Context) {
     ) {
         require(transferId.matches(Regex("[A-Za-z0-9_-]{1,128}")))
         require(totalBytes in 0L..MAX_FILE_BYTES) { "Upload exceeds the 50 MiB limit" }
-        check(pendingUpload == null) { "Another upload is already active" }
+        check(!pendingUploads.containsKey(transferId)) { "This upload ID is already active" }
         val name = sanitizeUploadName(rawName)
         val mime = rawMimeType.takeIf {
             it.count { ch -> ch == '/' } == 1 && it.all { ch -> ch.isLetterOrDigit() || ch in "!#&^_.+-/" }
@@ -250,7 +250,7 @@ class SecureSafTransferBridge(context: Context) {
         try {
             val output = resolver.openOutputStream(created, "w")
                 ?: throw IOException("Unable to open destination file")
-            pendingUpload = PendingUpload(
+            pendingUploads[transferId] = PendingUpload(
                 transferId,
                 created,
                 output,
@@ -265,7 +265,7 @@ class SecureSafTransferBridge(context: Context) {
 
     @Synchronized
     fun appendUploadChunk(transferId: String, offset: Long, bytes: ByteArray) {
-        val pending = pendingUpload ?: throw IllegalStateException("No upload is active")
+        val pending = pendingUploads[transferId] ?: throw IllegalStateException("No upload is active")
         require(pending.transferId == transferId) { "Unexpected upload identifier" }
         require(offset == pending.nextOffset) { "Upload chunk is missing, duplicated or out of order" }
         require(bytes.isNotEmpty() && bytes.size <= MAX_CHUNK_BYTES)
@@ -285,7 +285,7 @@ class SecureSafTransferBridge(context: Context) {
             pending.output.close()
             val actual = pending.digest.digest().joinToString("") { "%02x".format(it) }
             require(actual.equals(expectedSha256, ignoreCase = true)) { "Upload SHA-256 does not match" }
-            pendingUpload = null
+            pendingUploads.remove(transferId)
         } catch (error: Exception) {
             runCatching { pending.output.close() }
             runCatching { DocumentsContract.deleteDocument(resolver, pending.documentUri) }
@@ -315,12 +315,12 @@ class SecureSafTransferBridge(context: Context) {
 
     @Synchronized
     fun abortUpload() {
-        pendingUpload?.let(::abortPendingUpload)
+        pendingUploads.values.toList().forEach(::abortPendingUpload)
     }
 
     private fun abortPendingUpload(pending: PendingUpload) {
-        if (pendingUpload !== pending) return
-        pendingUpload = null
+        if (pendingUploads[pending.transferId] !== pending) return
+        pendingUploads.remove(pending.transferId)
         runCatching { pending.output.close() }
         runCatching { DocumentsContract.deleteDocument(resolver, pending.documentUri) }
     }
