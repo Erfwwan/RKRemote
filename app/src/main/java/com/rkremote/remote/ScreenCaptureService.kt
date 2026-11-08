@@ -167,6 +167,13 @@ class ScreenCaptureService : Service() {
                         }
                     }
                 } catch (_: IllegalStateException) {
+                    // MediaCodec can enter an invalid state independently of an
+                    // owner stop request. Do not leave a live foreground service
+                    // advertising capture while no frames can be produced.
+                    if (active.compareAndSet(true, false)) {
+                        ScreenVideoStore.clear()
+                        stopSelf()
+                    }
                     break
                 } catch (_: Exception) {
                     // An encoder failure is terminal for this capture session. Avoid
