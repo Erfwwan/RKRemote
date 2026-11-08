@@ -51,7 +51,7 @@ internal class SecureDataChannelSendQueue(
     ): Int {
         var sent = 0
         while (messages.isNotEmpty() && channelOpen()) {
-            val pending = messages.peekFirst()
+            val pending = messages.peekFirst() ?: break
             val frame = pending.frames.peekFirst()
             if (frame == null) {
                 messages.removeFirst()
