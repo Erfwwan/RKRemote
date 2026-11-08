@@ -8,7 +8,6 @@ import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
-import android.media.AudioManager
 import android.media.AudioFormat
 import android.media.AudioTrack
 import android.os.Build
@@ -55,8 +54,6 @@ class PttPlaybackService : Service() {
     private val active = AtomicBoolean(false)
     @Volatile private var playbackThread: Thread? = null
     @Volatile private var track: AudioTrack? = null
-    private var previousAudioMode: Int? = null
-    private var previousSpeakerphone: Boolean? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -112,12 +109,6 @@ class PttPlaybackService : Service() {
     }
 
     private fun startPlayback() {
-        val audioManager = getSystemService(AudioManager::class.java)
-        previousAudioMode = audioManager.mode
-        previousSpeakerphone = audioManager.isSpeakerphoneOn
-        audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-        // Prefer the phone's earpiece over its loudspeaker to reduce acoustic feedback.
-        audioManager.isSpeakerphoneOn = false
         val minBuffer = AudioTrack.getMinBufferSize(
             SAMPLE_RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT
         )
@@ -125,7 +116,7 @@ class PttPlaybackService : Service() {
         val audioTrack = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build()
             )
@@ -180,11 +171,6 @@ class PttPlaybackService : Service() {
         runCatching { old?.flush() }
         runCatching { old?.stop() }
         runCatching { old?.release() }
-        val audioManager = getSystemService(AudioManager::class.java)
-        previousSpeakerphone?.let { runCatching { audioManager.isSpeakerphoneOn = it } }
-        previousAudioMode?.let { runCatching { audioManager.mode = it } }
-        previousSpeakerphone = null
-        previousAudioMode = null
     }
 
     override fun onDestroy() {
