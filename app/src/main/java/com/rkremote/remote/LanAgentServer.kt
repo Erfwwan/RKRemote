@@ -175,8 +175,8 @@ class LanAgentServer(
             if (endpoint.startsWith("/file/")) client.soTimeout = 120_000
             if (parts[0] == "POST" && endpoint == "/audio/ptt") {
                 val length = headers["content-length"]?.toIntOrNull()
-                if (length == null || length !in 1..PttAudioQueue.MAX_CHUNK_BYTES) {
-                    respond(output, 400, JSONObject().put("error", "PTT chunk must be 1..4096 bytes"))
+                if (length == null || length !in 1..PttAudioQueue.MAX_CHUNK_BYTES || length % 2 != 0) {
+                    respond(output, 400, JSONObject().put("error", "PTT PCM chunk must be an even 2..4096 bytes"))
                     return
                 }
                 if (headers["content-type"]?.substringBefore(';') != "application/octet-stream") {
