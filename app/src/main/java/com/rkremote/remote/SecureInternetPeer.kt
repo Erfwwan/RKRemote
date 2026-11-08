@@ -194,6 +194,17 @@ class SecureInternetPeer(
         router.beginOwnerApprovedSession(peerId, capabilities)
     }
 
+    /** Add explicit owner-approved capabilities without resetting replay state. */
+    fun grantOwnerApprovedCapabilities(capabilities: Set<RemoteCapability>) {
+        check(!closed.get()) { "Secure internet session is closed" }
+        check(role == CloudflareSignalingClient.Role.TARGET) {
+            "Only the target device can grant remote command capabilities"
+        }
+        require(capabilities.isNotEmpty())
+        val router = commandRouter ?: error("No target command router is configured")
+        router.grantCapabilities(capabilities)
+    }
+
     /** Revoke every remote command grant without closing the encrypted link. */
     fun revokeOwnerApprovedCommands() {
         commandRouter?.endSession()
