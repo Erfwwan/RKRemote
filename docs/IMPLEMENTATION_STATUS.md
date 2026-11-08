@@ -338,3 +338,13 @@ At commit `34cc4a6`, WebRTC DataChannel sends serialize concurrent writers and p
 - Added a JVM regression test proving Cloudflare client close is idempotent, terminal, and rejects later connect/send attempts.
 - GitHub Actions has completed earlier CI runs successfully through commit `d5fc249`; the lifecycle hardening commits after that point are undergoing fresh unit-test and debug-APK CI. Do not treat the latest branch tip as build-verified until the run for the exact tip completes.
 - No physical two-device, process-death, network-switch, ICE-loss, or TURN test has been performed. The Internet session remains UI-owned rather than a persistent background service; closing the panel or process ends the session. The legacy LAN TCP path remains plaintext and LAN-only.
+
+## Network handoff recovery · 2026-11-08
+
+- Secure WebRTC peers now observe Android's default network using `ConnectivityManager.registerDefaultNetworkCallback`. A lost active default network starts the existing bounded disconnect grace period; a handoff to a different default network requests an ICE restart.
+- The controller is the only side that creates ICE-restart offers. A target-side network change sends a small `ice-restart-request` over the already mutually approved Noise channel. This avoids simultaneous-offer glare and never sends SDP/ICE in plaintext.
+- ICE restart offers use WebRTC's `IceRestart=true` constraint and reuse the authenticated Noise signaling path, DTLS fingerprint checks, and the existing DataChannel. Restart attempts are serialized, limited by a 10-second cooldown, and cleared after ICE/PeerConnection reconnects.
+- Added an owner-visible **Repair connection** action for a manual recovery request. It does not create a new identity, bypass SAS approval, or restore revoked capability grants.
+- The Android network callback is unregistered during WebRTC teardown. A persistent loss beyond the existing 12-second grace period still closes the secure session; a fresh Noise/SAS-approved session is required after terminal failure.
+- Current CI is checking the ICE-restart and UI integration commits. Do not call this feature build-verified until CI for the exact branch tip passes.
+- Network handoff recovery is source-integrated only. Real Wi-Fi-to-cellular transitions, captive portals, VPN changes, ICE restart timing, NAT combinations, and TURN fallback still require two-device testing. This does not guarantee recovery from every carrier NAT or network outage.
