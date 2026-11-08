@@ -50,12 +50,13 @@ data class RemoteMessage(
 
             val sessionId = json.getString("sessionId")
             val messageId = json.getString("messageId")
-            require(sessionId.length in 1..128)
-            require(messageId.length in 1..128)
+            require(sessionId.isNotBlank() && sessionId.length <= 128)
+            require(messageId.isNotBlank() && messageId.length <= 128)
 
             val sequence = json.getLong("sequence")
             require(sequence >= 0)
             val sentAt = json.getLong("sentAt")
+            require(sentAt >= 0) { "Invalid message timestamp" }
             val payload = json.optJSONObject("payload") ?: JSONObject()
             require(payload.toString().toByteArray(Charsets.UTF_8).size <= MAX_MESSAGE_BYTES) { "Payload exceeds protocol limit" }
             return RemoteMessage(type, sessionId, messageId, sequence, sentAt, payload, version)
