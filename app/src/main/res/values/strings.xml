@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="accessibility_service_description">Allows RKRemote to perform touch gestures only when the phone owner explicitly enables this service and a paired local controller sends an authenticated command.</string>
+</resources>
