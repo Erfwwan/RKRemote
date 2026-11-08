@@ -1384,6 +1384,17 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            if (role.value == CloudflareSignalingClient.Role.CONTROLLER) {
+                OutlinedButton(enabled = session.value == null, onClick = {
+                    role.value = CloudflareSignalingClient.Role.TARGET
+                    room.value = ""
+                    setupPrefs.edit()
+                        .putString("role", "target")
+                        .remove("room_id")
+                        .putBoolean("auto_connect", false)
+                        .apply()
+                }) { Text("استفاده از این گوشی به‌عنوان مقصد") }
+            }
             Button(
                     enabled = session.value == null && Build.VERSION.SDK_INT >= 33 &&
                         url.value.startsWith("wss://") &&
