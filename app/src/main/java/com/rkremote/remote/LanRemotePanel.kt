@@ -307,7 +307,7 @@ fun LanRemotePanel() {
                                 RemoteFileItem(
                                     id = item.optString("id"),
                                     name = item.optString("name", "unnamed"),
-                                    size = item.optLong("size", -1L),
+                                    size = if (item.isNull("size")) -1L else item.optLong("size", -1L),
                                     directory = item.optBoolean("directory"),
                                     mimeType = item.optString("mimeType", "application/octet-stream")
                                 )
@@ -346,7 +346,7 @@ fun LanRemotePanel() {
                                 remoteFileItems = (0 until items.length()).mapNotNull { index ->
                                     val item = items.optJSONObject(index) ?: return@mapNotNull null
                                     RemoteFileItem(item.optString("id"), item.optString("name", "unnamed"),
-                                        item.optLong("size", -1L), item.optBoolean("directory"),
+                                        if (item.isNull("size")) -1L else item.optLong("size", -1L), item.optBoolean("directory"),
                                         item.optString("mimeType", "application/octet-stream"))
                                 }
                             }.onFailure { output = "Folder navigation failed: " + it.message }
@@ -388,7 +388,7 @@ fun LanRemotePanel() {
                                         remoteFileItems = (0 until items.length()).mapNotNull { index ->
                                             val child = items.optJSONObject(index) ?: return@mapNotNull null
                                             RemoteFileItem(child.optString("id"), child.optString("name", "unnamed"),
-                                                child.optLong("size", -1L), child.optBoolean("directory"),
+                                                if (child.isNull("size")) -1L else child.optLong("size", -1L), child.optBoolean("directory"),
                                                 child.optString("mimeType", "application/octet-stream"))
                                         }
                                     }.onFailure { output = "Folder navigation failed: " + it.message }
