@@ -268,3 +268,12 @@ Validation for this pass: source and JVM tests were committed, but no Gradle bui
 - The controller can request a snapshot of the latest in-memory JPEG frame. The target does not remotely activate the camera. The image is transferred in ordered bounded chunks and the controller verifies SHA-256 before decoding it.
 - Frames are limited to 2 MiB. The owner can stop an in-progress transfer, revoke all capabilities, or stop the camera locally. This is snapshot transfer, not continuous camera video.
 - Source integration awaits CI and physical two-device camera testing. Sensor behavior, image quality and device-specific camera availability are not yet validated.
+
+## Secure P2P file transfer · cancellation pass (2026-11-08)
+
+- The controller can now cancel an active secure file transfer explicitly.
+- The target registers `file.transfer.cancel` under the existing owner-granted `FILES` capability. It aborts and deletes an incomplete SAF upload and signals the in-progress download sender to stop.
+- The controller discards an incomplete temporary download and stops an upload worker when cancellation is requested.
+- Cancellation does not delete completed files. The target still limits operations to the owner-selected SAF tree, disables overwrite, caps transfers at 50 MiB and verifies SHA-256 before accepting an upload or publishing a download.
+- Protocol allow-list and JVM authorization tests cover the new cancellation command.
+- CI for the latest commit is pending. No two-device, disconnect-during-transfer, or physical Android validation has been performed. Cancellation is best-effort if the connection has already failed; disconnect cleanup remains in place.
