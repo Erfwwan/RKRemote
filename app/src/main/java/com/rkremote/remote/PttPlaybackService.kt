@@ -44,6 +44,7 @@ object PttAudioQueue {
 
     fun poll(timeoutMs: Long): ByteArray? = queue.poll(timeoutMs, TimeUnit.MILLISECONDS)
     fun clear() = queue.clear()
+    fun isEnabled(): Boolean = enabled.get()
 
     const val MAX_CHUNK_BYTES = 4096
     const val MAX_QUEUED_CHUNKS_FOR_STATUS = 8
