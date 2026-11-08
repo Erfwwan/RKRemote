@@ -19,7 +19,7 @@ class SecurePayloadTest {
         val crypto = SecurePayload(key)
         val first = crypto.encrypt("same".toByteArray())
         val second = crypto.encrypt("same".toByteArray())
-        assertNotEquals(first.getString("nonce"), second.getString("nonce"))
+        assertNotEquals(first.nonceBase64, second.nonceBase64)
     }
 
     @Test fun alteredAssociatedDataFailsAuthentication() {
