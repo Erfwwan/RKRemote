@@ -91,10 +91,14 @@ class LocationHistoryStore(context: Context) {
     }
 
     private fun readAllUnlocked(): List<LocationSnapshot> = runCatching {
-        val raw = readEncrypted() ?: return emptyList()
-        val array = JSONArray(raw)
-        (0 until array.length()).mapNotNull { index ->
-            runCatching { LocationSnapshot.fromJson(array.getJSONObject(index)) }.getOrNull()
+        val raw = readEncrypted()
+        if (raw == null) {
+            emptyList()
+        } else {
+            val array = JSONArray(raw)
+            (0 until array.length()).mapNotNull { index ->
+                runCatching { LocationSnapshot.fromJson(array.getJSONObject(index)) }.getOrNull()
+            }
         }
     }.getOrDefault(emptyList())
 
