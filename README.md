@@ -98,6 +98,7 @@ The app does not require contacts, call-log, location, or broad shared-media/sto
 
 ## Project documentation
 
+- [Release and two-device acceptance checklist](docs/RELEASE_CHECKLIST.md)
 - [Implementation status](docs/IMPLEMENTATION_STATUS.md)
 - [Security model](docs/SECURITY.md)
 - [SecureLink protocol](docs/RK_SECURELINK_V1.md)
