@@ -18,6 +18,7 @@ class MediaCaptureStoreTest {
         val first = byteArrayOf(1, 2, 3)
         val latest = byteArrayOf(4, 5, 6, 7)
 
+        CameraFrameStore.setCapturing(true)
         CameraFrameStore.publish(first)
         CameraFrameStore.publish(latest, "image/webp")
         assertArrayEquals(latest, CameraFrameStore.latestJpeg)
@@ -26,6 +27,20 @@ class MediaCaptureStoreTest {
         CameraFrameStore.clear()
         assertNull(CameraFrameStore.latestJpeg)
         assertEquals("image/jpeg", CameraFrameStore.latestMimeType)
+    }
+
+    @Test
+    fun cameraStoreRejectsFramesAfterStopAndAcceptsAfterExplicitRestart() {
+        CameraFrameStore.setCapturing(true)
+        CameraFrameStore.publish(byteArrayOf(1, 2))
+        CameraFrameStore.setCapturing(false)
+        CameraFrameStore.publish(byteArrayOf(3, 4))
+        assertNull(CameraFrameStore.latestJpeg)
+
+        CameraFrameStore.setCapturing(true)
+        val resumed = byteArrayOf(5, 6)
+        CameraFrameStore.publish(resumed)
+        assertArrayEquals(resumed, CameraFrameStore.latestJpeg)
     }
 
     @Test
