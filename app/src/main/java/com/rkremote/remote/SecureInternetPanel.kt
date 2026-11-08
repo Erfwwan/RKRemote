@@ -1510,6 +1510,20 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+            if (BuildConfig.CLOUDFLARE_OAUTH_CLIENT_ID.isBlank()) {
+                OutlinedButton(onClick = {
+                    runCatching {
+                        context.startActivity(
+                            Intent(
+                                Intent.ACTION_VIEW,
+                                Uri.parse("https://dash.cloudflare.com/?to=/:account/oauth-clients")
+                            )
+                        )
+                    }.onFailure {
+                        cloudflareOAuthStatus.value = it.message ?: "بازکردن صفحه OAuth Cloudflare ناموفق بود."
+                    }
+                }) { Text("ثبت OAuth Client در Cloudflare") }
+            }
             if (cloudflareAccounts.value.size > 1) {
                 OutlinedButton(onClick = { cloudflareAccountMenuOpen.value = true }) {
                     Text(
