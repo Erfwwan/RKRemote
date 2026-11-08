@@ -157,9 +157,9 @@ class SecureWebRtcPeer(
             dataChannel = peerConnection!!.createDataChannel(DATA_CHANNEL_LABEL, init)
                 ?: error("Could not create WebRTC data channel")
             observeDataChannel(dataChannel!!)
-            peerConnection!!.createOffer(sdpObserver { description ->
+            peerConnection!!.createOffer(sdpObserver(onCreate = { description ->
                 setLocalAndSignal(description, "offer")
-            }, MediaConstraints())
+            }), MediaConstraints())
         }
         // Target waits for the encrypted offer and incoming DataChannel.
     }
@@ -215,9 +215,9 @@ class SecureWebRtcPeer(
                         sdpObserver(onSet = {
                             remoteDescriptionSet.set(true)
                             flushRemoteIce()
-                            peerConnection!!.createAnswer(sdpObserver { answer ->
+                            peerConnection!!.createAnswer(sdpObserver(onCreate = { answer ->
                                 setLocalAndSignal(answer, "answer")
-                            }, MediaConstraints())
+                            }), MediaConstraints())
                         }),
                         SessionDescription(SessionDescription.Type.OFFER, sdp)
                     )
