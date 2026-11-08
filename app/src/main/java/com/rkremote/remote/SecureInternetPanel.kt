@@ -29,6 +29,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -38,6 +40,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asImageBitmap
@@ -57,6 +60,12 @@ import java.security.MessageDigest
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import net.openid.appauth.AuthorizationException
+import net.openid.appauth.AuthorizationResponse
+import net.openid.appauth.AuthorizationService
 
 enum class SecureFeatureSection {
     CONNECTION, SCREEN, CAMERA, AUDIO, FILES, NOTIFICATIONS, CALL_LOGS, SMS_MESSAGES, LOCATION, SESSION_PERMISSIONS
@@ -72,6 +81,63 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
     val room = remember { mutableStateOf(setupPrefs.getString("room_id", "").orEmpty()) }
     val role = remember { mutableStateOf(if (savedRole == "controller") CloudflareSignalingClient.Role.CONTROLLER else CloudflareSignalingClient.Role.TARGET) }
     val guideOpen = remember { mutableStateOf(false) }
+    val cloudflareAccounts = remember { mutableStateOf<List<CloudflareAccount>>(emptyList()) }
+    val selectedCloudflareAccount = remember { mutableStateOf("") }
+    val cloudflareAccountMenuOpen = remember { mutableStateOf(false) }
+    val cloudflareOAuthBusy = remember { mutableStateOf(false) }
+    val cloudflareOAuthStatus = remember { mutableStateOf("") }
+    val cloudflareAccessToken = remember { mutableStateOf(CloudflareTokenStore.accessToken(context)) }
+    val coroutineScope = rememberCoroutineScope()
+    val oauthService = remember(context) { AuthorizationService(context) }
+    val cloudflareOAuthLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val authResponse = AuthorizationResponse.fromIntent(result.data)
+        val authException = AuthorizationException.fromIntent(result.data)
+        if (authResponse != null) {
+            cloudflareOAuthBusy.value = true
+            oauthService.performTokenRequest(authResponse.createTokenExchangeRequest()) { tokenResponse, tokenError ->
+                if (tokenResponse == null || tokenResponse.accessToken.isNullOrBlank()) {
+                    cloudflareOAuthBusy.value = false
+                    cloudflareOAuthStatus.value = tokenError?.errorDescription ?: "ورود Cloudflare ناموفق بود"
+                } else {
+                    val token = tokenResponse.accessToken!!
+                    val expiresAt = tokenResponse.accessTokenExpirationTime
+                        ?: (System.currentTimeMillis() + 3_600_000L)
+                    CloudflareTokenStore.save(context, token, tokenResponse.refreshToken, expiresAt)
+                    cloudflareAccessToken.value = token
+                    coroutineScope.launch {
+                        try {
+                            cloudflareOAuthStatus.value = "در حال دریافت حساب‌های Cloudflare..."
+                            val accounts = withContext(Dispatchers.IO) {
+                                CloudflareAccountApi.listAccounts(token)
+                            }
+                            cloudflareAccounts.value = accounts
+                            if (accounts.isEmpty()) {
+                                cloudflareOAuthStatus.value = "هیچ حسابی با مجوزهای انتخاب‌شده پیدا نشد."
+                            } else if (accounts.size == 1) {
+                                selectedCloudflareAccount.value = accounts.first().id
+                                cloudflareOAuthStatus.value = "حساب پیدا شد؛ در حال ساخت Worker..."
+                                val workerUrl = withContext(Dispatchers.IO) {
+                                    CloudflareAccountApi.deployWorker(context, token, accounts.first().id)
+                                }
+                                url.value = workerUrl
+                                setupPrefs.edit().putString("worker_url", workerUrl).apply()
+                                cloudflareOAuthStatus.value = "Worker با موفقیت مستقر شد."
+                            } else {
+                                cloudflareOAuthStatus.value = "حساب موردنظر را انتخاب کن و دکمه استقرار را بزن."
+                            }
+                        } catch (failure: Throwable) {
+                            cloudflareOAuthStatus.value = failure.message ?: "استقرار Worker ناموفق بود."
+                        } finally {
+                            cloudflareOAuthBusy.value = false
+                        }
+                    }
+                }
+            }
+        } else {
+            cloudflareOAuthBusy.value = false
+            cloudflareOAuthStatus.value = authException?.errorDescription ?: "ورود Cloudflare لغو شد."
+        }
+    }
     val autoConnectPending = remember { mutableStateOf(setupPrefs.getBoolean("auto_connect", false)) }
     val status = remember { mutableStateOf("Not connected") }
     val dataChannelConnected = remember { mutableStateOf(false) }
@@ -1355,6 +1421,76 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 }) { Text("ساخت Worker در Cloudflare") }
                 OutlinedButton(onClick = { guideOpen.value = true }) { Text("راهنمای فارسی") }
             }
+            Button(
+                enabled = !cloudflareOAuthBusy.value && BuildConfig.CLOUDFLARE_OAUTH_CLIENT_ID.isNotBlank(),
+                onClick = {
+                    runCatching {
+                        cloudflareOAuthLauncher.launch(
+                            oauthService.getAuthorizationRequestIntent(
+                                CloudflareOAuth.authorizationRequest(BuildConfig.CLOUDFLARE_OAUTH_CLIENT_ID)
+                            )
+                        )
+                    }.onFailure { cloudflareOAuthStatus.value = it.message ?: "شروع ورود Cloudflare ناموفق بود." }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (cloudflareOAuthBusy.value) "در حال انجام..." else "ورود به Cloudflare و ساخت خودکار Worker")
+            }
+            if (BuildConfig.CLOUDFLARE_OAUTH_CLIENT_ID.isBlank()) {
+                Text(
+                    "ورود خودکار هنوز فعال نشده: ابتدا OAuth Client موبایل Cloudflare ثبت و Client ID آن در CLOUDFLARE_OAUTH_CLIENT_ID قرار داده شود.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (cloudflareAccounts.value.size > 1) {
+                OutlinedButton(onClick = { cloudflareAccountMenuOpen.value = true }) {
+                    Text(
+                        cloudflareAccounts.value.firstOrNull { it.id == selectedCloudflareAccount.value }?.name
+                            ?: "انتخاب حساب Cloudflare"
+                    )
+                }
+                DropdownMenu(
+                    expanded = cloudflareAccountMenuOpen.value,
+                    onDismissRequest = { cloudflareAccountMenuOpen.value = false }
+                ) {
+                    cloudflareAccounts.value.forEach { account ->
+                        DropdownMenuItem(
+                            text = { Text(account.name) },
+                            onClick = {
+                                selectedCloudflareAccount.value = account.id
+                                cloudflareAccountMenuOpen.value = false
+                            }
+                        )
+                    }
+                }
+                Button(
+                    enabled = selectedCloudflareAccount.value.isNotBlank() && !cloudflareOAuthBusy.value,
+                    onClick = {
+                        val token = cloudflareAccessToken.value ?: return@Button
+                        coroutineScope.launch {
+                            cloudflareOAuthBusy.value = true
+                            try {
+                                cloudflareOAuthStatus.value = "در حال استقرار Worker..."
+                                val workerUrl = withContext(Dispatchers.IO) {
+                                    CloudflareAccountApi.deployWorker(context, token, selectedCloudflareAccount.value)
+                                }
+                                url.value = workerUrl
+                                setupPrefs.edit().putString("worker_url", workerUrl).apply()
+                                cloudflareOAuthStatus.value = "Worker با موفقیت مستقر شد."
+                            } catch (failure: Throwable) {
+                                cloudflareOAuthStatus.value = failure.message ?: "استقرار Worker ناموفق بود."
+                            } finally {
+                                cloudflareOAuthBusy.value = false
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("استقرار در حساب انتخاب‌شده") }
+            }
+            if (cloudflareOAuthStatus.value.isNotBlank()) {
+                Text(cloudflareOAuthStatus.value, style = MaterialTheme.typography.bodySmall)
+            }
             if (guideOpen.value) {
                 androidx.compose.material3.AlertDialog(
                     onDismissRequest = { guideOpen.value = false },
@@ -1369,7 +1505,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                             Text("۶) هر دو گوشی باید شناسه دستگاه و کد شش‌رقمی یکسان را بررسی و اتصال را جداگانه تأیید کنند.")
                             Text("۷) بعد از اتصال، فقط قابلیت‌هایی را که صاحب گوشی مقصد اجازه می‌دهد فعال کن. دوربین، میکروفن و ضبط صفحه همچنان باید محلی و با اعلان قابل‌مشاهده شروع شوند.")
                             Text("نکته: Cloudflare محتوای داده‌ها را نمی‌خواند، اما IP، زمان اتصال و حجم ترافیک را می‌بیند. مصرف ترافیک رله از سهمیه Worker حساب می‌شود.")
-                            Text("ورود مستقیم به حساب Cloudflare از داخل خود برنامه هنوز فعال نیست؛ برای اپ موبایل Cloudflare یک OAuth Client ثبت‌شده و PKCE لازم دارد. رمز حساب یا API Token را داخل برنامه وارد نکن.")
+                            Text("برای ورود مستقیم، یک OAuth Client موبایل از نوع Authorization Code + PKCE لازم است. برنامه رمز حساب یا API Token را نمی‌گیرد؛ دسترسی OAuth با Android Keystore رمزگذاری می‌شود.")
                         }
                     },
                     confirmButton = {
