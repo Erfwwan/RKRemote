@@ -92,6 +92,9 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
     val cloudflareAccessToken = remember { mutableStateOf(CloudflareTokenStore.accessToken(context)) }
     val coroutineScope = rememberCoroutineScope()
     val oauthService = remember(context) { AuthorizationService(context) }
+    DisposableEffect(oauthService) {
+        onDispose { oauthService.dispose() }
+    }
     fun deployUsingCloudflareToken(token: String) {
         coroutineScope.launch {
             cloudflareOAuthBusy.value = true
@@ -1374,7 +1377,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                     session.value = created
                                     status.value = "Starting visible foreground session service"
                                     // The service owns the active peer while the app is backgrounded.
-                                    // Android cannot reconstruct a live WebRTC/Noise session after process death.
+                                    // Android cannot reconstruct a live Cloudflare/Noise session after process death.
                                     SessionForegroundService.startInternetSession(context, created)
                                     status.value = "Connecting to encrypted Cloudflare relay"
                                     created.connect()
