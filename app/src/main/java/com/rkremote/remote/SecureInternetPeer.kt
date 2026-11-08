@@ -23,8 +23,6 @@ class SecureInternetPeer(
     private val role: CloudflareSignalingClient.Role,
     handshake: SecureLinkHandshake,
     identityStore: P2pIdentityStore,
-    @Suppress("UNUSED_PARAMETER") turnServers: List<SecureWebRtcPeer.TurnServer> = emptyList(),
-    @Suppress("UNUSED_PARAMETER") forceTurnRelay: Boolean = false,
     private val commandRouter: SecureRemoteCommandRouter? = null,
     private val listener: Listener
 ) : AutoCloseable {
