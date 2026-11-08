@@ -34,15 +34,13 @@ Open the repository in Android Studio and run the app configuration on an Androi
 
 ## Planned milestones
 
-1. Local permission and capability setup (current).
-2. Authenticated device pairing and encrypted transport.
-3. User-approved screen sharing with Android MediaProjection and visible session controls (JPEG snapshot polling prototype added).
-4. User-started camera/microphone sessions with foreground-service indicators.
-5. Scoped file/gallery browsing, contacts and call-history access.
-6. Notification history forwarding after explicit pairing and user opt-in.
-7. Owner-approved camera and microphone capture prototypes (low-rate JPEG and PCM chunk polling).\n8. Two-way audio prototype: target-local PTT speaker opt-in, hold-to-talk PCM transmission from controller, and existing target-microphone listen path.
-9. Notification history forwarding: target-local Notification Access plus a separate sharing opt-in; controller can request the latest 100 stored events.
-9. Connection recovery, diagnostics, and long-duration battery/stability testing.
+1. Local permission setup and owner-controlled capabilities.
+2. LAN agent/controller, selected-folder file transfer, and temporary-token session.
+3. Owner-approved screen snapshots and Accessibility-based remote input prototype.
+4. Owner-started camera and microphone capture prototypes.
+5. Two-way audio prototype with local PTT speaker opt-in.
+6. Notification history viewing after Android Notification Access and a separate local sharing opt-in.
+7. Secure transport integration, persistent identity/key rotation, reconnect/stability, release signing, and physical-device/security validation.
 
 ## Privacy and security
 
