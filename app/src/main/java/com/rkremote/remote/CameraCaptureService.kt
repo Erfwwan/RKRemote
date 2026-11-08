@@ -36,6 +36,9 @@ object CameraFrameStore {
         private set
     @Volatile var latestMimeType: String = "image/jpeg"
         private set
+    // Compatibility accessor for the authenticated LAN still-photo endpoint.
+    val latestJpeg: ByteArray?
+        get() = latestFrame
     @Volatile private var capturing = false
 
     @Synchronized
