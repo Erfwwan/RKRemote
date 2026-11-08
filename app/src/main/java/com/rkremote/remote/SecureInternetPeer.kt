@@ -179,13 +179,19 @@ class SecureInternetPeer(
                     listener.onRoomEvent(type, payload)
 
                 override fun onDisconnected(reason: String) {
-                    listener.onDisconnected(reason)
-                    close()
+                    try {
+                        listener.onDisconnected(reason)
+                    } finally {
+                        close()
+                    }
                 }
 
                 override fun onFailure(error: Throwable) {
-                    listener.onFailure(error)
-                    close()
+                    try {
+                        listener.onFailure(error)
+                    } finally {
+                        close()
+                    }
                 }
             }
         )
