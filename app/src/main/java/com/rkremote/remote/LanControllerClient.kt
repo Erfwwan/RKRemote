@@ -75,7 +75,7 @@ object LanControllerClient {
                 .append("Connection: close\r\n")
             if (body != null) {
                 headers.append("Content-Type: $contentType\r\n")
-                    .append("Content-Length: \${body.size}\r\n")
+                    .append("Content-Length: ${body.size}\r\n")
                 extraHeaders.forEach { (name, value) -> headers.append("$name: $value\r\n") }
             }
             headers.append("\r\n")
