@@ -58,6 +58,7 @@ class SecureWebRtcPeer(
     private val pendingRemoteIce = ArrayDeque<IceCandidate>()
     private val dataFramer = SecureDataChannelFramer()
     private val lock = Any()
+    private val sendLock = Any()
     private var peerConnection: PeerConnection? = null
     private var dataChannel: DataChannel? = null
 
@@ -180,14 +181,35 @@ class SecureWebRtcPeer(
         if (channel.state() != DataChannel.State.OPEN) return false
         return runCatching {
             val frames = dataFramer.fragment(payload)
-            for (frame in frames) {
-                if (closed.get() || channel.state() != DataChannel.State.OPEN ||
-                    channel.bufferedAmount() > MAX_BUFFERED_BYTES ||
-                    !channel.send(DataChannel.Buffer(ByteBuffer.wrap(frame), true))) return false
+            val totalFrameBytes = frames.sumOf { it.size.toLong() }
+            synchronized(sendLock) {
+                if (closed.get() || channel.state() != DataChannel.State.OPEN) {
+                    return@synchronized false
+                }
+                // Reserve room for the entire logical message before sending its first
+                // fragment. This avoids knowingly emitting a partial RKD1 message when
+                // the channel is already congested.
+                if (totalFrameBytes > MAX_BUFFERED_BYTES ||
+                    channel.bufferedAmount() > MAX_BUFFERED_BYTES - totalFrameBytes) {
+                    return@synchronized false
+                }
+                for (frame in frames) {
+                    if (closed.get() || channel.state() != DataChannel.State.OPEN) {
+                        listener.onFailure(IllegalStateException("DataChannel closed during fragmented send"))
+                        close()
+                        return@synchronized false
+                    }
+                    if (!channel.send(DataChannel.Buffer(ByteBuffer.wrap(frame), true))) {
+                        listener.onFailure(IllegalStateException("DataChannel rejected a reserved fragment"))
+                        close()
+                        return@synchronized false
+                    }
+                }
+                true
             }
-            true
         }.getOrElse {
             listener.onFailure(it)
+            close()
             false
         }
     }
