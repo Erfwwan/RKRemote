@@ -322,7 +322,7 @@ fun SecureInternetPanel() {
                                         check(targetActiveUploadIds.size < SecureSafTransferBridge.MAX_ACTIVE_UPLOADS) {
                                             "Too many concurrent uploads"
                                         }
-                                        check(activeUploadIds.add(transferId)) {
+                                        check(targetActiveUploadIds.add(transferId)) {
                                             "This upload ID is already active"
                                         }
                                         try {
@@ -334,14 +334,14 @@ fun SecureInternetPanel() {
                                                 parentId = message.payload.optString("parentId").takeIf { it.isNotBlank() }
                                             )
                                         } catch (failure: Throwable) {
-                                            activeUploadIds.remove(transferId)
+                                            targetActiveUploadIds.remove(transferId)
                                             throw failure
                                         }
                                         null
                                     }
                                     register("file.transfer.chunk", RemoteCapability.FILES) { message ->
                                         val transferId = message.payload.getString("transferId")
-                                        check(activeUploadIds.contains(transferId)) {
+                                        check(targetActiveUploadIds.contains(transferId)) {
                                             "Upload was cancelled or is no longer active"
                                         }
                                         try {
@@ -353,14 +353,14 @@ fun SecureInternetPanel() {
                                             )
                                         } catch (failure: Throwable) {
                                             safBridge.abortUpload(transferId)
-                                            activeUploadIds.remove(transferId)
+                                            targetActiveUploadIds.remove(transferId)
                                             throw failure
                                         }
                                         null
                                     }
                                     register("file.transfer.complete", RemoteCapability.FILES) { message ->
                                         val transferId = message.payload.getString("transferId")
-                                        check(activeUploadIds.contains(transferId)) {
+                                        check(targetActiveUploadIds.contains(transferId)) {
                                             "Upload was cancelled or is no longer active"
                                         }
                                         try {
@@ -369,13 +369,13 @@ fun SecureInternetPanel() {
                                                 message.payload.getString("sha256")
                                             )
                                         } finally {
-                                            activeUploadIds.remove(transferId)
+                                            targetActiveUploadIds.remove(transferId)
                                         }
                                         null
                                     }
                                     register("file.transfer.cancel", RemoteCapability.FILES) { message ->
                                         val transferId = message.payload.getString("transferId")
-                                        if (activeUploadIds.remove(transferId)) {
+                                        if (targetActiveUploadIds.remove(transferId)) {
                                             safBridge.cancelTransfer(transferId)
                                         } else {
                                             check(activeTransferId.get() == transferId) {
