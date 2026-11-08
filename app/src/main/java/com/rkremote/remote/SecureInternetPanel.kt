@@ -1771,17 +1771,6 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            if (role.value == CloudflareSignalingClient.Role.CONTROLLER) {
-                OutlinedButton(enabled = session.value == null, onClick = {
-                    role.value = CloudflareSignalingClient.Role.TARGET
-                    room.value = ""
-                    setupPrefs.edit()
-                        .putString("role", "target")
-                        .remove("room_id")
-                        .putBoolean("auto_connect", false)
-                        .apply()
-                }) { Text("استفاده از این گوشی به‌عنوان مقصد") }
-            }
             Button(
                     enabled = session.value == null && Build.VERSION.SDK_INT >= 33 &&
                         url.value.startsWith("wss://") &&
@@ -2276,18 +2265,6 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
-                        audioStatus.value = if (sendInput("audio.start.request", JSONObject()))
-                            "Microphone stream requested" else "Could not request microphone stream"
-                    }) { Text("Listen to target microphone") }
-                    OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
-                        audioStatus.value = if (sendInput("audio.stop", JSONObject()))
-                            "Microphone stream stop requested" else "Could not stop microphone stream"
-                        audioPlayback.close()
-                    }) { Text("Stop listening") }
-                }
-                Text(audioStatus.value, style = MaterialTheme.typography.bodySmall)
                 }
                 if (feature == SecureFeatureSection.NOTIFICATIONS) {
                 OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
