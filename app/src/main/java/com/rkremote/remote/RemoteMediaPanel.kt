@@ -12,10 +12,11 @@ import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.media.AudioFormat
 import android.media.AudioTrack
+import android.media.audiofx.AcousticEchoCanceler
+import android.media.audiofx.NoiseSuppressor
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -33,7 +34,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -76,7 +76,7 @@ fun RemoteMediaPanel(
 
     val pttPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         pttPermissionGranted = granted
-        onStatus(if (granted) "Microphone permission granted. Hold the PTT button to talk." else "Microphone permission was denied.")
+        onStatus(if (granted) "Microphone permission granted. Tap Start transmission to talk." else "Microphone permission was denied.")
     }
 
     val beginPtt: () -> Unit = {
@@ -86,6 +86,8 @@ fun RemoteMediaPanel(
             val token = targetToken.trim()
             pttJob = scope.launch(Dispatchers.IO) {
                 var recorder: AudioRecord? = null
+                var aec: AcousticEchoCanceler? = null
+                var ns: NoiseSuppressor? = null
                 try {
                     val minBuffer = AudioRecord.getMinBufferSize(
                         MicrophoneCaptureService.SAMPLE_RATE,
@@ -94,7 +96,7 @@ fun RemoteMediaPanel(
                     )
                     require(minBuffer > 0) { "Microphone PCM format is not supported" }
                     val audio = AudioRecord(
-                        MediaRecorder.AudioSource.MIC,
+                        MediaRecorder.AudioSource.VOICE_COMMUNICATION,
                         MicrophoneCaptureService.SAMPLE_RATE,
                         AudioFormat.CHANNEL_IN_MONO,
                         AudioFormat.ENCODING_PCM_16BIT,
@@ -102,6 +104,13 @@ fun RemoteMediaPanel(
                     )
                     require(audio.state == AudioRecord.STATE_INITIALIZED) { "Unable to initialize microphone" }
                     recorder = audio
+                    // Use Android's call-oriented input processing when the device exposes it.
+                    aec = if (AcousticEchoCanceler.isAvailable()) {
+                        runCatching { AcousticEchoCanceler.create(audio.audioSessionId)?.apply { enabled = true } }.getOrNull()
+                    } else null
+                    ns = if (NoiseSuppressor.isAvailable()) {
+                        runCatching { NoiseSuppressor.create(audio.audioSessionId)?.apply { enabled = true } }.getOrNull()
+                    } else null
                     withContext(Dispatchers.Main) { pttRecorder = audio }
                     audio.startRecording()
                     val buffer = ByteArray(3200) // approximately 100 ms at 16 kHz / 16-bit mono
@@ -123,6 +132,8 @@ fun RemoteMediaPanel(
                         runCatching { audio.stop() }
                         audio.release()
                     }
+                    runCatching { aec?.release() }
+                    runCatching { ns?.release() }
                     withContext(Dispatchers.Main) {
                         pttRecorder = null
                         pttActive = false
@@ -227,34 +238,24 @@ fun RemoteMediaPanel(
             Text("PART 5 · TWO-WAY AUDIO / PUSH-TO-TALK", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text("Hold to talk from the controller to the target. The target microphone can be listened to separately; both directions are owner-enabled and use short PCM chunks.", style = MaterialTheme.typography.bodySmall)
             Text("CONTROLLER PHONE · PUSH TO TALK", fontWeight = FontWeight.SemiBold)
-            Card(
-                modifier = Modifier.fillMaxWidth().pointerInput(pttPermissionGranted, targetIp, targetToken) {
-                    detectTapGestures(onPress = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedButton(
+                    enabled = targetIp.isNotBlank() && targetToken.isNotBlank(),
+                    onClick = {
                         if (!pttPermissionGranted) {
-                            onStatus("Grant microphone permission before using push-to-talk.")
+                            onStatus("Grant microphone permission before transmitting.")
                             pttPermission.launch(Manifest.permission.RECORD_AUDIO)
-                        } else if (targetIp.isNotBlank() && targetToken.isNotBlank()) {
-                            beginPtt()
-                            tryAwaitRelease()
+                        } else if (pttActive) {
                             endPtt()
+                        } else {
+                            beginPtt()
                         }
-                    })
-                }
-            ) {
-                Column(
-                    Modifier.fillMaxWidth().padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        if (pttActive) "TRANSMITTING · RELEASE TO STOP" else "HOLD TO TALK",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        "Press and hold to send microphone audio to the target speaker. Audio transmission stops when you release.",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
+                    }
+                ) { Text(if (pttActive) "Stop microphone transmission" else "Start microphone transmission") }
+                Text(
+                    "Transmission stays active until you stop it. You can receive and play the other phone's microphone at the same time.",
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
 
             Text("CONTROLLER PHONE · REMOTE CAMERA", fontWeight = FontWeight.SemiBold)
@@ -298,7 +299,7 @@ fun RemoteMediaPanel(
                 )
             }
 
-            Text("CONTROLLER PHONE · REMOTE MICROPHONE", fontWeight = FontWeight.SemiBold)
+            Text("CONTROLLER PHONE · RECEIVE AUDIO (SIMULTANEOUS)", fontWeight = FontWeight.SemiBold)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(enabled = !audioListening && targetIp.isNotBlank() && targetToken.isNotBlank(), onClick = {
                     audioListening = true
@@ -354,7 +355,7 @@ fun RemoteMediaPanel(
                 }) { Text("Stop listening") }
             }
             Text(
-                "Audio uses mono PCM, 16 kHz, 16-bit. Hold-to-talk sends short chunks; the target must locally enable its speaker. Use headphones to reduce acoustic feedback. Camera frames are JPEG-compressed at quality 82 before transfer. This is a LAN prototype, not encrypted internet streaming.",
+                "Audio uses mono PCM, 16 kHz, 16-bit. Start transmission and receive playback independently for simultaneous two-way audio. Android echo cancellation and noise suppression are enabled when available; results depend on each phone. Use a quiet environment and moderate speaker volume. Camera frames are JPEG-compressed at quality 82 before transfer. This is a LAN prototype, not encrypted internet streaming.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
