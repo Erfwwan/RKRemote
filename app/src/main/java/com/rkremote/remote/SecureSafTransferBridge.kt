@@ -125,12 +125,31 @@ class SecureSafTransferBridge(context: Context) {
     data class FileMetadata(val documentId: String, val name: String, val mimeType: String, val sizeBytes: Long)
 
     /** Streams one owner-selected file sequentially; callback false aborts immediately. */
+    private val downloadCancellations = SecureTransferCancellationRegistry()
+
     fun streamFile(
+        transferId: String,
         documentId: String,
         onStart: (FileMetadata) -> Boolean,
         onChunk: (Long, ByteArray) -> Boolean,
         onComplete: (String) -> Unit
     ) {
+        require(downloadCancellations.register(transferId)) { "This file transfer ID is already active" }
+        try {
+            streamFileRegistered(transferId, documentId, onStart, onChunk, onComplete)
+        } finally {
+            downloadCancellations.finish(transferId)
+        }
+    }
+
+    private fun streamFileRegistered(
+        transferId: String,
+        documentId: String,
+        onStart: (FileMetadata) -> Boolean,
+        onChunk: (Long, ByteArray) -> Boolean,
+        onComplete: (String) -> Unit
+    ) {
+        check(!downloadCancellations.isCancelled(transferId)) { "File transfer was cancelled" }
         val tree = selectedTree()
         requireInsideTree(tree, documentId)
         val uri = DocumentsContract.buildDocumentUriUsingTree(tree, documentId)
@@ -149,14 +168,17 @@ class SecureSafTransferBridge(context: Context) {
         } ?: throw IOException("Document is unavailable")
         require(metadata.mimeType != DocumentsContract.Document.MIME_TYPE_DIR) { "Folders cannot be downloaded" }
         require(metadata.sizeBytes in 0L..MAX_FILE_BYTES) { "File is larger than the secure transfer limit" }
+        check(!downloadCancellations.isCancelled(transferId)) { "File transfer was cancelled" }
         check(onStart(metadata)) { "Controller rejected the file transfer" }
         val digest = MessageDigest.getInstance("SHA-256")
         var total = 0L
         resolver.openInputStream(uri)?.use { input ->
             val buffer = ByteArray(MAX_CHUNK_BYTES)
             while (true) {
+                check(!downloadCancellations.isCancelled(transferId)) { "File transfer was cancelled" }
                 val count = input.read(buffer)
                 if (count < 0) break
+                check(!downloadCancellations.isCancelled(transferId)) { "File transfer was cancelled" }
                 total += count.toLong()
                 require(total <= MAX_FILE_BYTES) { "File grew beyond the secure transfer limit" }
                 digest.update(buffer, 0, count)
@@ -165,6 +187,7 @@ class SecureSafTransferBridge(context: Context) {
                 }
             }
         } ?: throw IOException("Unable to open document")
+        check(!downloadCancellations.isCancelled(transferId)) { "File transfer was cancelled" }
         if (metadata.sizeBytes >= 0L && total != metadata.sizeBytes) {
             throw IOException("File size changed during transfer")
         }
@@ -271,9 +294,27 @@ class SecureSafTransferBridge(context: Context) {
         }
     }
 
+    /** Cancel only the transfer identified by the authenticated request. */
+    fun cancelTransfer(transferId: String): Boolean {
+        if (downloadCancellations.cancel(transferId)) return true
+        return abortUpload(transferId)
+    }
+
+    @Synchronized
+    fun abortUpload(transferId: String): Boolean {
+        val pending = pendingUpload ?: return false
+        if (pending.transferId != transferId) return false
+        abortPendingUpload(pending)
+        return true
+    }
+
     @Synchronized
     fun abortUpload() {
-        val pending = pendingUpload ?: return
+        pendingUpload?.let(::abortPendingUpload)
+    }
+
+    private fun abortPendingUpload(pending: PendingUpload) {
+        if (pendingUpload !== pending) return
         pendingUpload = null
         runCatching { pending.output.close() }
         runCatching { DocumentsContract.deleteDocument(resolver, pending.documentUri) }
