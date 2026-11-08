@@ -59,6 +59,7 @@ fun LanRemotePanel() {
     var busy by remember { mutableStateOf(false) }
     var screenBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var previewJob by remember { mutableStateOf<Job?>(null) }
+    var previewRunning by remember { mutableStateOf(false) }
     DisposableEffect(Unit) { onDispose { previewJob?.cancel() } }
     val projectionManager = remember { context.getSystemService(MediaProjectionManager::class.java) }
     val screenConsentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -161,7 +162,8 @@ fun LanRemotePanel() {
                 }) { Text("List selected folder") }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(enabled = !busy && previewJob == null, onClick = {
+                OutlinedButton(enabled = !busy && !previewRunning, onClick = {
+                    previewRunning = true
                     val ip = targetIp.trim()
                     val auth = targetToken.trim()
                     previewJob = scope.launch {
@@ -183,13 +185,15 @@ fun LanRemotePanel() {
                                 delay(1000)
                             }
                         } finally {
+                            previewRunning = false
                             previewJob = null
                         }
                     }
                 }) { Text("Start live preview") }
-                OutlinedButton(enabled = previewJob != null, onClick = {
+                OutlinedButton(enabled = previewRunning, onClick = {
                     previewJob?.cancel()
                     previewJob = null
+                    previewRunning = false
                     output = "Live preview stopped."
                 }) { Text("Stop preview") }
             }
