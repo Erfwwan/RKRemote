@@ -758,7 +758,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                         }
                                         "notifications.sync.result"
                                     }
-                                    register("sms.sync.request", RemoteCapability.CALL_LOG) { message ->
+                                    register("sms.sync.request", RemoteCapability.CONTACTS) { message ->
                                         val response = SecureSmsSync.buildLatestResponse(
                                             context,
                                             message.payload.getString("requestId")
@@ -1361,7 +1361,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                         }
                         // SMS and call-log commands share the session gate; the SMS handler
                         // independently verifies READ_SMS before reading any message.
-                        session.value?.grantOwnerApprovedCapabilities(setOf(RemoteCapability.CALL_LOG))
+                        session.value?.grantOwnerApprovedCapabilities(setOf(RemoteCapability.CONTACTS))
                     }.onSuccess { status.value = "SMS report allowed for this session" }
                         .onFailure { error.value = it.message ?: "Could not grant SMS report access" }
                 }) { Text("Allow SMS report") }
