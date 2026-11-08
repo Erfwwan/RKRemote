@@ -145,6 +145,28 @@ class LanAgentServer(
                 return
             }
             val endpoint = parts[1].substringBefore('?')
+            if (parts[0] == "POST" && endpoint == "/audio/ptt") {
+                val length = headers["content-length"]?.toIntOrNull()
+                if (length == null || length !in 1..PttAudioQueue.MAX_CHUNK_BYTES) {
+                    respond(output, 400, JSONObject().put("error", "PTT chunk must be 1..4096 bytes"))
+                    return
+                }
+                if (headers["content-type"]?.substringBefore(';') != "application/octet-stream") {
+                    respond(output, 415, JSONObject().put("error", "PTT audio must be application/octet-stream PCM"))
+                    return
+                }
+                val chunk = readExact(input, length)
+                    ?: run {
+                        respond(output, 400, JSONObject().put("error", "Incomplete PTT audio chunk"))
+                        return
+                    }
+                if (!PttAudioQueue.offer(chunk)) {
+                    respond(output, 503, JSONObject().put("error", "PTT speaker is not enabled locally on the target"))
+                } else {
+                    respond(output, 202, JSONObject().put("accepted", true))
+                }
+                return
+            }
             if (parts[0] == "POST" && endpoint in setOf("/input/tap", "/input/gesture", "/input/text")) {
                 val length = headers["content-length"]?.toIntOrNull()
                 if (length == null || length !in 1..MAX_INPUT_BODY_BYTES) {
