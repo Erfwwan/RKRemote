@@ -2256,6 +2256,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     }
                 }
                 }
+                if (feature == SecureFeatureSection.AUDIO) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
@@ -2269,6 +2270,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                             color = MaterialTheme.colorScheme.primary
                         )
                     }
+                }
                 }
                 if (feature == SecureFeatureSection.NOTIFICATIONS) {
                 OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
