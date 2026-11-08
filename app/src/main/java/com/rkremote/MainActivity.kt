@@ -124,6 +124,11 @@ private fun LocalSetupScreen() {
                 listOf(Manifest.permission.CAMERA)
             ))
             add(PermissionItem(
+                "مخاطبان",
+                "اختیاری؛ فقط برای نمایش نام مخاطب کنار شماره پیامک‌ها. بدون این مجوز، گزارش همچنان با شماره نمایش داده می‌شود.",
+                listOf(Manifest.permission.READ_CONTACTS)
+            ))
+            add(PermissionItem(
                 "پیامک‌ها",
                 "برای نمایش پیامک‌های همین گوشی و ارسال گزارش فقط پس از تأیید جداگانه مالک دستگاه لازم است. Android ممکن است این مجوز را به‌دلیل محدودیت‌های امنیتی یا روش نصب برنامه مسدود کند.",
                 listOf(Manifest.permission.READ_SMS)
