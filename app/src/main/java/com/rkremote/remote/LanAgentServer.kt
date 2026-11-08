@@ -119,8 +119,8 @@ class LanAgentServer(
                     line.substring(separator + 1).trim()
             }
             val parts = requestLine.split(' ')
-            if (parts.size < 2 || parts[0] != "GET") {
-                respond(client.getOutputStream(), 405, JSONObject().put("error", "GET only"))
+            if (parts.size < 2 || (parts[0] != "GET" && parts[0] != "POST")) {
+                respond(client.getOutputStream(), 405, JSONObject().put("error", "GET or POST only"))
                 return
             }
             val expected = "Bearer $token".toByteArray(Charsets.UTF_8)
@@ -130,6 +130,41 @@ class LanAgentServer(
                 return
             }
             val endpoint = parts[1].substringBefore('?')
+            if (parts[0] == "POST" && endpoint == "/input/tap") {
+                val length = headers["content-length"]?.toIntOrNull()
+                if (length == null || length !in 1..MAX_INPUT_BODY_BYTES) {
+                    respond(client.getOutputStream(), 400, JSONObject().put("error", "Invalid request body size"))
+                    return
+                }
+                val bodyChars = CharArray(length)
+                var offset = 0
+                while (offset < length) {
+                    val count = reader.read(bodyChars, offset, length - offset)
+                    if (count < 0) {
+                        respond(client.getOutputStream(), 400, JSONObject().put("error", "Incomplete request body"))
+                        return
+                    }
+                    offset += count
+                }
+                val command = runCatching { JSONObject(String(bodyChars)) }.getOrNull()
+                val x = command?.optDouble("x", Double.NaN) ?: Double.NaN
+                val y = command?.optDouble("y", Double.NaN) ?: Double.NaN
+                if (!x.isFinite() || !y.isFinite() || x !in 0.0..1.0 || y !in 0.0..1.0) {
+                    respond(client.getOutputStream(), 400, JSONObject().put("error", "x and y must be normalized between 0 and 1"))
+                    return
+                }
+                val accepted = RemoteAccessibilityService.dispatchTapNormalized(x.toFloat(), y.toFloat())
+                if (!accepted) {
+                    respond(client.getOutputStream(), 503, JSONObject().put("error", "Accessibility service is not enabled"))
+                } else {
+                    respond(client.getOutputStream(), 202, JSONObject().put("accepted", true).put("action", "tap"))
+                }
+                return
+            }
+            if (parts[0] != "GET") {
+                respond(client.getOutputStream(), 404, JSONObject().put("error", "Endpoint not found"))
+                return
+            }
             if (endpoint == "/screen.jpg") {
                 val frame = ScreenFrameStore.latestJpeg
                 if (frame == null) {
@@ -188,6 +223,7 @@ class LanAgentServer(
         val bytes = body.toString().toByteArray(Charsets.UTF_8)
         val label = when (status) {
             200 -> "OK"
+            202 -> "Accepted"
             400 -> "Bad Request"
             401 -> "Unauthorized"
             404 -> "Not Found"
@@ -210,5 +246,6 @@ class LanAgentServer(
         private const val MAX_REQUEST_LINE = 2048
         private const val MAX_HEADERS = 24
         private const val MAX_HEADER_BYTES = 8192
+        private const val MAX_INPUT_BODY_BYTES = 1024
     }
 }
