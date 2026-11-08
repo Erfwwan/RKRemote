@@ -1,10 +1,16 @@
 package com.rkremote.remote
 
-import org.json.JSONObject
 import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
+
+data class EncryptedPayload(
+    val version: Int,
+    val algorithm: String,
+    val nonceBase64: String,
+    val ciphertextBase64: String
+)
 
 /**
  * Authenticated encryption for application payloads after a separately
@@ -23,7 +29,7 @@ class SecurePayload(
         require(key.size == KEY_BYTES) { "Session key must be 256 bits" }
     }
 
-    fun encrypt(plaintext: ByteArray, associatedData: ByteArray = byteArrayOf()): JSONObject {
+    fun encrypt(plaintext: ByteArray, associatedData: ByteArray = byteArrayOf()): EncryptedPayload {
         require(plaintext.size <= MAX_PLAINTEXT_BYTES) { "Payload too large" }
         val nonce = ByteArray(NONCE_BYTES).also(random::nextBytes)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
@@ -37,11 +43,11 @@ class SecurePayload(
             .put("ciphertext", android.util.Base64.encodeToString(ciphertext, android.util.Base64.NO_WRAP))
     }
 
-    fun decrypt(envelope: JSONObject, associatedData: ByteArray = byteArrayOf()): ByteArray {
-        require(envelope.getInt("v") == VERSION) { "Unsupported encrypted payload version" }
-        require(envelope.getString("alg") == "A256GCM") { "Unsupported encryption algorithm" }
-        val nonce = android.util.Base64.decode(envelope.getString("nonce"), android.util.Base64.NO_WRAP)
-        val ciphertext = android.util.Base64.decode(envelope.getString("ciphertext"), android.util.Base64.NO_WRAP)
+    fun decrypt(envelope: EncryptedPayload, associatedData: ByteArray = byteArrayOf()): ByteArray {
+        require(envelope.version == VERSION) { "Unsupported encrypted payload version" }
+        require(envelope.algorithm == "A256GCM") { "Unsupported encryption algorithm" }
+        val nonce = android.util.Base64.decode(envelope.nonceBase64, android.util.Base64.NO_WRAP)
+        val ciphertext = android.util.Base64.decode(envelope.ciphertextBase64, android.util.Base64.NO_WRAP)
         require(nonce.size == NONCE_BYTES) { "Invalid nonce" }
         require(ciphertext.size <= MAX_PLAINTEXT_BYTES + TAG_BYTES) { "Payload too large" }
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
