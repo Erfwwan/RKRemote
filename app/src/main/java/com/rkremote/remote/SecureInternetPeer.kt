@@ -202,6 +202,7 @@ class SecureInternetPeer(
             "Only the target device can grant remote command capabilities"
         }
         require(capabilities.isNotEmpty())
+        val peerId = authenticatedPeerId ?: error("No authenticated peer is connected")
         val router = commandRouter ?: error("No target command router is configured")
         if (router.hasActiveSession()) router.grantCapabilities(capabilities)
         else router.beginOwnerApprovedSession(peerId, capabilities)
