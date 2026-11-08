@@ -1,6 +1,8 @@
 package com.rkremote.remote
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import org.json.JSONObject
 import org.webrtc.DataChannel
 import org.webrtc.IceCandidate
@@ -59,6 +61,22 @@ class SecureWebRtcPeer(
     private val dataFramer = SecureDataChannelFramer()
     private val lock = Any()
     private val sendLock = Any()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val disconnectTimeout = Runnable {
+        if (!closed.get()) {
+            listener.onDisconnected("WebRTC connectivity did not recover within the grace period")
+        }
+    }
+
+    private fun scheduleDisconnectGracePeriod() {
+        if (closed.get()) return
+        mainHandler.removeCallbacks(disconnectTimeout)
+        mainHandler.postDelayed(disconnectTimeout, DISCONNECT_GRACE_PERIOD_MS)
+    }
+
+    private fun clearDisconnectGracePeriod() {
+        mainHandler.removeCallbacks(disconnectTimeout)
+    }
     private var peerConnection: PeerConnection? = null
     private var dataChannel: DataChannel? = null
 
@@ -68,10 +86,11 @@ class SecureWebRtcPeer(
             when (state) {
                 PeerConnection.IceConnectionState.CONNECTED,
                 PeerConnection.IceConnectionState.COMPLETED -> {
+                    clearDisconnectGracePeriod()
                     if (dataChannel?.state() == DataChannel.State.OPEN) listener.onConnected()
                 }
                 PeerConnection.IceConnectionState.DISCONNECTED ->
-                    listener.onDisconnected("WebRTC ICE connection disconnected")
+                    scheduleDisconnectGracePeriod()
                 PeerConnection.IceConnectionState.FAILED -> {
                     listener.onFailure(IllegalStateException("WebRTC ICE connectivity failed"))
                     close()
@@ -113,9 +132,8 @@ class SecureWebRtcPeer(
         override fun onConnectionChange(newState: PeerConnection.PeerConnectionState) {
             if (closed.get()) return
             when (newState) {
-                PeerConnection.PeerConnectionState.DISCONNECTED -> {
-                    listener.onDisconnected("WebRTC peer connection disconnected")
-                }
+                PeerConnection.PeerConnectionState.CONNECTED -> clearDisconnectGracePeriod()
+                PeerConnection.PeerConnectionState.DISCONNECTED -> scheduleDisconnectGracePeriod()
                 PeerConnection.PeerConnectionState.FAILED -> {
                     listener.onFailure(IllegalStateException("WebRTC peer connection failed"))
                     close()
@@ -224,7 +242,10 @@ class SecureWebRtcPeer(
                         if (peerConnection?.iceConnectionState() in setOf(
                                 PeerConnection.IceConnectionState.CONNECTED,
                                 PeerConnection.IceConnectionState.COMPLETED
-                            )) listener.onConnected()
+                            )) {
+                            clearDisconnectGracePeriod()
+                            listener.onConnected()
+                        }
                     }
                     DataChannel.State.CLOSED ->
                         listener.onDisconnected("WebRTC DataChannel closed")
@@ -381,6 +402,7 @@ class SecureWebRtcPeer(
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
+        clearDisconnectGracePeriod()
         synchronized(lock) { pendingRemoteIce.clear() }
         dataFramer.clear()
         dataChannel?.unregisterObserver()
@@ -400,6 +422,7 @@ class SecureWebRtcPeer(
         private const val MAX_APP_MESSAGE_BYTES = 4 * 1024 * 1024
         private const val MAX_BUFFERED_BYTES = 2L * 1024L * 1024L
         private const val MAX_PENDING_ICE = 128
+        private const val DISCONNECT_GRACE_PERIOD_MS = 12_000L
 
         @Volatile private var factory: PeerConnectionFactory? = null
 
