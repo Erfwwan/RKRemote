@@ -1,6 +1,10 @@
 package com.rkremote.remote
 
 import android.content.Context
+import android.content.ComponentName
+import android.provider.Settings
+import com.rkremote.EncryptedNotificationStore
+import com.rkremote.NotificationCaptureService
 import android.net.Uri
 import android.provider.DocumentsContract
 import java.net.URLDecoder
@@ -253,6 +257,38 @@ class LanAgentServer(
                 }
                 return
             }
+            if (parts[0] == "GET" && endpoint == "/notifications") {
+                val sharingEnabled = context.getSharedPreferences("rkremote_setup", Context.MODE_PRIVATE)
+                    .getBoolean("notification_sharing_enabled", false)
+                if (!sharingEnabled || !hasNotificationListenerAccess()) {
+                    respond(output, 403, JSONObject().put(
+                        "error",
+                        "Notification sharing is disabled locally or Notification Access is unavailable"
+                    ))
+                    return
+                }
+                val stored = EncryptedNotificationStore.readAll(context)
+                val start = (stored.length() - MAX_NOTIFICATION_EVENTS).coerceAtLeast(0)
+                val exported = JSONArray()
+                for (index in start until stored.length()) {
+                    val event = stored.optJSONObject(index) ?: continue
+                    exported.put(JSONObject()
+                        .put("type", event.optString("type", "posted"))
+                        .put("package", event.optString("package", ""))
+                        .put("title", event.optString("title", "").take(MAX_NOTIFICATION_FIELD_CHARS))
+                        .put("text", event.optString("text", "").take(MAX_NOTIFICATION_FIELD_CHARS))
+                        .put("subText", event.optString("subText", "").take(MAX_NOTIFICATION_FIELD_CHARS))
+                        .put("conversation", event.optString("conversation", "").take(MAX_NOTIFICATION_FIELD_CHARS))
+                        .put("postedAt", event.optLong("postedAt", 0L))
+                        .put("capturedAt", event.optLong("capturedAt", 0L))
+                        .put("notificationId", event.optInt("notificationId", 0)))
+                }
+                respond(output, 200, JSONObject()
+                    .put("items", exported)
+                    .put("count", exported.length())
+                    .put("truncated", start > 0))
+                return
+            }
             if (parts[0] != "GET") {
                 respond(output, 404, JSONObject().put("error", "Endpoint not found"))
                 return
@@ -337,6 +373,15 @@ class LanAgentServer(
             offset += count
         }
         return result
+    }
+
+    private fun hasNotificationListenerAccess(): Boolean {
+        val enabled = Settings.Secure.getString(
+            context.contentResolver,
+            "enabled_notification_listeners"
+        ) ?: return false
+        val expected = ComponentName(context, NotificationCaptureService::class.java).flattenToString()
+        return enabled.split(':').any { it.equals(expected, ignoreCase = true) }
     }
 
     private fun selectedTree(): DocumentFile {
@@ -465,6 +510,7 @@ class LanAgentServer(
             204 -> "No Content"
             400 -> "Bad Request"
             401 -> "Unauthorized"
+            403 -> "Forbidden"
             404 -> "Not Found"
             503 -> "Service Unavailable"
             else -> "Method Not Allowed"
@@ -489,5 +535,7 @@ class LanAgentServer(
         private const val MAX_INPUT_BODY_BYTES = 16 * 1024
         private const val MAX_REMOTE_TEXT_LENGTH = 4096
         private const val MAX_TRANSFER_BYTES = 8 * 1024 * 1024
+        private const val MAX_NOTIFICATION_EVENTS = 100
+        private const val MAX_NOTIFICATION_FIELD_CHARS = 2000
     }
 }
