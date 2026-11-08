@@ -21,8 +21,7 @@ wrangler deploy
 The `wrangler.toml` file declares the `SignalRoom` SQLite-backed Durable Object migration. Deploy the Worker before connecting either Android device. Wrangler prints the deployed `workers.dev` URL; use its WebSocket form in RKRemote:
 
 ```text
-wss://<your-worker-host>/signal/<64-character-lowercase-hex-room-id>?role=target
-wss://<your-worker-host>/signal/<same-room-id>?role=controller
+Worker origin: `wss://<your-worker-host>` (enter this origin in each phone). The app appends `/signal/<64-character-lowercase-hex-room-id>?role=target` or `?role=controller` automatically.
 ```
 
 The target must connect first. The controller then joins the same room. Generate a fresh room ID in the app for each pairing attempt.
