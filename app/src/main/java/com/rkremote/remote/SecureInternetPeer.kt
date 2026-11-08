@@ -277,4 +277,8 @@ class SecureInternetPeer(
             secureSession.close()
         }
     }
+
+    companion object {
+        private const val HEARTBEAT_INTERVAL_SECONDS = 60L
+    }
 }
