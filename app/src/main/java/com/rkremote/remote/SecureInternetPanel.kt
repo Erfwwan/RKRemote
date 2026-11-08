@@ -51,6 +51,7 @@ fun SecureInternetPanel() {
     val renderer = remember { mutableStateOf<SecureScreenVideoRenderer?>(null) }
     val streamStatus = remember { mutableStateOf("Screen stream idle") }
     val streamSenderState = remember { mutableStateOf<SecureScreenStreamSender?>(null) }
+    val remoteText = remember { mutableStateOf("") }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     DisposableEffect(Unit) {
         onDispose {
@@ -347,6 +348,27 @@ fun SecureInternetPanel() {
                         }
                     ) { Text("Stop stream") }
                 }
+                OutlinedTextField(
+                    value = remoteText.value,
+                    onValueChange = { remoteText.value = it.take(4096) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Text for the focused field on target") },
+                    minLines = 1,
+                    maxLines = 3
+                )
+                OutlinedButton(
+                    enabled = session.value != null && dataChannelConnected.value && remoteText.value.isNotEmpty(),
+                    onClick = {
+                        val sent = session.value?.sendMessage(
+                            "screen.input",
+                            JSONObject()
+                                .put("requestId", java.util.UUID.randomUUID().toString())
+                                .put("action", "text")
+                                .put("text", remoteText.value)
+                        ) == true
+                        streamStatus.value = if (sent) "Text insertion request sent" else "Could not send text"
+                    }
+                ) { Text("Insert text on target") }
             }
             Text(streamStatus.value, style = MaterialTheme.typography.bodySmall)
             AndroidView(
