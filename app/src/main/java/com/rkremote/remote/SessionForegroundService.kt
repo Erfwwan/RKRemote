@@ -241,6 +241,9 @@ class SessionForegroundService : Service() {
         fun stopInternetSession(context: Context) {
             val running = serviceInstance
             if (running == null) {
+                val pending = pendingInternetPeer
+                pendingInternetPeer = null
+                runCatching { pending?.close() }
                 context.applicationContext.stopService(
                     Intent(context, SessionForegroundService::class.java)
                 )
