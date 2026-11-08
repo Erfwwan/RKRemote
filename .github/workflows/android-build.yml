@@ -1,7 +1,7 @@
 name: Android build
 
 on:
-  # Approved one-time verification build after final source corrections.
+  # Approved one-time verification build after Compose branch nesting correction.
   push:
     branches:
       - feature/remote-agent-foundation
