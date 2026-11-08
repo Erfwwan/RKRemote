@@ -92,6 +92,7 @@ class SessionForegroundService : Service() {
     private fun stopInternetPeer() {
         val active = internetPeer
         internetPeer = null
+        runCatching { active?.let(LocationSessionBridge::detach) }
         runCatching { active?.revokeOwnerApprovedCommands() }
         runCatching { active?.close() }
     }
