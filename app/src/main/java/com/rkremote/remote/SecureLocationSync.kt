@@ -198,7 +198,9 @@ object LocationSessionBridge {
         val remembered = runCatching {
             PersistentPeerReportConsent(context).capabilitiesFor(peerId)
         }.getOrDefault(emptySet())
-        if (RemoteCapability.LOCATION !in remembered) return false
+        if (RemoteCapability.LOCATION !in remembered ||
+            !peer.hasOwnerApprovedCapability(RemoteCapability.LOCATION)
+        ) return false
         return peer.sendMessage(
             "location.sync.result",
             snapshot.toJson().put("requestId", "periodic-${snapshot.recordedAtMillis}")
