@@ -145,13 +145,15 @@ class PttPlaybackService : Service() {
                         val written = audioTrack.write(
                             chunk, offset, chunk.size - offset, AudioTrack.WRITE_BLOCKING
                         )
-                        if (written <= 0) break
+                        check(written > 0) { "PTT AudioTrack stopped accepting PCM data" }
                         offset += written
                     }
                 }
             } catch (_: InterruptedException) {
                 Thread.currentThread().interrupt()
             } catch (_: Exception) {
+                active.set(false)
+                PttAudioQueue.setEnabled(false)
                 stopSelf()
             }
         }, "RKRemote-PTT-Playback").apply {
