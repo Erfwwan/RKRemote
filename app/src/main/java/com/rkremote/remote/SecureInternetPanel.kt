@@ -67,6 +67,8 @@ import kotlinx.coroutines.withContext
 import net.openid.appauth.AuthorizationException
 import net.openid.appauth.AuthorizationResponse
 import net.openid.appauth.AuthorizationService
+import net.openid.appauth.TokenRequest
+import net.openid.appauth.GrantTypeValues
 
 enum class SecureFeatureSection {
     CONNECTION, SCREEN, CAMERA, AUDIO, FILES, NOTIFICATIONS, CALL_LOGS, SMS_MESSAGES, LOCATION, SESSION_PERMISSIONS
@@ -1461,13 +1463,41 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     ) {
                         deployUsingCloudflareToken(existingToken)
                     } else {
-                        runCatching {
-                            cloudflareOAuthLauncher.launch(
-                                oauthService.getAuthorizationRequestIntent(
-                                    CloudflareOAuth.authorizationRequest(BuildConfig.CLOUDFLARE_OAUTH_CLIENT_ID)
-                                )
+                        val refresh = CloudflareTokenStore.refreshToken(context)
+                        if (refresh != null && BuildConfig.CLOUDFLARE_OAUTH_CLIENT_ID.isNotBlank()) {
+                            cloudflareOAuthBusy.value = true
+                            val refreshRequest = TokenRequest.Builder(
+                                CloudflareOAuth.serviceConfiguration,
+                                BuildConfig.CLOUDFLARE_OAUTH_CLIENT_ID
                             )
-                        }.onFailure { cloudflareOAuthStatus.value = it.message ?: "شروع ورود Cloudflare ناموفق بود." }
+                                .setGrantType(GrantTypeValues.REFRESH_TOKEN)
+                                .setRefreshToken(refresh)
+                                .build()
+                            oauthService.performTokenRequest(refreshRequest) { refreshed, refreshError ->
+                                if (refreshed?.accessToken.isNullOrBlank()) {
+                                    cloudflareOAuthBusy.value = false
+                                    cloudflareOAuthStatus.value = refreshError?.errorDescription
+                                        ?: "نشست Cloudflare منقضی شده؛ دوباره وارد شو."
+                                    CloudflareTokenStore.clear(context)
+                                    cloudflareAccessToken.value = null
+                                } else {
+                                    val newToken = refreshed!!.accessToken!!
+                                    val expiry = refreshed.accessTokenExpirationTime
+                                        ?: (System.currentTimeMillis() + 3_600_000L)
+                                    CloudflareTokenStore.save(context, newToken, refreshed.refreshToken ?: refresh, expiry)
+                                    cloudflareAccessToken.value = newToken
+                                    deployUsingCloudflareToken(newToken)
+                                }
+                            }
+                        } else {
+                            runCatching {
+                                cloudflareOAuthLauncher.launch(
+                                    oauthService.getAuthorizationRequestIntent(
+                                        CloudflareOAuth.authorizationRequest(BuildConfig.CLOUDFLARE_OAUTH_CLIENT_ID)
+                                    )
+                                )
+                            }.onFailure { cloudflareOAuthStatus.value = it.message ?: "شروع ورود Cloudflare ناموفق بود." }
+                        }
                     }
                 },
                 modifier = Modifier.fillMaxWidth()
