@@ -40,6 +40,8 @@ The target must connect first. The controller then joins the same room. Generate
 
 Cloudflare signaling is not a TURN relay. For restrictive carrier NATs or networks that block direct peer connectivity, provision a separate TURN service. Prefer short-lived, time-limited TURN credentials from your provider. Enter the TURN URL(s), username, and credential in the app on both peers. Do not commit TURN credentials to this repository or put permanent TURN secrets in a public Worker variable.
 
+The Secure Internet panel also provides **Force TURN relay (diagnostic)**. Enable it on both phones to set libwebrtc ICE transport policy to `RELAY`, which disables direct ICE candidates for that test. If the session connects in this mode, the TURN path is functioning. Turn the option off for normal direct-first sessions. TURN is optional for initial direct-connect testing, but required for networks where direct ICE cannot traverse NAT/firewalls.
+
 ## Privacy and security notes
 
 Cloudflare can observe connection IP addresses, room identifiers, connection times, and traffic volume. It forwards encrypted Noise frames and cannot decrypt them. The Worker does not make the Android session persistent: Android must keep RKRemote open for the current secure Internet session in this version. A target owner must still approve the secure pairing and each requested capability locally.
