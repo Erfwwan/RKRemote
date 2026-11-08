@@ -18,11 +18,15 @@ data class CloudflareRoomControlMessage(
             }
             try {
                 val json = JSONObject(raw)
-                require(json.optInt("v", -1) == 1) { "Unsupported room-control version" }
-                val type = json.optString("type")
+                val version = json.opt("v") as? Number
+                    ?: throw IllegalArgumentException("Room-control version must be numeric")
+                require(version.toDouble() == 1.0) { "Unsupported room-control version" }
+                val type = json.opt("type") as? String
+                    ?: throw IllegalArgumentException("Room-control type must be a string")
                 require(type in ALLOWED_TYPES) { "Unexpected text message from signaling server" }
                 val payload = if (json.has("payload")) {
-                    json.getJSONObject("payload")
+                    json.opt("payload") as? JSONObject
+                        ?: throw IllegalArgumentException("Room-control payload must be an object")
                 } else {
                     JSONObject()
                 }
