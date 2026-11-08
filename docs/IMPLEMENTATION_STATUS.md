@@ -4,7 +4,7 @@
 
 **Important limits:** the Internet session is still owned by the visible UI and is not yet a persistent background service. DHT discovery is not implemented; rendezvous uses a shared room ID and the Cloudflare Worker only forwards opaque Noise signaling. A user-provisioned TURN server may be required for difficult NATs. The legacy LAN port 18765 remains plaintext and must not be exposed publicly. No independent security audit or physical two-device/Samsung validation has been performed.
 
-**Current validation:** earlier CI for commit `bf1285a` passed unit tests and debug APK assembly. The PTT and half-duplex integration has passed unit tests at the latest tested commit; the newest debug APK assembly is still running. Check GitHub Actions for the current branch tip before installing.
+**Current validation:** automated results are commit-specific. The release workflow runs JVM unit tests, assembles the debug APK, and assembles an unsigned release APK unless operator-owned signing credentials are supplied. Check the GitHub Actions run for the exact commit you intend to install. A green CI run does not replace physical two-device, network, battery, or security validation.
 
 The detailed milestone notes below include historical snapshots from earlier commits. Where they conflict with this current summary, this summary describes the newer branch state.
 
