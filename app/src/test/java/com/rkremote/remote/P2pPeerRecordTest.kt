@@ -47,6 +47,15 @@ class P2pPeerRecordTest {
     }
 
     @Test
+    fun rejectsAValidRecordForTheWrongPairedPeer() {
+        val now = 1_800_000_000_000L
+        val record = P2pPeerRecord.create(newKeyPair(), 1, emptyList(), now)
+        assertThrows(IllegalArgumentException::class.java) {
+            P2pPeerRecord.parse(record.toJson().toString(), now, "not-the-paired-peer")
+        }
+    }
+
+    @Test
     fun rejectsNonTransportAddresses() {
         assertThrows(IllegalArgumentException::class.java) {
             P2pPeerRecord.create(
