@@ -49,7 +49,15 @@ fun SecureInternetPanel() {
     val streamSenderState = remember { mutableStateOf<SecureScreenStreamSender?>(null) }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     DisposableEffect(Unit) {
-        onDispose { renderer.value?.close(); renderer.value = null }
+        onDispose {
+            streamSenderState.value?.close()
+            streamSenderState.value = null
+            session.value?.revokeOwnerApprovedCommands()
+            session.value?.close()
+            session.value = null
+            renderer.value?.close()
+            renderer.value = null
+        }
     }
 
     Card {
@@ -59,7 +67,7 @@ fun SecureInternetPanel() {
         ) {
             Text("Secure Internet P2P", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
-                "Noise XX authentication + WebRTC ICE/DTLS data channel. Both owners must compare and approve the same code. This panel exchanges versioned, replay-checked messages; legacy feature controls are not yet migrated.",
+                "Noise XX authentication + WebRTC ICE/DTLS. Live H.264 screen viewing is available after local screen-capture consent and a separate target-side permission grant. Other remote features are not yet migrated.",
                 style = MaterialTheme.typography.bodySmall
             )
             OutlinedTextField(
@@ -81,10 +89,10 @@ fun SecureInternetPanel() {
             OutlinedTextField(value = turnUsername.value, onValueChange = { turnUsername.value = it }, modifier = Modifier.fillMaxWidth(), label = { Text("TURN username") }, singleLine = true)
             OutlinedTextField(value = turnCredential.value, onValueChange = { turnCredential.value = it }, modifier = Modifier.fillMaxWidth(), label = { Text("TURN credential") }, singleLine = true)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { role.value = CloudflareSignalingClient.Role.TARGET }) {
+                OutlinedButton(enabled = session.value == null, onClick = { role.value = CloudflareSignalingClient.Role.TARGET }) {
                     Text(if (role.value == CloudflareSignalingClient.Role.TARGET) "✓ Target" else "Target")
                 }
-                OutlinedButton(onClick = { role.value = CloudflareSignalingClient.Role.CONTROLLER }) {
+                OutlinedButton(enabled = session.value == null, onClick = { role.value = CloudflareSignalingClient.Role.CONTROLLER }) {
                     Text(if (role.value == CloudflareSignalingClient.Role.CONTROLLER) "✓ Controller" else "Controller")
                 }
                 OutlinedButton(onClick = { room.value = CloudflareSignalingClient.newRoomId() }) {
