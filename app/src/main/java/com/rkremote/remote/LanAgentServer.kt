@@ -380,9 +380,9 @@ class LanAgentServer(
         }
         val stream = DataOutputStream(output)
         stream.write(
-            ("HTTP/1.1 200 OK\\r\\n" +
-                "Content-Type: application/vnd.rkremote.h264-stream\\r\\n" +
-                "Connection: close\\r\\nCache-Control: no-store\\r\\n\\r\\n")
+            ("HTTP/1.1 200 OK\r\n" +
+                "Content-Type: application/vnd.rkremote.h264-stream\r\n" +
+                "Connection: close\r\nCache-Control: no-store\r\n\r\n")
                 .toByteArray(Charsets.US_ASCII)
         )
         stream.write("RKV1".toByteArray(Charsets.US_ASCII))
