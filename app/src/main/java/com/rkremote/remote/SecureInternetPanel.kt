@@ -543,6 +543,7 @@ fun SecureInternetPanel() {
                                     override fun onDisconnected(reason: String) {
                                         streamSenderState.value?.close()
                                         streamSenderState.value = null
+                                        transferActive.set(false)
                                         mainHandler.post {
                                             dataChannelConnected.value = false
                                             status.value = reason
@@ -551,6 +552,7 @@ fun SecureInternetPanel() {
                                     override fun onFailure(failure: Throwable) {
                                         streamSenderState.value?.close()
                                         streamSenderState.value = null
+                                        transferActive.set(false)
                                         mainHandler.post {
                                             dataChannelConnected.value = false
                                             error.value = failure.message ?: "Secure connection failed"
@@ -572,6 +574,7 @@ fun SecureInternetPanel() {
                     onClick = {
                         streamSenderState.value?.close()
                         streamSenderState.value = null
+                        transferActive.set(false)
                         session.value?.revokeOwnerApprovedCommands()
                         session.value?.close()
                         session.value = null
@@ -613,6 +616,7 @@ fun SecureInternetPanel() {
                     onClick = {
                         streamSenderState.value?.close()
                         streamSenderState.value = null
+                        transferActive.set(false)
                         session.value?.revokeOwnerApprovedCommands()
                         status.value = "All remote command permissions revoked for this session"
                     }
