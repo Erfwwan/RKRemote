@@ -1,6 +1,6 @@
 package com.rkremote.remote
 
-import android.util.Base64
+import java.util.Base64
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.util.LinkedHashMap
@@ -75,7 +75,7 @@ class SecureVideoFrameCodec(
                 .put("totalBytes", frame.bytes.size)
                 .put("chunkIndex", index)
                 .put("chunkCount", count)
-                .put("data", Base64.encodeToString(chunk, Base64.NO_WRAP or Base64.URL_SAFE))
+                .put("data", Base64.getUrlEncoder().withoutPadding().encodeToString(chunk))
         }
     }
 
@@ -103,7 +103,7 @@ class SecureVideoFrameCodec(
         require(sequence > lastCompletedSequence || assemblies.containsKey(key)) {
             "Stale or replayed video frame"
         }
-        val decoded = Base64.decode(payload.getString("data"), Base64.NO_WRAP or Base64.URL_SAFE)
+        val decoded = Base64.getUrlDecoder().decode(payload.getString("data"))
         val expectedChunkSize = if (index == count - 1) totalBytes - index * chunkBytes else chunkBytes
         require(decoded.size == expectedChunkSize) { "Invalid video chunk length" }
 
