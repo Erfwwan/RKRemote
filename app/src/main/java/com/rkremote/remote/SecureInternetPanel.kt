@@ -79,6 +79,7 @@ fun SecureInternetPanel() {
             renderer.value = null
             transferExecutor.shutdownNow()
             downloadReceiver.close()
+            safBridge.abortUpload()
         }
     }
 
@@ -161,6 +162,32 @@ fun SecureInternetPanel() {
                                                 .put("result", result)
                                         ) == true) { "Could not send encrypted folder listing" }
                                         "file.list.result"
+                                    }
+                                    register("file.upload.begin", RemoteCapability.FILES) { message ->
+                                        safBridge.beginUpload(
+                                            transferId = message.payload.getString("transferId"),
+                                            rawName = message.payload.getString("name"),
+                                            rawMimeType = message.payload.optString("mimeType", "application/octet-stream"),
+                                            totalBytes = message.payload.getLong("totalBytes"),
+                                            parentId = message.payload.optString("parentId").takeIf { it.isNotBlank() }
+                                        )
+                                        null
+                                    }
+                                    register("file.transfer.chunk", RemoteCapability.FILES) { message ->
+                                        val bytes = Base64.getDecoder().decode(message.payload.getString("data"))
+                                        safBridge.appendUploadChunk(
+                                            message.payload.getString("transferId"),
+                                            message.payload.getLong("offset"),
+                                            bytes
+                                        )
+                                        null
+                                    }
+                                    register("file.transfer.complete", RemoteCapability.FILES) { message ->
+                                        safBridge.completeUpload(
+                                            message.payload.getString("transferId"),
+                                            message.payload.getString("sha256")
+                                        )
+                                        null
                                     }
                                     register("file.download.request", RemoteCapability.FILES) { message ->
                                         val transferId = message.payload.getString("requestId")
@@ -388,6 +415,7 @@ fun SecureInternetPanel() {
                                     }
                                     override fun onDisconnected(reason: String) {
                                         transferActive.set(false)
+                                        safBridge.abortUpload()
                                         streamSender.value?.close()
                                         streamSender.value = null
                                         mainHandler.post {
@@ -419,6 +447,7 @@ fun SecureInternetPanel() {
                     enabled = session.value != null,
                     onClick = {
                         transferActive.set(false)
+                        safBridge.abortUpload()
                         streamSender.value?.close()
                         streamSender.value = null
                         session.value?.revokeOwnerApprovedCommands()
