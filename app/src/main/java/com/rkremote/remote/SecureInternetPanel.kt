@@ -1970,8 +1970,20 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     safBridge.abortUpload()
                     streamSender.value?.close()
                     streamSender.value = null
+                    // Revocation also ends every locally active sensor/media service;
+                    // no capture should continue after the owner removes all grants.
+                    context.stopService(Intent(context, CameraCaptureService::class.java))
+                    context.stopService(Intent(context, ScreenCaptureService::class.java))
+                    context.stopService(Intent(context, MicrophoneCaptureService::class.java))
+                    context.stopService(Intent(context, PttPlaybackService::class.java))
+                    CameraFrameStore.clear()
+                    ScreenVideoStore.clear()
+                    MicrophoneChunkStore.clear()
+                    PttAudioQueue.clear()
+                    cameraCapturePending.value = false
+                    screenCapturePending.value = false
                     session.value?.revokeOwnerApprovedCommands()
-                    status.value = "All remote command permissions revoked for this session"
+                    status.value = "All remote permissions revoked; local media capture stopped"
                 }) { Text("Revoke all remote permissions for this session") }
             } else if (role.value == CloudflareSignalingClient.Role.TARGET && feature == SecureFeatureSection.CAMERA) {
                 Text("ثبت عکس روی همین گوشی", style = MaterialTheme.typography.titleSmall)
