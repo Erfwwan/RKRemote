@@ -33,7 +33,7 @@ For reliable use across restrictive networks, provision a separately operated TU
 
 ## Current limits
 
-- The current DataChannel is a transport foundation and test panel. Keep RKRemote open while testing: the Internet session is not yet owned by a persistent foreground service and will not survive app-process termination. Existing screen, remote input, file, notification, camera, microphone and PTT code paths have **not** been migrated to it.
+- The current DataChannel is a transport foundation and test panel. Keep RKRemote open while testing: the Internet session is not yet owned by a persistent foreground service and will not survive app-process termination. Live screen, remote input, notification snapshot sync, and owner-scoped file browsing/download are integrated at source level; camera, microphone and PTT are not yet migrated.
 - No media tracks are added yet; live screen/camera video and audio need separate explicit owner-started capture and WebRTC track integration.
 - There is no persistent trusted-peer registry, revocation UI, or key-rotation workflow beyond the existing local key stores.
 - No automatic TURN provisioning, DHT peer discovery, multi-path racing, relay fallback service, or session rekey/reconnect exists.
@@ -95,3 +95,10 @@ The target must meet both independent conditions:
 - The target owner must grant the `SCREEN_INPUT` capability in the secure Internet panel for the current session.
 
 The target routes only the gesture and text actions through its existing Accessibility service. It does not read or record accessibility events. Gesture coordinates are constrained to 0..1, duration is bounded by the Accessibility service, and text is capped at 4096 characters. The owner can revoke all remote command permissions immediately or stop the secure session.
+
+
+## Owner-scoped secure file access
+
+The target can register `file.list.request` and `file.download.request` handlers after a local owner grant of the `FILES` capability. Listing and file reads are performed through the Android Storage Access Framework URI explicitly selected on the target. The bridge verifies every document ID is within that selected tree, limits a listing to 40 entries and each download to 50 MiB, and streams bounded chunks through the DTLS DataChannel. The controller verifies chunk ordering and final SHA-256 before publishing the file under `Download/RKRemote/Received` on Android 10+, or app-specific Downloads on older versions. Existing files are not overwritten. No remote delete, rename, or arbitrary filesystem access is exposed.
+
+This path is implemented in source and awaits CI completion plus physical two-device validation. It is not a security certification.
