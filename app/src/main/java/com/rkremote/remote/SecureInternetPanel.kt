@@ -868,59 +868,54 @@ fun SecureInternetPanel() {
                                             }
                                     }
                                     override fun onDisconnected(reason: String) {
-                                        transferActive.set(false)
-                                        activeTransferId.set(null)
-                                        safBridge.cancelAllDownloads()
-                                        cameraTransferActive.set(false)
-                                        imageAssembler.abort()
-                                        audioRelayActive.set(false)
-                                        pttRelayActive.set(false)
-                                        PttAudioQueue.clear()
-                                        audioPlayback.close()
-                                        safBridge.abortUpload()
-                                        streamSender.value?.close()
-                                        streamSender.value = null
                                         mainHandler.post {
+                                            // Do not let an old peer clean up resources owned by a newer session.
                                             if (session.value !== activePeer) return@post
-                                            // Ignore late callbacks from a session that has already
-                                            // been stopped or replaced by a newer connection.
-                                            if (session.value === activePeer) {
-                                                session.value = null
-                                                dataChannelConnected.value = false
-                                                peerId.value = null
-                                                sas.value = null
-                                                renderer.value?.close()
-                                                renderer.value = null
-                                                status.value = reason
-                                            }
+                                            transferActive.set(false)
+                                            activeTransferId.set(null)
+                                            safBridge.cancelAllDownloads()
+                                            cameraTransferActive.set(false)
+                                            imageAssembler.abort()
+                                            audioRelayActive.set(false)
+                                            pttRelayActive.set(false)
+                                            PttAudioQueue.clear()
+                                            audioPlayback.close()
+                                            safBridge.abortUpload()
+                                            streamSender.value?.close()
+                                            streamSender.value = null
+                                            session.value = null
+                                            dataChannelConnected.value = false
+                                            peerId.value = null
+                                            sas.value = null
+                                            renderer.value?.close()
+                                            renderer.value = null
+                                            status.value = reason
                                         }
                                     }
                                     override fun onFailure(failure: Throwable) {
-                                        transferActive.set(false)
-                                        activeTransferId.set(null)
-                                        safBridge.cancelAllDownloads()
-                                        cameraTransferActive.set(false)
-                                        imageAssembler.abort()
-                                        audioRelayActive.set(false)
-                                        pttRelayActive.set(false)
-                                        PttAudioQueue.clear()
-                                        audioPlayback.close()
-                                        safBridge.abortUpload()
-                                        streamSender.value?.close()
-                                        streamSender.value = null
                                         mainHandler.post {
-                                            if (session.value !== activePeer) return@post
                                             // A delayed failure from an old peer must not tear down
-                                            // the UI state of a newer secure session.
-                                            if (session.value === activePeer) {
-                                                session.value = null
-                                                dataChannelConnected.value = false
-                                                peerId.value = null
-                                                sas.value = null
-                                                renderer.value?.close()
-                                                renderer.value = null
-                                                error.value = failure.message ?: "Secure connection failed"
-                                            }
+                                            // resources or UI state belonging to a newer session.
+                                            if (session.value !== activePeer) return@post
+                                            transferActive.set(false)
+                                            activeTransferId.set(null)
+                                            safBridge.cancelAllDownloads()
+                                            cameraTransferActive.set(false)
+                                            imageAssembler.abort()
+                                            audioRelayActive.set(false)
+                                            pttRelayActive.set(false)
+                                            PttAudioQueue.clear()
+                                            audioPlayback.close()
+                                            safBridge.abortUpload()
+                                            streamSender.value?.close()
+                                            streamSender.value = null
+                                            session.value = null
+                                            dataChannelConnected.value = false
+                                            peerId.value = null
+                                            sas.value = null
+                                            renderer.value?.close()
+                                            renderer.value = null
+                                            error.value = failure.message ?: "Secure connection failed"
                                         }
                                     }
                                 }
