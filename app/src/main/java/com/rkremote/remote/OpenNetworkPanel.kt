@@ -25,6 +25,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.net.URI
+import java.nio.charset.StandardCharsets
 
 private const val NETWORK_PREFS = "rkremote_custom_networks"
 private const val NETWORK_LIST_KEY = "profiles"
@@ -47,21 +50,40 @@ private data class NetworkProfile(
             val name = json.getString("name").trim()
             val signaling = json.getString("signalingUrl").trim()
             require(name.isNotBlank() && name.length <= 40) { "Name must contain 1–40 characters" }
-            require(signaling.startsWith("wss://", true) && signaling.length <= 512) {
-                "Signaling address must be a valid WSS URL"
-            }
+            require(signaling.length <= 512) { "Signaling address is too long" }
+            val signalingUri = runCatching { URI(signaling) }.getOrNull()
+            require(
+                signalingUri != null &&
+                    signalingUri.scheme.equals("wss", ignoreCase = true) &&
+                    !signalingUri.host.isNullOrBlank() &&
+                    signalingUri.rawUserInfo == null &&
+                    signalingUri.rawFragment == null &&
+                    signalingUri.port in -1..65535
+            ) { "Signaling address must be a valid WSS URL without embedded credentials or fragments" }
             val ice = json.optJSONArray("iceUrls") ?: JSONArray()
             require(ice.length() <= 8) { "A maximum of 8 STUN/TURN addresses is allowed" }
             val urls = (0 until ice.length()).map { ice.getString(it).trim() }
             urls.forEach { address ->
-                require(address.length <= 512 &&
-                    (address.startsWith("stun:", true) || address.startsWith("stuns:", true) ||
-                     address.startsWith("turn:", true) || address.startsWith("turns:", true))) {
+                require(address.length <= 512 && !address.contains("://") && '@' !in address) {
+                    "Only STUN/STUNS/TURN/TURNS server addresses without embedded credentials are allowed"
+                }
+                val separator = address.indexOf(':')
+                require(separator > 0) { "Invalid ICE server address" }
+                val scheme = address.substring(0, separator).lowercase()
+                require(scheme in setOf("stun", "stuns", "turn", "turns")) {
                     "Only STUN/STUNS/TURN/TURNS addresses are allowed"
                 }
-                require('@' !in address && !address.contains("://")) {
-                    "Do not put usernames or passwords inside server addresses"
-                }
+                val authority = address.substring(separator + 1)
+                val parsedAuthority = runCatching { URI("$scheme://$authority") }.getOrNull()
+                require(
+                    parsedAuthority != null &&
+                        !parsedAuthority.host.isNullOrBlank() &&
+                        parsedAuthority.rawUserInfo == null &&
+                        parsedAuthority.rawPath.isNullOrEmpty() &&
+                        parsedAuthority.rawQuery == null &&
+                        parsedAuthority.rawFragment == null &&
+                        parsedAuthority.port in -1..65535
+                ) { "ICE address must contain a valid host and optional port only" }
             }
             return NetworkProfile(name, signaling, urls.distinct())
         }
@@ -72,8 +94,31 @@ private fun readProfiles(context: Context): List<NetworkProfile> = runCatching {
     val raw = context.getSharedPreferences(NETWORK_PREFS, Context.MODE_PRIVATE)
         .getString(NETWORK_LIST_KEY, "[]") ?: "[]"
     val array = JSONArray(raw)
-    (0 until array.length()).map { NetworkProfile.fromJson(array.getJSONObject(it)) }
+    require(array.length() <= 20) { "Stored profile list exceeds the supported limit" }
+    (0 until array.length()).mapNotNull { index ->
+        runCatching { NetworkProfile.fromJson(array.getJSONObject(index)) }.getOrNull()
+    }
 }.getOrDefault(emptyList())
+
+private fun upsertProfile(existing: List<NetworkProfile>, profile: NetworkProfile): List<NetworkProfile> {
+    val matching = existing.any { it.name.equals(profile.name, ignoreCase = true) }
+    require(matching || existing.size < 20) { "A maximum of 20 network profiles is supported" }
+    return existing.filterNot { it.name.equals(profile.name, ignoreCase = true) } + profile
+}
+
+private fun readBoundedUtf8(input: java.io.InputStream, maxBytes: Int): String {
+    val output = ByteArrayOutputStream(minOf(maxBytes, 8192))
+    val buffer = ByteArray(4096)
+    input.use { stream ->
+        while (true) {
+            val count = stream.read(buffer)
+            if (count < 0) break
+            require(output.size() + count <= maxBytes) { "Profile file is larger than 32 KiB" }
+            output.write(buffer, 0, count)
+        }
+    }
+    return output.toString(StandardCharsets.UTF_8.name())
+}
 
 private fun writeProfiles(context: Context, profiles: List<NetworkProfile>) {
     val array = JSONArray()
@@ -95,11 +140,10 @@ fun OpenNetworkPanel() {
 
     val importPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) runCatching {
-            val raw = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+            val raw = context.contentResolver.openInputStream(uri)?.let { readBoundedUtf8(it, 32 * 1024) }
                 ?: error("Could not read the selected file")
-            require(raw.length <= 32 * 1024) { "Profile file is larger than 32 KiB" }
             val parsed = NetworkProfile.fromJson(JSONObject(raw))
-            val updated = (profiles.value.filterNot { it.name.equals(parsed.name, true) } + parsed).take(20)
+            val updated = upsertProfile(profiles.value, parsed)
             profiles.value = updated
             writeProfiles(context, updated)
             name.value = parsed.name
@@ -167,7 +211,7 @@ fun OpenNetworkPanel() {
                         val profile = NetworkProfile.fromJson(JSONObject()
                             .put("schemaVersion", 1).put("name", name.value.trim())
                             .put("signalingUrl", signaling.value.trim()).put("iceUrls", JSONArray(addresses)))
-                        val updated = (profiles.value.filterNot { it.name.equals(profile.name, true) } + profile).take(20)
+                        val updated = upsertProfile(profiles.value, profile)
                         profiles.value = updated
                         writeProfiles(context, updated)
                         selected.value = profile.name
