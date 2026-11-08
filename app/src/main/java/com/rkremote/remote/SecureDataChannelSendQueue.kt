@@ -15,8 +15,7 @@ internal class SecureDataChannelSendQueue(
     private val maxBufferedAmount: Long = DEFAULT_MAX_BUFFERED_AMOUNT
 ) {
     private data class PendingMessage(
-        val frames: ArrayDeque<ByteArray>,
-        var remainingBytes: Long
+        val frames: ArrayDeque<ByteArray>
     )
 
     private val messages = ArrayDeque<PendingMessage>()
@@ -33,7 +32,7 @@ internal class SecureDataChannelSendQueue(
         if (frames.isEmpty() || messages.size >= maxQueuedMessages) return false
         val size = frames.sumOf { it.size.toLong() }
         if (size <= 0L || size > maxQueuedBytes || queuedBytes > maxQueuedBytes - size) return false
-        val pending = PendingMessage(ArrayDeque(frames), size)
+        val pending = PendingMessage(ArrayDeque(frames))
         messages.addLast(pending)
         queuedBytes += size
         return true
@@ -53,7 +52,8 @@ internal class SecureDataChannelSendQueue(
         var sent = 0
         while (messages.isNotEmpty() && channelOpen()) {
             val pending = messages.peekFirst()
-            val frame = pending.frames.peekFirst() ?: run {
+            val frame = pending.frames.peekFirst()
+            if (frame == null) {
                 messages.removeFirst()
                 continue
             }
@@ -64,7 +64,6 @@ internal class SecureDataChannelSendQueue(
             if (!sendFrame(frame)) break
 
             pending.frames.removeFirst()
-            pending.remainingBytes -= frame.size.toLong()
             queuedBytes -= frame.size.toLong()
             sent++
             if (pending.frames.isEmpty()) messages.removeFirst()
