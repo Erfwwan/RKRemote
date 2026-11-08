@@ -1,14 +1,19 @@
 # Current implementation status
 
-**Current branch state:** owner-approved secure Internet P2P now includes live H.264 screen viewing, remote touch/text, notification snapshot sync, SAF file listing/download/upload, camera snapshot transfer, microphone monitoring, and half-duplex push-to-talk. These paths use the authenticated WebRTC DTLS DataChannel after Noise XX peer verification and explicit per-session target-owner capability grants.
+**Current transport architecture:** the active development branch uses a single Cloudflare encrypted relay. Both phones connect to a Durable Object room; Noise XX authenticates the paired devices and encrypts every application frame after mutual SAS approval. App messages are optionally compressed before encryption, fragmented below the Worker's 12 KiB limit, and forwarded as opaque ciphertext. STUN/TURN/WebRTC setup and custom network profiles have been removed from the connection UI.
 
-**Important limits:** the Internet session is still owned by the visible UI and is not yet a persistent background service. DHT discovery is not implemented; rendezvous uses a shared room ID and the Cloudflare Worker only forwards opaque Noise signaling. A user-provisioned TURN server may be required for difficult NATs. The legacy LAN port 18765 remains plaintext and must not be exposed publicly. No independent security audit or physical two-device/Samsung validation has been performed.
+**Pairing UX:** the target creates a fresh room automatically and shares an RKRemote invitation URI once its Worker WebSocket is open. The controller opens the URI; the Worker URL, room ID and role are populated automatically. The Worker must already be deployed and its WSS origin entered on the target phone.
 
-**Current validation:** automated results are commit-specific. The release workflow runs JVM unit tests, assembles the debug APK, and assembles an unsigned release APK unless operator-owned signing credentials are supplied. Check the GitHub Actions run for the exact commit you intend to install. A green CI run does not replace physical two-device, network, battery, or security validation.
+**Cloudflare account setup:** the Deploy-to-Cloudflare flow signs the user into Cloudflare and provisions the Durable Object from the Worker configuration. Direct in-app Cloudflare account OAuth/API deployment is not yet integrated because the app does not yet have a registered public Cloudflare OAuth client. Never request or store the user's Cloudflare account password in RKRemote.
+
+**Important limits:** all application traffic now traverses Cloudflare, consuming Worker bandwidth and subject to Cloudflare plan limits/pricing. Cloudflare can observe IPs, room IDs, timing and traffic volume, but not Noise-encrypted payloads. Android still requires visible owner approval for each peer and capability. Camera, microphone and screen capture require local owner action and Android controls.
+
+**Validation:** this source milestone has not been built or tested. Physical two-device acceptance tests remain deferred to the final stage. The Noise dependency is not independently audited. A green compile or JVM unit test would not establish production readiness.
 
 The detailed milestone notes below include historical snapshots from earlier commits. Where they conflict with this current summary, this summary describes the newer branch state.
 
 ---
+
 
 This branch is a development foundation for the next major RKRemote iteration.
 
