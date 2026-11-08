@@ -110,9 +110,19 @@ class SecureWebRtcPeer(
         override fun onAddTrack(receiver: org.webrtc.RtpReceiver, streams: Array<org.webrtc.MediaStream>) = Unit
         override fun onTrack(transceiver: org.webrtc.RtpTransceiver) = Unit
         override fun onConnectionChange(newState: PeerConnection.PeerConnectionState) {
-            if (newState == PeerConnection.PeerConnectionState.FAILED) {
-                listener.onFailure(IllegalStateException("WebRTC peer connection failed"))
-                close()
+            if (closed.get()) return
+            when (newState) {
+                PeerConnection.PeerConnectionState.DISCONNECTED -> {
+                    listener.onDisconnected("WebRTC peer connection disconnected")
+                }
+                PeerConnection.PeerConnectionState.FAILED -> {
+                    listener.onFailure(IllegalStateException("WebRTC peer connection failed"))
+                    close()
+                }
+                PeerConnection.PeerConnectionState.CLOSED -> {
+                    listener.onDisconnected("WebRTC peer connection closed")
+                }
+                else -> Unit
             }
         }
     }
@@ -186,11 +196,18 @@ class SecureWebRtcPeer(
         channel.registerObserver(object : DataChannel.Observer {
             override fun onBufferedAmountChange(previousAmount: Long) = Unit
             override fun onStateChange() {
-                if (channel.state() == DataChannel.State.OPEN &&
-                    peerConnection?.iceConnectionState() in setOf(
-                        PeerConnection.IceConnectionState.CONNECTED,
-                        PeerConnection.IceConnectionState.COMPLETED
-                    )) listener.onConnected()
+                if (closed.get()) return
+                when (channel.state()) {
+                    DataChannel.State.OPEN -> {
+                        if (peerConnection?.iceConnectionState() in setOf(
+                                PeerConnection.IceConnectionState.CONNECTED,
+                                PeerConnection.IceConnectionState.COMPLETED
+                            )) listener.onConnected()
+                    }
+                    DataChannel.State.CLOSED ->
+                        listener.onDisconnected("WebRTC DataChannel closed")
+                    else -> Unit
+                }
             }
             override fun onMessage(buffer: DataChannel.Buffer) {
                 if (!buffer.binary || buffer.data.remaining() !in (HEADER_BYTES + 1)..MAX_DATA_FRAME_BYTES) {
