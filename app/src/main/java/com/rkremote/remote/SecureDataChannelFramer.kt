@@ -78,6 +78,15 @@ internal class SecureDataChannelFramer(
 
         val expectedCount = (total + (maxFrameBytes - HEADER_BYTES) - 1) / (maxFrameBytes - HEADER_BYTES)
         require(count == expectedCount) { "DataChannel fragment count does not match message length" }
+        val chunkCapacity = maxFrameBytes - HEADER_BYTES
+        val expectedChunkSize = if (index < count - 1) {
+            chunkCapacity
+        } else {
+            total - chunkCapacity * (count - 1)
+        }
+        require(chunk.size == expectedChunkSize) {
+            "DataChannel fragment length does not match its index"
+        }
 
         val assembly = assemblies[id] ?: run {
             require(assemblies.size < maxInFlightMessages) { "Too many incomplete DataChannel messages" }
