@@ -44,7 +44,7 @@ class SafDocumentRepository(context: Context) {\n    private val resolver: Conte
 
     fun readFile(uri: Uri, maxBytes: Int = DEFAULT_MAX_READ_BYTES): ByteArray {
         require(maxBytes in 1..MAX_ALLOWED_READ_BYTES)
-        val descriptor = DocumentFile.fromSingleUri(resolver.contextOrNull(), uri)
+        val descriptor = DocumentFile.fromSingleUri(appContext, uri)
             ?: throw IOException("Document is unavailable")
         if (!descriptor.isFile || !descriptor.canRead()) {
             throw SecurityException("Document is not a readable file")
