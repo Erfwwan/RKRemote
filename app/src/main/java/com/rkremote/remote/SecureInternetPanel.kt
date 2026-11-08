@@ -52,6 +52,7 @@ fun SecureInternetPanel() {
     val streamStatus = remember { mutableStateOf("Screen stream idle") }
     val streamSenderState = remember { mutableStateOf<SecureScreenStreamSender?>(null) }
     val remoteText = remember { mutableStateOf("") }
+    val notificationSummary = remember { mutableStateOf("No notification sync requested") }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     DisposableEffect(Unit) {
         onDispose {
@@ -148,6 +149,11 @@ fun SecureInternetPanel() {
                                         streamSenderState.value = null
                                         null
                                     }
+                                    register("notifications.sync.request", RemoteCapability.NOTIFICATIONS) { message ->
+                                        val response = SecureNotificationSync.buildLatestResponse(context, message.payload.getString("requestId"))
+                                        check(activePeer?.sendMessage("notifications.sync.result", response) == true) { "Could not send encrypted notification response" }
+                                        "notifications.sync.result"
+                                    }
                                     register("screen.input", RemoteCapability.SCREEN_INPUT) { message ->
                                         val payload = message.payload
                                         val accepted = when (payload.getString("action")) {
@@ -203,6 +209,10 @@ fun SecureInternetPanel() {
                                         mainHandler.post { status.value = "Secure transport received · ${payload.size} bytes" }
                                     }
                                     override fun onRemoteMessage(message: RemoteMessage) {
+                                        if (message.type == "notifications.sync.result") {
+                                            val events = message.payload.optJSONArray("events")
+                                            mainHandler.post { notificationSummary.value = "Received " + (events?.length() ?: 0) + " recent notification events" }
+                                        }
                                         if (message.type.startsWith("screen.video.")) {
                                             renderer.value?.accept(message)
                                             mainHandler.post {
@@ -321,6 +331,16 @@ fun SecureInternetPanel() {
                         }
                     }
                 ) { Text("Allow remote touch and text input") }
+                OutlinedButton(
+                    enabled = session.value != null && dataChannelConnected.value,
+                    onClick = {
+                        runCatching {
+                            check(SecureNotificationSync.isNotificationAccessEnabled(context)) { "Enable RKRemote Notification Access in Android settings first" }
+                            session.value?.grantOwnerApprovedCapabilities(setOf(RemoteCapability.NOTIFICATIONS))
+                        }.onSuccess { status.value = "Notification sharing approved for this session" }
+                            .onFailure { error.value = it.message ?: "Could not grant notification permission" }
+                    }
+                ) { Text("Allow notification sharing") }
                 Text(
                     "Start Android screen sharing locally first. This permission does not start MediaProjection; the target must already be visibly sharing its screen.",
                     style = MaterialTheme.typography.bodySmall
@@ -369,6 +389,14 @@ fun SecureInternetPanel() {
                         streamStatus.value = if (sent) "Text insertion request sent" else "Could not send text"
                     }
                 ) { Text("Insert text on target") }
+                OutlinedButton(
+                    enabled = session.value != null && dataChannelConnected.value,
+                    onClick = {
+                        val sent = session.value?.sendMessage("notifications.sync.request", JSONObject().put("requestId", java.util.UUID.randomUUID().toString())) == true
+                        notificationSummary.value = if (sent) "Notification sync requested" else "Could not request notification sync"
+                    }
+                ) { Text("Fetch recent notifications") }
+                Text(notificationSummary.value, style = MaterialTheme.typography.bodySmall)
             }
             Text(streamStatus.value, style = MaterialTheme.typography.bodySmall)
             AndroidView(
