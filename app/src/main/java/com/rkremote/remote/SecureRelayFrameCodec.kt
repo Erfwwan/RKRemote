@@ -29,12 +29,12 @@ internal class SecureRelayFrameCodec(
     }
 
     @Synchronized
-    fun encode(message: ByteArray): List<ByteArray> {
+    fun encode(message: ByteArray, allowCompression: Boolean = true): List<ByteArray> {
         require(message.isNotEmpty() && message.size <= maxMessageBytes) {
             "Application message size is outside the allowed range"
         }
 
-        val compressed = if (message.size >= MIN_COMPRESS_BYTES) deflate(message) else null
+        val compressed = if (allowCompression && message.size >= MIN_COMPRESS_BYTES) deflate(message) else null
         val useCompressed = compressed != null &&
             compressed.size + MIN_COMPRESSION_SAVING < message.size
         val body = if (useCompressed) compressed!! else message
