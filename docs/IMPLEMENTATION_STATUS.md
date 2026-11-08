@@ -304,3 +304,12 @@ This section supersedes older milestone notes above where they describe Internet
 - Cloudflare signaling now closes the WSS socket when it receives malformed, oversized, or unknown text control events rather than merely reporting an error and keeping the socket open.
 - CI run `42478572064` completed successfully for commit `c100592c`, including transfer-ID cancellation and strict DTLS fingerprint parser tests, debug APK assembly, and artifact upload. The subsequent fail-closed signaling-control change is being checked by run `42478685055`; documentation-only commits followed it. Verify that latest run before treating the current branch tip as build-verified.
 - No Cloudflare deployment, TURN test, two-device test, real NAT traversal, or physical Android validation has been performed. These remain part of the final stage.
+
+
+## Protocol parser hardening · 2026-11-08
+
+- Cloudflare room lifecycle text events are parsed by a dedicated bounded parser: maximum 1 KiB, version 1 only, three known lifecycle event types, and object-only payloads. Malformed JSON and wrong payload types become controlled parse errors; the WSS client closes on invalid text.
+- The main RemoteMessage parser now fails closed for malformed JSON, unknown message types, missing/non-string IDs, non-numeric or fractional sequence/timestamp values, and missing or non-object payloads. Payload size remains bounded by the 64 KiB protocol envelope.
+- Added JVM tests for malformed JSON, array/missing payloads, string protocol versions, fractional sequences, and strict Cloudflare room-control parsing.
+- Removed a duplicate command.result branch in the controller's when dispatch after CI surfaced the Kotlin duplicate-branch warning.
+- CI for commit b28aa17e passed unit tests after the Cloudflare parser exception normalization; debug APK assembly was still running at the last check. Strict main-protocol parser and duplicate-branch cleanup are newer commits and must pass the next complete CI run before this branch tip is called build-verified.
