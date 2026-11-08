@@ -1,7 +1,7 @@
 name: Android build
 
 on:
-  # Approved build: publish the debug APK before tests; latest camera-store test API is synchronized.
+  # Approved final verification: camera store tests now reflect one-shot photo retention.
   push:
     branches:
       - feature/remote-agent-foundation
