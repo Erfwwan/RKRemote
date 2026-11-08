@@ -43,7 +43,7 @@ class CloudflareSignalingClient(
     @Volatile private var socket: WebSocket? = null
 
     init {
-        require(baseUri.scheme.equals("wss", ignoreCase = true)) { "Only wss:// is accepted" }
+        require(baseUri.scheme?.equals("wss", ignoreCase = true) == true) { "Only wss:// is accepted" }
         require(baseUri.host != null && baseUri.rawQuery == null && baseUri.rawFragment == null) {
             "Invalid Cloudflare signaling URL"
         }
