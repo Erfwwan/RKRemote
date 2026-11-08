@@ -24,6 +24,21 @@ class RemoteProtocolTest {
     }
 
     @Test
+    fun roundTripsSecurePingMessageType() {
+        val message = RemoteMessage(
+            type = "secure.ping",
+            sessionId = "shared-room-session",
+            messageId = "ping-1",
+            sequence = 0,
+            sentAt = System.currentTimeMillis(),
+            payload = JSONObject().put("correlationId", "request-123")
+        )
+        val decoded = RemoteMessage.parse(message.toJson().toString())
+        assertEquals("secure.ping", decoded.type)
+        assertEquals("request-123", decoded.payload.getString("correlationId"))
+    }
+
+    @Test
     fun rejectsUnknownMessageType() {
         val raw = JSONObject()
             .put("protocolVersion", 1)
@@ -33,6 +48,22 @@ class RemoteProtocolTest {
             .put("sequence", 0)
             .put("sentAt", 1)
             .put("payload", JSONObject())
+            .toString()
+        assertThrows(IllegalArgumentException::class.java) {
+            RemoteMessage.parse(raw)
+        }
+    }
+
+    @Test
+    fun rejectsOversizedNestedPayload() {
+        val raw = JSONObject()
+            .put("protocolVersion", 1)
+            .put("type", "secure.ping")
+            .put("sessionId", "s")
+            .put("messageId", "m")
+            .put("sequence", 0)
+            .put("sentAt", System.currentTimeMillis())
+            .put("payload", JSONObject().put("data", "x".repeat(RemoteMessage.MAX_MESSAGE_BYTES + 1)))
             .toString()
         assertThrows(IllegalArgumentException::class.java) {
             RemoteMessage.parse(raw)
