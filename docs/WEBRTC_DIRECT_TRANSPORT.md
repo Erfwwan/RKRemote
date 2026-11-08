@@ -124,3 +124,8 @@ Fragmented application messages now reserve capacity for the complete logical me
 ## Strict RKD1 fragment sizing
 
 The reassembler now validates each fragment's exact expected payload length from its index and the declared logical-message size: every non-final fragment must fill the negotiated frame payload capacity, and the final fragment must contain exactly the remaining bytes. This rejects short middle fragments and oversized or undersized final fragments before they can be assembled. JVM regression tests cover both malformed cases. The change is source-integrated; the current commit's CI result is pending.
+
+
+## Transient WebRTC disconnect handling
+
+ICE and PeerConnection `DISCONNECTED` callbacks now schedule a bounded 12-second grace period instead of immediately destroying the session. A subsequent connected/completed state cancels the pending teardown. If the grace period expires, the coordinator receives a disconnect event and closes the Noise/WebRTC session, clearing command grants and authenticated peer state. Hard ICE/PeerConnection failure and DataChannel closure are not delayed. This is a bounded transient-recovery window, not an ICE restart or automatic reconnection feature. The change is source-integrated and awaits CI and physical network testing.
