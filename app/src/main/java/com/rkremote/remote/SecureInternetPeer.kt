@@ -99,7 +99,7 @@ class SecureInternetPeer(
                                                     "Target command router is not configured"
                                                 )
                                             listener.onCommandResult(message, result)
-                                            sendMessage(
+                                            if (message.type != "file.transfer.chunk") sendMessage(
                                                 "command.result",
                                                 JSONObject()
                                                     .put("requestId", message.payload.optString("requestId"))
