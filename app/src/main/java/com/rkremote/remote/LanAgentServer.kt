@@ -19,8 +19,9 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Minimal read-only LAN agent. It deliberately exposes only health and the
- * owner-selected SAF folder listing. It is not an internet-facing server.
+ * Minimal LAN agent for a trusted private network. It exposes health, an
+ * owner-selected SAF folder listing, screen snapshots, and a single tap command
+ * gated by the owner's manually enabled Accessibility service.
  */
 class LanAgentServer(
     private val context: Context,
@@ -178,7 +179,7 @@ class LanAgentServer(
                 "/health" -> JSONObject()
                     .put("app", "RKRemote")
                     .put("status", "online")
-                    .put("mode", "read-only-lan")
+                    .put("mode", "owner-authorized-lan")
                 "/files" -> listSelectedFolder()
                 else -> {
                     respond(client.getOutputStream(), 404, JSONObject().put("error", "Not found"))
