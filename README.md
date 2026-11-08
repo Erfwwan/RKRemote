@@ -19,7 +19,7 @@ RKRemote does not implement covert camera/microphone capture, hidden persistence
 
 **Available in the current development branch:** an owner-started, visible read-only LAN agent and same-app controller. On a trusted Wi-Fi network, the controller can test the target phone connection and list names/metadata from a folder explicitly selected on that phone. This is an early runnable milestone, not full remote control.
 
-**Screen-sharing prototype added:** the target phone can request Android MediaProjection consent, start a visible foreground capture session, and expose the latest JPEG screen snapshot to the authenticated controller on the same trusted Wi-Fi. The controller can request and display a snapshot. This is not continuous video, remote touch/input, or a secure internet transport.
+**Screen-sharing prototype added:** the target phone can request Android MediaProjection consent, start a visible foreground capture session, and expose the latest JPEG screen snapshot to the authenticated controller on the same trusted Wi-Fi. The controller can request a single snapshot or poll snapshots at roughly one per second for a low-rate preview. This remains JPEG polling, not a continuous video stream, remote touch/input, or a secure internet transport.
 
 **Still not implemented:** internet relay, secure TLS LAN transport, continuous screen video/input, camera/audio streaming, file content transfer, contacts/call-log transfer, and two-way walkie-talkie.
 
