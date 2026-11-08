@@ -269,14 +269,16 @@ Validation for this pass: source and JVM tests were committed, but no Gradle bui
 - Frames are limited to 2 MiB. The owner can stop an in-progress transfer, revoke all capabilities, or stop the camera locally. This is snapshot transfer, not continuous camera video.
 - Source integration awaits CI and physical two-device camera testing. Sensor behavior, image quality and device-specific camera availability are not yet validated.
 
-## Secure P2P file transfer · cancellation pass (2026-11-08)
+## Secure P2P file transfer · transfer-ID scoped cancellation (2026-11-08)
 
-- The controller can now cancel an active secure file transfer explicitly.
-- The target registers `file.transfer.cancel` under the existing owner-granted `FILES` capability. It aborts and deletes an incomplete SAF upload and signals the in-progress download sender to stop.
-- The controller discards an incomplete temporary download and stops an upload worker when cancellation is requested.
-- Cancellation does not delete completed files. The target still limits operations to the owner-selected SAF tree, disables overwrite, caps transfers at 50 MiB and verifies SHA-256 before accepting an upload or publishing a download.
-- Protocol allow-list and JVM authorization tests cover the new cancellation command.
-- CI for the latest commit is pending. No two-device, disconnect-during-transfer, or physical Android validation has been performed. Cancellation is best-effort if the connection has already failed; disconnect cleanup remains in place.
+- Every upload/download now has a transfer ID tracked independently on controller and target.
+- The target accepts `file.transfer.cancel` only when the supplied ID matches its active transfer. Matching uploads are closed and incomplete SAF documents deleted; matching downloads receive a thread-safe cancellation token and stop before the next read/send or completion.
+- A shared active-transfer guard covers the race where cancellation arrives while the download worker is queued but before its cancellation token is registered.
+- The controller includes the active transfer ID in cancellation requests, stops its upload worker, and aborts any incomplete local download. It also clears the active transfer when the target rejects a request/chunk or reports completion/error.
+- Unknown, stale, duplicate, or mismatched IDs cannot cancel another transfer. Rejected file chunks now return a command result carrying the matching transfer ID so the sender can stop instead of blindly continuing.
+- Cancellation does not delete completed files. Operations remain limited to the owner-selected SAF tree, overwrite remains disabled, transfers remain capped at 50 MiB, and SHA-256 verification remains required.
+- JVM tests cover per-transfer cancellation isolation, duplicate registration, repeated cancellation and cleanup.
+- CI verifies unit tests and APK assembly for the latest source revision; see the branch's latest Android build workflow. No two-device, disconnect-during-transfer, or physical Android validation has been performed. Cancellation remains best-effort if the connection has already failed; disconnect cleanup remains in place.
 
 
 ## Current source-level hardening and navigation · 2026-11-08
