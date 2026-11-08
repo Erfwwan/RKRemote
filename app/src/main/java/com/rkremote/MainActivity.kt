@@ -557,6 +557,45 @@ private fun LocalSetupScreen(darkMode: Boolean, onToggleTheme: () -> Unit) {
                                 Text("به‌روزرسانی وضعیت مجوزها")
                             }
                         }
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(18.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+                            ) {
+                                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("دسترسی پوشه فایل‌ها", fontWeight = FontWeight.Bold)
+                                    Text(
+                                        selectedFolder ?: "هنوز پوشه‌ای انتخاب نشده است. برای مرور فایل‌های این گوشی توسط کنترل‌کننده، یک پوشه را با انتخاب‌گر رسمی اندروید مشخص کن.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    OutlinedButton(onClick = { folderPicker.launch(null) }) {
+                                        Text("انتخاب پوشه مجاز")
+                                    }
+                                }
+                            }
+                        }
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(18.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+                            ) {
+                                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("دسترسی خواندن اعلان‌ها", fontWeight = FontWeight.Bold)
+                                    Text(
+                                        if (notificationAccess) "فعال است؛ اعلان‌های مجاز می‌توانند پس از درخواست کنترل‌کننده ارسال شوند."
+                                        else "برای همگام‌سازی اعلان‌ها، این دسترسی ویژه را از تنظیمات اندروید فعال کن.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    OutlinedButton(onClick = {
+                                        context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                                    }) { Text("مدیریت دسترسی اعلان‌ها") }
+                                }
+                            }
+                        }
                     }
                 }
 
