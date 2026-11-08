@@ -66,4 +66,43 @@ class SecureDataChannelFramerTest {
         ByteBuffer.wrap(frame).putInt(0, 0)
         assertThrows(IllegalArgumentException::class.java) { receiver.accept(frame) }
     }
+
+    @Test
+    fun expiresIncompleteMessagesAndReleasesInFlightSlots() {
+        val sender = SecureDataChannelFramer()
+        val firstPayload = ByteArray(30_000) { 3 }
+        val secondPayload = ByteArray(30_000) { 9 }
+        val firstFrames = sender.fragment(firstPayload)
+        val secondFrames = sender.fragment(secondPayload)
+        val receiver = SecureDataChannelFramer(
+            maxInFlightMessages = 1,
+            maxAgeMillis = 100L
+        )
+
+        assertNull(receiver.accept(firstFrames.first(), nowMillis = 1_000L))
+        assertThrows(IllegalArgumentException::class.java) {
+            receiver.accept(secondFrames.first(), nowMillis = 1_050L)
+        }
+
+        assertNull(receiver.accept(secondFrames.first(), nowMillis = 1_101L))
+        assertArrayEquals(
+            secondPayload,
+            receiver.accept(secondFrames.last(), nowMillis = 1_102L)
+        )
+    }
+
+    @Test
+    fun clearReleasesAllIncompleteMessageSlots() {
+        val sender = SecureDataChannelFramer()
+        val first = sender.fragment(ByteArray(30_000) { 1 })
+        val secondPayload = ByteArray(30_000) { 2 }
+        val second = sender.fragment(secondPayload)
+        val receiver = SecureDataChannelFramer(maxInFlightMessages = 1)
+
+        assertNull(receiver.accept(first.first()))
+        receiver.clear()
+        assertNull(receiver.accept(second.first()))
+        assertArrayEquals(secondPayload, receiver.accept(second.last()))
+    }
+
 }
