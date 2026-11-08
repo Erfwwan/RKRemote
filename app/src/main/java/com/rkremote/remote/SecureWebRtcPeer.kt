@@ -57,6 +57,7 @@ class SecureWebRtcPeer(
     private val closed = AtomicBoolean(false)
     private val remoteDescriptionSet = AtomicBoolean(false)
     private val pendingRemoteIce = ArrayDeque<IceCandidate>()
+    private val dataFramer = SecureDataChannelFramer()
     private val lock = Any()
     private var peerConnection: PeerConnection? = null
     private var dataChannel: DataChannel? = null
@@ -165,10 +166,21 @@ class SecureWebRtcPeer(
     }
 
     fun send(payload: ByteArray): Boolean {
-        if (closed.get() || payload.isEmpty() || payload.size > MAX_DATA_BYTES) return false
+        if (closed.get() || payload.isEmpty() || payload.size > MAX_APP_MESSAGE_BYTES) return false
         val channel = dataChannel ?: return false
         if (channel.state() != DataChannel.State.OPEN) return false
-        return channel.send(DataChannel.Buffer(ByteBuffer.wrap(payload), false))
+        return runCatching {
+            val frames = dataFramer.fragment(payload)
+            for (frame in frames) {
+                if (closed.get() || channel.state() != DataChannel.State.OPEN ||
+                    channel.bufferedAmount() > MAX_BUFFERED_BYTES ||
+                    !channel.send(DataChannel.Buffer(ByteBuffer.wrap(frame), true))) return false
+            }
+            true
+        }.getOrElse {
+            listener.onFailure(it)
+            false
+        }
     }
 
     private fun observeDataChannel(channel: DataChannel) {
@@ -182,12 +194,17 @@ class SecureWebRtcPeer(
                     )) listener.onConnected()
             }
             override fun onMessage(buffer: DataChannel.Buffer) {
-                if (buffer.binary && buffer.data.remaining() in 1..MAX_DATA_BYTES) {
-                    val payload = ByteArray(buffer.data.remaining())
-                    buffer.data.get(payload)
-                    listener.onData(payload)
-                } else {
+                if (!buffer.binary || buffer.data.remaining() !in (HEADER_BYTES + 1)..MAX_DATA_FRAME_BYTES) {
                     listener.onFailure(IllegalArgumentException("Invalid WebRTC data-channel frame"))
+                    close()
+                    return
+                }
+                runCatching {
+                    val frame = ByteArray(buffer.data.remaining())
+                    buffer.data.get(frame)
+                    dataFramer.accept(frame)?.let(listener::onData)
+                }.onFailure {
+                    listener.onFailure(it)
                     close()
                 }
             }
@@ -340,6 +357,7 @@ class SecureWebRtcPeer(
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         synchronized(lock) { pendingRemoteIce.clear() }
+        dataFramer.clear()
         dataChannel?.unregisterObserver()
         dataChannel?.close()
         dataChannel?.dispose()
@@ -352,7 +370,10 @@ class SecureWebRtcPeer(
     companion object {
         private const val DATA_CHANNEL_LABEL = "rkremote-secure-v1"
         private const val MAX_SIGNAL_BYTES = 10 * 1024
-        private const val MAX_DATA_BYTES = 12 * 1024
+        private const val MAX_DATA_FRAME_BYTES = 12 * 1024
+        private const val HEADER_BYTES = 24
+        private const val MAX_APP_MESSAGE_BYTES = 4 * 1024 * 1024
+        private const val MAX_BUFFERED_BYTES = 2L * 1024L * 1024L
         private const val MAX_PENDING_ICE = 128
 
         @Volatile private var factory: PeerConnectionFactory? = null
