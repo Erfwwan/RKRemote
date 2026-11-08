@@ -13,6 +13,8 @@ This branch is a development foundation for the next major RKRemote iteration.
 - AES-256-GCM payload envelope with random nonces, authenticated associated data, strict size limits, and tamper detection (requires a separately authenticated session key).
 - Session command authorization gate requiring an owner-approved active session, exact peer identity, per-capability grants, monotonic sequence numbers, and explicit revocation.
 - SAF document repository limited to the tree URI selected by the device owner; bounded file reads and permission-checked deletion.
+- Read-only LAN agent/controller on TCP 18765 with temporary bearer token; health check and owner-selected folder metadata listing.
+- Owner-approved screen capture through Android MediaProjection consent, visible mediaProjection foreground service, in-memory JPEG frame, and authenticated `/screen.jpg` snapshot endpoint; controller can request and display a still snapshot.
 - JVM tests for the encryption envelope and command authorization gate.
 - Existing local setup and encrypted notification store remain in place.
 
@@ -20,8 +22,8 @@ This branch is a development foundation for the next major RKRemote iteration.
 
 - Internet relay, cross-network connection, TLS on the LAN socket, or end-to-end authenticated key exchange. The LAN token is a temporary bearer secret sent over the local network; use only on a trusted private Wi-Fi network. The AES-GCM envelope is not yet connected to the LAN transport.
 - Durable paired-device identity and key rotation.
-- Remote screen capture/input, camera/microphone streaming, file download/upload, contacts/call-log transfer, and push-to-talk. The current remote file feature lists names and metadata only; it does not download file contents.
+- Continuous screen video, remote touch/input, camera/microphone streaming, file download/upload, contacts/call-log transfer, and push-to-talk. Screen capture is currently a single JPEG snapshot per controller request; it is not a live video stream. The remote file feature lists names and metadata only; it does not download file contents.
 - Automated reconnect/backoff and network diagnostics.
 - Device-farm tests, physical-device tests, release signing, and security review.
 
-The WSS transport, encryption utility, and command gate remain separate foundations. The first executable LAN path is a deliberately small read-only HTTP-like TCP protocol with a temporary token; it is not suitable for untrusted networks or internet exposure. No privileged Android operation is executed from inbound network requests. No privileged operation should be wired to inbound messages until peer authentication, authorization, replay protection, capability consent, and session revocation are integrated and tested.
+The WSS transport, encryption utility, and command gate remain separate foundations. The executable LAN path is a deliberately small TCP protocol with a temporary token; it is not suitable for untrusted networks or internet exposure. Screen snapshots are also sent without TLS and may contain sensitive information visible on the target display. No privileged Android operation is executed from inbound network requests. No privileged operation should be wired to inbound messages until peer authentication, authorization, replay protection, capability consent, and session revocation are integrated and tested.
