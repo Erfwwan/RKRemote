@@ -28,10 +28,19 @@ jobs:
         run: gradle --no-daemon :app:testDebugUnitTest
       - name: Assemble debug APK
         run: gradle --no-daemon :app:assembleDebug
+      - name: Assemble release APK (unsigned unless operator credentials are configured)
+        run: gradle --no-daemon :app:assembleRelease
       - name: Upload installable debug APK
         uses: actions/upload-artifact@v4
         with:
           name: RKRemote-debug-apk
           path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: RKRemote-release-apk
+          path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 14
