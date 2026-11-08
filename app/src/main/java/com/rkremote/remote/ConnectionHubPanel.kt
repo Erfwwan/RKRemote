@@ -31,53 +31,61 @@ private enum class ConnectionSection(val title: String) {
  * session is not torn down when the user opens another connection setting.
  */
 @Composable
-fun ConnectionHubPanel() {
+fun ConnectionHubPanel(feature: SecureFeatureSection = SecureFeatureSection.CONNECTION) {
     var section by remember { mutableStateOf(ConnectionSection.SECURE) }
 
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                "اتصال و روش‌ها",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                "تنظیم مسیر ارتباط، انتخاب روش اتصال و مدیریت نشست هر دو دستگاه از همین قسمت انجام می‌شود.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            ConnectionSection.entries.forEach { item ->
-                if (section == item) {
-                    androidx.compose.material3.Button(
-                        modifier = Modifier.weight(1f),
-                        onClick = { section = item }
-                    ) { Text(item.title, maxLines = 1) }
-                } else {
-                    OutlinedButton(
-                        modifier = Modifier.weight(1f),
-                        onClick = { section = item }
-                    ) { Text(item.title, maxLines = 1) }
+        if (feature == SecureFeatureSection.CONNECTION) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    "اتصال و روش‌ها",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    "تنظیم مسیر ارتباط، انتخاب روش اتصال و مدیریت نشست هر دو دستگاه از همین قسمت انجام می‌شود.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+    
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                ConnectionSection.entries.forEach { item ->
+                    if (section == item) {
+                        androidx.compose.material3.Button(
+                            modifier = Modifier.weight(1f),
+                            onClick = { section = item }
+                        ) { Text(item.title, maxLines = 1) }
+                    } else {
+                        OutlinedButton(
+                            modifier = Modifier.weight(1f),
+                            onClick = { section = item }
+                        ) { Text(item.title, maxLines = 1) }
+                    }
                 }
             }
         }
 
         Box(Modifier.fillMaxWidth()) {
-            Box(Modifier.fillMaxWidth().offset(x = if (section == ConnectionSection.SECURE) 0.dp else 3000.dp)) {
-                SecureInternetPanel()
+            Box(Modifier.fillMaxWidth().offset(
+                x = if (feature != SecureFeatureSection.CONNECTION || section == ConnectionSection.SECURE) 0.dp else 3000.dp
+            )) {
+                SecureInternetPanel(feature)
             }
-            Box(Modifier.fillMaxWidth().offset(x = if (section == ConnectionSection.CLOUDFLARE) 0.dp else 3000.dp)) {
+            Box(Modifier.fillMaxWidth().offset(
+                x = if (feature == SecureFeatureSection.CONNECTION && section == ConnectionSection.CLOUDFLARE) 0.dp else 3000.dp
+            )) {
                 CloudflareSetupPanel()
             }
-            Box(Modifier.fillMaxWidth().offset(x = if (section == ConnectionSection.CUSTOM) 0.dp else 3000.dp)) {
+            Box(Modifier.fillMaxWidth().offset(
+                x = if (feature == SecureFeatureSection.CONNECTION && section == ConnectionSection.CUSTOM) 0.dp else 3000.dp
+            )) {
                 OpenNetworkPanel()
             }
         }
