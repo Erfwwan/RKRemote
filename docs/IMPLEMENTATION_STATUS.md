@@ -293,3 +293,14 @@ This section supersedes older milestone notes above where they describe Internet
 - The combined Cloudflare URL-validation and current source changes are being checked by GitHub Actions; see the branch's latest Android build workflow before treating this exact revision as build-verified.
 - Deployment of the Cloudflare Worker, TURN provisioning, and two-device testing are intentionally deferred. The final validation stage must include installation on both devices, owner-permission review, SAS/peer identity comparison, direct ICE/STUN connection, TURN fallback, network switching/reconnect, and real file/media/notification tests.
 - No independent cryptographic/security audit has been performed. The Torann Noise implementation and the full application remain subject to independent review before production use.
+
+
+## Secure transport hardening follow-up · 2026-11-08
+
+- File-transfer cancellation is now bound to the exact active transfer ID on both controller and target. A thread-safe cancellation registry stops only the matching download; the SAF bridge aborts/deletes only the matching incomplete upload. The panel's active-transfer guard also handles cancellation arriving while a worker is queued before its cancellation token is registered.
+- The controller sends the transfer ID in `file.transfer.cancel`, stops its local upload worker or aborts its temporary download, and clears state when the target rejects a request/chunk or completes/reports an error. Rejected chunk commands now receive a scoped `command.result` so the sender can stop.
+- JVM tests cover cancellation ID isolation, duplicate registration, repeated cancellation, and cleanup.
+- Added strict DTLS SHA-256 fingerprint parsing: exactly 32 hexadecimal octets, all SDP fingerprint attributes valid and consistent, and constant-time comparison with the fingerprint carried in authenticated Noise signaling. Tests cover missing, malformed, inconsistent, and mismatched fingerprints.
+- Cloudflare signaling now closes the WSS socket when it receives malformed, oversized, or unknown text control events rather than merely reporting an error and keeping the socket open.
+- CI run `42478352174` completed successfully for the transfer-ID cancellation source and its unit tests, including debug APK assembly and artifact upload. Later DTLS fingerprint and signaling-control hardening changes have additional Android CI runs in progress; verify the latest run before treating the current branch tip as build-verified.
+- No Cloudflare deployment, TURN test, two-device test, real NAT traversal, or physical Android validation has been performed. These remain part of the final stage.
