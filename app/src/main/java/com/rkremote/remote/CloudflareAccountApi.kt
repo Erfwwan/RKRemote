@@ -100,6 +100,7 @@ object CloudflareTokenStore {
             )
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                 .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setKeySize(256)
                 .setRandomizedEncryptionRequired(true)
                 .build()
         )
@@ -182,15 +183,6 @@ object CloudflareAccountApi {
                 .put(body).build()
         )
 
-        val subdomainUrl = "$scriptUrl/subdomain"
-        request(
-            Request.Builder().url(subdomainUrl)
-                .header("Authorization", "Bearer $accessToken")
-                .post(
-                    JSONObject().put("enabled", true).toString()
-                        .toRequestBody("application/json".toMediaType())
-                ).build()
-        )
         val accountSubdomainUrl = "$API/accounts/$accountId/workers/subdomain"
         val subdomainJson = runCatching {
             request(
@@ -210,6 +202,16 @@ object CloudflareAccountApi {
         }
         val subdomain = subdomainJson.optJSONObject("result")?.optString("subdomain").orEmpty()
         require(subdomain.isNotBlank()) { "Cloudflare did not return a workers.dev subdomain" }
+
+        val subdomainUrl = "$scriptUrl/subdomain"
+        request(
+            Request.Builder().url(subdomainUrl)
+                .header("Authorization", "Bearer $accessToken")
+                .post(
+                    JSONObject().put("enabled", true).toString()
+                        .toRequestBody("application/json".toMediaType())
+                ).build()
+        )
         return "wss://$WORKER_NAME.$subdomain.workers.dev"
     }
 
