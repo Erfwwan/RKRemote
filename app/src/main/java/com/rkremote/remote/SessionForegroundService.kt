@@ -59,7 +59,7 @@ class SessionForegroundService : Service() {
         if (foregroundStart.isFailure) {
             val pending = pendingInternetPeer
             pendingInternetPeer = null
-            runCatching { pending?.close() }
+            runCatching { pending?.stopFromOwnerAction("Android could not start the visible session service") }
             Log.e(TAG, "Unable to start visible Internet session service", foregroundStart.exceptionOrNull())
             stopSelf(startId)
             return START_NOT_STICKY
@@ -82,7 +82,7 @@ class SessionForegroundService : Service() {
         stopInternetPeer()
         val pending = pendingInternetPeer
         pendingInternetPeer = null
-        runCatching { pending?.close() }
+        runCatching { pending?.stopFromOwnerAction("The foreground session service was destroyed") }
         if (serviceInstance === this) serviceInstance = null
         super.onDestroy()
     }
