@@ -168,13 +168,19 @@ class PttPlaybackService : Service() {
         active.set(false)
         PttAudioQueue.setEnabled(false)
         PttAudioQueue.clear()
-        playbackThread?.interrupt()
-        playbackThread = null
+        val playbackWorker = playbackThread
         val old = track
         track = null
+        // Stop the native track to unblock WRITE_BLOCKING before waiting for
+        // the playback thread to finish using it.
         runCatching { old?.pause() }
         runCatching { old?.flush() }
         runCatching { old?.stop() }
+        playbackWorker?.interrupt()
+        if (playbackWorker != null && playbackWorker !== Thread.currentThread()) {
+            runCatching { playbackWorker.join(500) }
+        }
+        playbackThread = null
         runCatching { old?.release() }
     }
 
