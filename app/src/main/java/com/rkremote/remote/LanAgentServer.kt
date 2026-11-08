@@ -259,6 +259,20 @@ class LanAgentServer(
                 }
                 return
             }
+            if (endpoint == "/camera.jpg") {
+                val frame = CameraFrameStore.latestJpeg
+                if (frame == null) {
+                    respond(output, 503, JSONObject().put("error", "Camera is not active or no frame is ready"))
+                } else {
+                    respondBytes(output, frame)
+                }
+                return
+            }
+            if (endpoint == "/audio/chunk") {
+                val chunk = MicrophoneChunkStore.take()
+                if (chunk == null) respondNoContent(output) else respondAudioBytes(output, chunk)
+                return
+            }
             val response = when (endpoint) {
                 "/health" -> JSONObject()
                     .put("app", "RKRemote")
@@ -406,6 +420,7 @@ class LanAgentServer(
             200 -> "OK"
             201 -> "Created"
             202 -> "Accepted"
+            204 -> "No Content"
             400 -> "Bad Request"
             401 -> "Unauthorized"
             404 -> "Not Found"
