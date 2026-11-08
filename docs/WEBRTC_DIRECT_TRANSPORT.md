@@ -53,3 +53,10 @@ For reliable use across restrictive networks, provision a separately operated TU
 - [ ] Verify peer-left, socket failure, and local Stop close WebRTC and Noise state.
 - [ ] Test Android 13+ and supported Android device architectures.
 - [ ] Complete independent security review before sending private device data.
+
+
+## Versioned application messages
+
+Once the DataChannel is connected, the app can exchange bounded RemoteMessage envelopes. The shared room ID derives the session namespace; each sender increments its own sequence and gives each message a UUID. Receivers reject messages from another room namespace, timestamps outside a ten-minute window, repeated message IDs, and non-increasing sequences. The UI's **Test secure message exchange** sends secure.ping; the other phone replies with secure.pong.
+
+This is only a protocol and bidirectional transport test. The allow-listed future message types do not execute operations. Screen, file, notification, camera, microphone, and PTT functions remain on their previous local/LAN code paths and are not yet available over this secure Internet connection. Do not expose the legacy TCP port 18765.
