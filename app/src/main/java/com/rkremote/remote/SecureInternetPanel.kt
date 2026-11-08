@@ -2075,12 +2075,6 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     "برای دریافت صدای میکروفن یا واکی‌تاکی، مجوز مربوطه را در «مجوزهای نشست» جداگانه تأیید کن.",
                     style = MaterialTheme.typography.bodySmall
                 )
-            } else {
-                Text(
-                    "این قابلیت برای نقش فعلی در دسترس نیست.",
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
             } else if (role.value == CloudflareSignalingClient.Role.CONTROLLER) {
                 Text("Controller", style = MaterialTheme.typography.titleSmall)
                 if (feature == SecureFeatureSection.CAMERA) {
