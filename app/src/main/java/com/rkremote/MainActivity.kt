@@ -63,6 +63,7 @@ private enum class AppPage(val title: String) {
     REMOTE_NOTIFICATIONS("همگام‌سازی اعلان‌ها"),
     CALL_HISTORY("گزارش تاریخچه تماس‌ها"),
     SMS_HISTORY("گزارش پیامک‌ها"),
+    LOCATION("موقعیت مکانی زنده"),
     SESSION_PERMISSIONS("مجوزهای نشست"),
     PERMISSIONS("مجوزهای اندروید"),
     NOTIFICATIONS("تاریخچه اعلان‌ها"),
@@ -132,6 +133,11 @@ private fun LocalSetupScreen() {
                 "پیامک‌ها",
                 "برای نمایش پیامک‌های همین گوشی و ارسال گزارش فقط پس از تأیید جداگانه مالک دستگاه لازم است. Android ممکن است این مجوز را به‌دلیل محدودیت‌های امنیتی یا روش نصب برنامه مسدود کند.",
                 listOf(Manifest.permission.READ_SMS)
+            ))
+            add(PermissionItem(
+                "موقعیت مکانی",
+                "برای ثبت موقعیت لازم است؛ ثبت دوره‌ای در پس‌زمینه به مجوز جداگانه «همیشه مجاز» نیاز دارد.",
+                listOf(Manifest.permission.ACCESS_COARSE_LOCATION)
             ))
             add(PermissionItem(
                 "تاریخچه تماس‌ها",
@@ -246,7 +252,7 @@ private fun LocalSetupScreen() {
                 Box(Modifier.fillMaxSize().offset(
                     x = if (currentPage in setOf(
                         AppPage.CONNECTIONS, AppPage.SCREEN, AppPage.CAMERA, AppPage.AUDIO,
-                        AppPage.REMOTE_FILES, AppPage.REMOTE_NOTIFICATIONS, AppPage.CALL_HISTORY, AppPage.SMS_HISTORY, AppPage.SESSION_PERMISSIONS
+                        AppPage.REMOTE_FILES, AppPage.REMOTE_NOTIFICATIONS, AppPage.CALL_HISTORY, AppPage.SMS_HISTORY, AppPage.LOCATION, AppPage.SESSION_PERMISSIONS
                     )) 0.dp else 2000.dp
                 )) {
                     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -260,6 +266,7 @@ private fun LocalSetupScreen() {
                                     AppPage.REMOTE_NOTIFICATIONS -> SecureFeatureSection.NOTIFICATIONS
                                     AppPage.CALL_HISTORY -> SecureFeatureSection.CALL_LOGS
                                     AppPage.SMS_HISTORY -> SecureFeatureSection.SMS_MESSAGES
+                                    AppPage.LOCATION -> SecureFeatureSection.LOCATION
                                     AppPage.SESSION_PERMISSIONS -> SecureFeatureSection.SESSION_PERMISSIONS
                                     else -> SecureFeatureSection.CONNECTION
                                 }
