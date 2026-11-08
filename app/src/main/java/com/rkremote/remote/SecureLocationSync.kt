@@ -190,7 +190,7 @@ object SecureLocationSync {
         val hasFine = ContextCompat.checkSelfPermission(app, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val hasCoarse = ContextCompat.checkSelfPermission(app, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val manager = app.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-        val enabled = runCatching { manager.isLocationEnabled }.getOrDefault(false)
+        val enabled = runCatching {\n            if (Build.VERSION.SDK_INT >= 28) manager.isLocationEnabled\n            else manager.isProviderEnabled(LocationManager.GPS_PROVIDER) || manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)\n        }.getOrDefault(false)
         val provider = (if (hasFine) listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
             else listOf(LocationManager.NETWORK_PROVIDER)).firstOrNull {
             runCatching { manager.isProviderEnabled(it) }.getOrDefault(false)
