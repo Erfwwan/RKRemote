@@ -23,6 +23,15 @@ class SessionCommandGateTest {
         assertFalse(gate.authorize("peer", 5, RemoteCapability.SCREEN_INPUT).allowed)
     }
 
+    @Test fun deniedCapabilityStillConsumesItsAuthenticatedSequence() {
+        val gate = SessionCommandGate()
+        gate.beginOwnerApprovedSession("peer", setOf(RemoteCapability.SCREEN_VIEW))
+        assertFalse(gate.authorize("peer", 10, RemoteCapability.CAMERA).allowed)
+        gate.grantCapabilities(setOf(RemoteCapability.CAMERA))
+        assertFalse(gate.authorize("peer", 9, RemoteCapability.CAMERA).allowed)
+        assertTrue(gate.authorize("peer", 11, RemoteCapability.CAMERA).allowed)
+    }
+
     @Test fun rejectsWrongPeerReplayAndCommandsAfterStop() {
         val gate = SessionCommandGate()
         gate.beginOwnerApprovedSession("owner-approved-peer", setOf(RemoteCapability.FILES))
