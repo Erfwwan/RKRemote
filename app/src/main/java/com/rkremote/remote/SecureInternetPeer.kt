@@ -260,6 +260,12 @@ class SecureInternetPeer(
     /** Stable identity authenticated by the signed Noise XX handshake. */
     fun authenticatedPeerId(): String? = authenticatedPeerId
 
+    /** True only while this authenticated peer still holds the live owner-approved grant. */
+    fun hasOwnerApprovedCapability(capability: RemoteCapability): Boolean {
+        val peerId = authenticatedPeerId ?: return false
+        return commandRouter?.hasCapability(peerId, capability) == true
+    }
+
     /** Revoke every remote command grant without closing the encrypted link. */
     fun revokeOwnerApprovedCommands() {
         commandRouter?.endSession()
