@@ -22,7 +22,7 @@ class SecureSafTransferBridge(context: Context) {
 
     fun list(parentId: String?, limit: Int = MAX_LIST_ITEMS): JSONObject {
         require(limit in 1..MAX_LIST_ITEMS)
-        val tree = selectedTree(requireWrite = true)
+        val tree = selectedTree()
         val rootId = DocumentsContract.getTreeDocumentId(tree)
         val parent = parentId?.takeIf { it.isNotBlank() } ?: rootId
         requireInsideTree(tree, parent)
@@ -197,7 +197,7 @@ class SecureSafTransferBridge(context: Context) {
         val mime = rawMimeType.takeIf {
             it.count { ch -> ch == '/' } == 1 && it.all { ch -> ch.isLetterOrDigit() || ch in "!#&^_.+-/" }
         } ?: "application/octet-stream"
-        val tree = selectedTree()
+        val tree = selectedTree(requireWrite = true)
         val rootId = DocumentsContract.getTreeDocumentId(tree)
         val parent = parentId?.takeIf { it.isNotBlank() } ?: rootId
         requireInsideTree(tree, parent)
