@@ -12,6 +12,9 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.net.SocketException
 import java.security.MessageDigest
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -26,6 +29,17 @@ class LanAgentServer(
     private val running = AtomicBoolean(false)
     @Volatile private var server: ServerSocket? = null
     private var worker: Thread? = null
+    private val clients = ThreadPoolExecutor(
+        2, 4, 30, TimeUnit.SECONDS, ArrayBlockingQueue(16)
+    ) { task, _ ->
+        // Saturated server: reject excess clients rather than creating unbounded threads.
+        if (task is ClientTask) task.close()
+    }
+
+    private inner class ClientTask(private val socket: Socket) : Runnable {
+        override fun run() = handle(socket)
+        fun close() { runCatching { socket.close() } }
+    }
 
     fun start() {
         check(token.length >= 24) { "Session token is too short" }
@@ -37,7 +51,11 @@ class LanAgentServer(
                     while (running.get()) {
                         try {
                             val client = socketServer.accept()
-                            Thread { handle(client) }.start()
+                            try {
+                                clients.execute(ClientTask(client))
+                            } catch (_: Exception) {
+                                runCatching { client.close() }
+                            }
                         } catch (e: SocketException) {
                             if (running.get()) throw e
                         }
@@ -59,17 +77,26 @@ class LanAgentServer(
         runCatching { server?.close() }
         worker?.interrupt()
         worker = null
+        clients.shutdownNow()
     }
 
     private fun handle(socket: Socket) {
         socket.use { client ->
-            client.soTimeout = 5000
+            client.soTimeout = 4000
             val reader = BufferedReader(InputStreamReader(client.getInputStream(), Charsets.US_ASCII))
-            val requestLine = reader.readLine() ?: return
+            val requestLine = reader.readLine()?.takeIf { it.length <= MAX_REQUEST_LINE } ?: return
             val headers = mutableMapOf<String, String>()
+            var headerCount = 0
+            var headerBytes = 0
             while (true) {
                 val line = reader.readLine() ?: break
                 if (line.isEmpty()) break
+                headerCount++
+                headerBytes += line.length
+                if (headerCount > MAX_HEADERS || headerBytes > MAX_HEADER_BYTES) {
+                    respond(client.getOutputStream(), 400, JSONObject().put("error", "Headers too large"))
+                    return
+                }
                 val separator = line.indexOf(':')
                 if (separator > 0) headers[line.substring(0, separator).trim().lowercase()] =
                     line.substring(separator + 1).trim()
@@ -130,11 +157,11 @@ class LanAgentServer(
     }
 
     private fun respondBytes(output: OutputStream, bytes: ByteArray) {
-        val header = "HTTP/1.1 200 OK\r\n" +
-            "Content-Type: image/jpeg\r\n" +
-            "Content-Length: ${bytes.size}\r\n" +
-            "Connection: close\r\n" +
-            "Cache-Control: no-store\r\n\r\n"
+        val header = "HTTP/1.1 200 OK\\r\\n" +
+            "Content-Type: image/jpeg\\r\\n" +
+            "Content-Length: ${bytes.size}\\r\\n" +
+            "Connection: close\\r\\n" +
+            "Cache-Control: no-store\\r\\n\\r\\n"
         output.write(header.toByteArray(Charsets.US_ASCII))
         output.write(bytes)
         output.flush()
@@ -144,16 +171,17 @@ class LanAgentServer(
         val bytes = body.toString().toByteArray(Charsets.UTF_8)
         val label = when (status) {
             200 -> "OK"
+            400 -> "Bad Request"
             401 -> "Unauthorized"
             404 -> "Not Found"
             503 -> "Service Unavailable"
             else -> "Method Not Allowed"
         }
-        val header = "HTTP/1.1 $status $label\r\n" +
-            "Content-Type: application/json; charset=utf-8\r\n" +
-            "Content-Length: ${bytes.size}\r\n" +
-            "Connection: close\r\n" +
-            "Cache-Control: no-store\r\n\r\n"
+        val header = "HTTP/1.1 $status $label\\r\\n" +
+            "Content-Type: application/json; charset=utf-8\\r\\n" +
+            "Content-Length: ${bytes.size}\\r\\n" +
+            "Connection: close\\r\\n" +
+            "Cache-Control: no-store\\r\\n\\r\\n"
         output.write(header.toByteArray(Charsets.US_ASCII))
         output.write(bytes)
         output.flush()
@@ -162,5 +190,8 @@ class LanAgentServer(
     companion object {
         const val DEFAULT_PORT = 18765
         private const val MAX_LIST_ITEMS = 200
+        private const val MAX_REQUEST_LINE = 2048
+        private const val MAX_HEADERS = 24
+        private const val MAX_HEADER_BYTES = 8192
     }
 }
