@@ -41,14 +41,30 @@ Requirements:
 - Gradle 8.11.1
 - Android Gradle Plugin 8.9.1
 
-Run the automated checks from the repository root:
+Run the automated checks from the repository root with JDK 17 and Gradle 8.11.1:
 
 ```bash
 gradle --no-daemon :app:testDebugUnitTest
 gradle --no-daemon :app:assembleDebug
+gradle --no-daemon :app:assembleRelease
 ```
 
-GitHub Actions runs both commands and uploads the debug APK as a workflow artifact. The debug APK is suitable for development/device validation; it is not a production release signed with the owner's release key.
+GitHub Actions runs all three tasks and uploads separate debug and release APK artifacts. The CI release APK is unsigned unless the operator deliberately supplies release-signing environment variables. Debug builds are for development/device validation, not public distribution.
+
+### Release signing
+
+Create and safeguard your own keystore outside the repository. For example, use `keytool -genkeypair` with a long-lived RSA key and back up the keystore and passwords securely. Never commit the keystore or passwords.
+
+Set these environment variables before running `:app:assembleRelease`:
+
+- `RKREMOTE_RELEASE_STORE_FILE`: path to your keystore file.
+- `RKREMOTE_RELEASE_STORE_PASSWORD`: keystore password.
+- `RKREMOTE_RELEASE_KEY_ALIAS`: key alias.
+- `RKREMOTE_RELEASE_KEY_PASSWORD`: key password.
+
+All four values are required together. If none are set, Gradle intentionally creates an unsigned release APK. If only some are set or the keystore file is missing, the build fails instead of silently producing an unexpected artifact. For CI signing, store the values as protected GitHub Actions secrets and map them to these environment variable names in a private release workflow; do not print them in logs.
+
+The current package ID is `com.rkremote`, minimum Android version is API 26 (Android 8.0), target SDK is API 35, and the app version is `0.1.0 (versionCode 1)`. Increase `versionCode` for each subsequent distributed release.
 
 ## Secure Internet setup
 
@@ -59,6 +75,17 @@ GitHub Actions runs both commands and uploads the debug APK as a workflow artifa
 5. Start screen/camera/microphone/PTT services locally on the target when required. Keep their visible notifications and stop actions available.
 
 Cloudflare Worker deployment and TURN provisioning are operator tasks; no public signaling endpoint or TURN credentials are bundled in the repository.
+
+## Installation and first-run checks
+
+1. Install the APK on the target phone. Android may require enabling installation from the source used to open the APK.
+2. Open RKRemote and review the permission page. Grant Camera, Microphone, and notification runtime access only if the matching feature is needed.
+3. Enable Notification Access or Accessibility manually in Android Settings only when you intend to use those specific functions.
+4. Select the target folder through Android's system folder picker; file access is limited to that owner-selected tree.
+5. Start each capture/session locally on the target. Keep the persistent notification and Stop action visible.
+6. For secure Internet P2P, deploy the Worker and configure STUN/TURN as described above before pairing.
+
+The app does not require contacts, call-log, location, or broad shared-media/storage permissions. File access uses the Android Storage Access Framework folder grant. Physical two-device acceptance testing is a separate final step and is not implied by a successful CI build.
 
 ## Security and privacy
 
