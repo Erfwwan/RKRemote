@@ -86,13 +86,19 @@ class SecureAudioPlayback : AutoCloseable {
             return
         }
         queue.clear()
-        worker?.interrupt()
-        worker = null
+        val playbackWorker = worker
         val old = track
         track = null
+        // Stop first to unblock a worker in WRITE_BLOCKING, then join before
+        // releasing the native AudioTrack object it may still be using.
         runCatching { old?.pause() }
         runCatching { old?.flush() }
         runCatching { old?.stop() }
+        playbackWorker?.interrupt()
+        if (playbackWorker != null && playbackWorker !== Thread.currentThread()) {
+            runCatching { playbackWorker.join(500) }
+        }
+        worker = null
         runCatching { old?.release() }
     }
 
