@@ -331,6 +331,20 @@ fun SecureInternetPanel() {
             OutlinedTextField(value = turnUrls.value, onValueChange = { turnUrls.value = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Optional TURN URLs (comma-separated)") }, singleLine = true)
             OutlinedButton(enabled = session.value == null, onClick = {
                 runCatching {
+                    val saved = context.getSharedPreferences("rkremote_cloudflare_setup", android.content.Context.MODE_PRIVATE)
+                    url.value = saved.getString("worker_url", "").orEmpty()
+                    room.value = saved.getString("room_id", "").orEmpty()
+                    turnUrls.value = saved.getString("ice_urls", "").orEmpty()
+                    role.value = if (saved.getString("role", "target") == "controller")
+                        CloudflareSignalingClient.Role.CONTROLLER else CloudflareSignalingClient.Role.TARGET
+                    turnUsername.value = ""
+                    turnCredential.value = ""
+                    forceTurnRelay.value = false
+                    error.value = "Per-device Cloudflare setup loaded"
+                }.onFailure { error.value = it.message ?: "Could not load saved setup" }
+            }) { Text("Load saved Cloudflare setup for this phone") }
+            OutlinedButton(enabled = session.value == null, onClick = {
+                runCatching {
                     val raw = context.getSharedPreferences("rkremote_custom_networks", android.content.Context.MODE_PRIVATE)
                         .getString("active_profile", null) ?: error("No active custom network profile")
                     val profile = JSONObject(raw)
