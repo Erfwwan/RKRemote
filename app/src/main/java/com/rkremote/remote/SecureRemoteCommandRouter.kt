@@ -51,6 +51,12 @@ class SecureRemoteCommandRouter(
     }
 
     @Synchronized
+    fun grantCapabilities(capabilities: Set<RemoteCapability>) {
+        require(capabilities.isNotEmpty())
+        gate.grantCapabilities(capabilities)
+    }
+
+    @Synchronized
     fun endSession() {
         gate.endSession()
         seenRequests.clear()
