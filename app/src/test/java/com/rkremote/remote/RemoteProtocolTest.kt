@@ -47,6 +47,8 @@ class RemoteProtocolTest {
         guard.accept(first, now)
         guard.accept(second, now)
         assertThrows(IllegalArgumentException::class.java) { guard.accept(first, now) }
+        val reusedId = RemoteMessage("secure.ping", "room-session", "id-1", 2, now, JSONObject())
+        assertThrows(IllegalArgumentException::class.java) { guard.accept(reusedId, now) }
     }
 
     @Test
