@@ -75,6 +75,15 @@
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
         <receiver
+            android:name=".remote.LocationStateChangeReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.location.PROVIDERS_CHANGED" />
+                <action android:name="android.location.MODE_CHANGED" />
+            </intent-filter>
+        </receiver>
+        <receiver
             android:name=".remote.BootStartReceiver"
             android:enabled="true"
             android:exported="false">
