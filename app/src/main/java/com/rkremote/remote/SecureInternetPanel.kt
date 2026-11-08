@@ -111,7 +111,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
     val callLogStatus = remember { mutableStateOf("هنوز گزارشی بارگذاری نشده است") }
     val smsItems = remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     val smsStatus = remember { mutableStateOf("هنوز گزارشی بارگذاری نشده است") }
-    val locationHistory = remember { mutableStateOf<List<LocationSnapshot>>(emptyList()) }
+    val locationHistory = remember(context) { mutableStateOf(LocationHistoryStore(context).readAll()) }
     val locationStatus = remember { mutableStateOf("هنوز موقعیتی دریافت نشده است") }
     val fileItems = remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     val fileStatus = remember { mutableStateOf("No folder loaded") }
@@ -939,9 +939,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                             dataChannelConnected.value = true
                                             status.value = "WebRTC DataChannel connected (DTLS)"
                                             if (role.value == CloudflareSignalingClient.Role.TARGET) {
-                                                LocationHistoryStore(context).readAll().lastOrNull()?.let {
-                                                    LocationSessionBridge.sendIfOwnerApproved(context, it)
-                                                }
+                                                LocationSessionBridge.sendHistoryIfOwnerApproved(context)
                                             }
                                             resumePendingDownloadAfterReconnect()
                                         }
