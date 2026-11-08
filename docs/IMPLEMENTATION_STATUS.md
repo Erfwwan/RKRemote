@@ -14,7 +14,7 @@ This branch is a development foundation for the next major RKRemote iteration.
 - Session command authorization gate requiring an owner-approved active session, exact peer identity, per-capability grants, monotonic sequence numbers, and explicit revocation.
 - SAF document repository limited to the tree URI selected by the device owner; bounded file reads and permission-checked deletion.
 - Read-only LAN agent/controller on TCP 18765 with temporary bearer token; health check and owner-selected folder metadata listing. Client handling is bounded (four active workers, sixteen queued clients, header limits and socket timeouts); controller response reads are capped at 16 MiB and IPv4 octets are validated.
-- Owner-approved screen capture through Android MediaProjection consent, visible mediaProjection foreground service, in-memory JPEG frame, and authenticated `/screen.jpg` snapshot endpoint; controller can request and display a still snapshot.
+- Owner-approved screen capture through Android MediaProjection consent, visible mediaProjection foreground service, in-memory JPEG frame (maximum dimension 1600 px), and authenticated `/screen.jpg` snapshot endpoint; controller can request and display a still snapshot.
 - JVM tests for the encryption envelope and command authorization gate.
 - Existing local setup and encrypted notification store remain in place.
 
