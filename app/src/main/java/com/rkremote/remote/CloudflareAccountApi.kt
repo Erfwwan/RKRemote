@@ -23,7 +23,7 @@ import javax.crypto.spec.GCMParameterSpec
 
 object CloudflareOAuth {
     const val REDIRECT_URI = "com.rkremote.app:/oauth2redirect"
-    const val REQUIRED_SCOPES = "account.read workers-platform.read workers-platform.write"
+    const val REQUIRED_SCOPES = "account.read workers-platform.read workers-platform.write offline_access"
     val serviceConfiguration = AuthorizationServiceConfiguration(
         android.net.Uri.parse("https://dash.cloudflare.com/oauth2/auth"),
         android.net.Uri.parse("https://dash.cloudflare.com/oauth2/token"),
