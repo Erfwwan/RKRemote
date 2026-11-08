@@ -1,104 +1,50 @@
-# RK-SecureLink v1 — authenticated, low-overhead peer channel
+# RK-SecureLink v1 — authenticated encrypted relay
 
-## Status
+## Current status
 
-This document is the normative design for the next RKRemote transport stage. The Cloudflare worker and Android signaling adapter have been changed to carry opaque binary frames only. **The Noise XX handshake engine, encrypted X25519 static-key store, signed P-256 identity binding, and a Cloudflare session bridge are implemented as source code. The bridge sends/receives the three Noise handshake messages as opaque binary frames, exposes the peer ID and SAS for owner confirmation, and gates application frames until both peers have locally approved. JVM handshake tests exist, but bridge integration tests, WebRTC transport, full official-vector execution in this app, Android build verification, and two-device acceptance tests are still outstanding.** Do not treat the current branch as providing end-to-end encryption or expose the legacy LAN server to the internet.
+The Android source contains the Noise XX handshake, encrypted X25519 static-key storage, signed P-256 identity binding, six-digit SAS confirmation, and a Cloudflare session bridge. The active transport path now carries application data over the same Cloudflare WebSocket relay after both owners approve the authenticated peer.
 
-## Goals and limits
-
-- Confidentiality and integrity for signaling and peer-to-peer application traffic against network observers and an untrusted signaling/relay operator.
-- Mutual authentication to the exact device identity approved by the target owner/controller.
-- Forward secrecy from fresh ephemeral key exchange for every connection.
-- Low CPU and latency: one handshake per session, binary frames, no JSON/base64 for encrypted payloads, and no second encryption layer over WebRTC media.
-- Explicit failure on authentication errors, stale sessions, replay, oversized messages, or revoked pairing. Never downgrade to plaintext.
-
-No protocol can make a connection literally unobservable. Network peers can still infer IP addresses, connection timing, duration, and approximate traffic volume. A compromised endpoint can read data before encryption or after decryption.
+Application payloads are optionally DEFLATE-compressed when that saves at least 32 bytes, framed and fragmented below the Worker's 12 KiB binary-frame limit, then each fragment is encrypted using the Noise transport cipher (ChaCha20-Poly1305). The receiver validates fragment metadata, reassembles within strict bounds, and decompresses only when the authenticated envelope says it is compressed.
 
 ## Cryptographic suite
 
-Use the established Noise protocol framework, not a home-grown handshake:
-
-- Protocol name: `Noise_XX_25519_ChaChaPoly_SHA256`.
-- DH: X25519.
+- Noise protocol: Noise_XX_25519_ChaChaPoly_SHA256.
+- Ephemeral/static DH: X25519.
 - AEAD: ChaCha20-Poly1305.
-- Hash/HKDF: SHA-256 / Noise-defined HKDF.
-- Fresh ephemeral key material for every handshake.
-- Separate long-lived Noise static X25519 key from the existing P-256 signing identity.
+- Hash/HKDF: SHA-256 and Noise-defined HKDF.
+- Long-lived device identity: P-256 ECDSA key in Android Keystore.
+- Signed binding: P-256 identity signs the X25519 Noise static public key and peer identity.
+- Fresh Noise handshake per new connection. Do not persist session transport keys.
 
-The XX pattern is selected because both peers reveal their static Noise keys encrypted inside the handshake, allowing the application to authenticate a signed binding to the already-paired P-256 identity. Do not substitute a custom sequence of ECDH, HKDF, and AEAD calls for a reviewed Noise implementation.
+Torann 0.3.1 is not independently audited and explicitly does not claim production readiness. Obtain an independent security review before relying on the protocol for high-risk data.
 
-## Identity binding and pairing
+## Pairing and authorization
 
-The existing P2P identity is a P-256 ECDSA key in Android Keystore. It remains the device identity and signs a canonical binding statement containing:
+1. Target creates a fresh random 256-bit room ID and opens its Worker WebSocket.
+2. Target shares an RKRemote invitation URI containing the Worker origin and room ID.
+3. Controller opens the invitation; app fills the Worker URL, room and controller role automatically.
+4. Peers perform Noise XX and verify signed identity bindings.
+5. Both owners compare the exact six-digit SAS and peer ID and explicitly approve.
+6. Only after mutual approval can application frames be sent.
+7. The target owner separately grants each capability. Camera, microphone and screen capture still require local owner action and visible Android foreground controls.
 
-- protocol/domain label `RK-SecureLink-KeyBinding-v1`;
-- P2P Peer ID and encoded P-256 public key;
-- 32-byte X25519 Noise static public key;
-- binding version and key generation number.
+The room ID is a rendezvous locator, not an authentication key. Never bypass identity verification or SAS approval.
 
-The Noise static key is generated by Torann 0.3.1 and stored as AES-256-GCM ciphertext in app-private preferences, wrapped by a non-exportable Android Keystore AES key. The raw X25519 private key is only held transiently in memory while constructing the handshake and is not hardware-backed. The key store supports generation counters and explicit rotation. The selected library targets Android 13 (API 33)+; the secure P2P key store therefore fails closed below API 33 while the rest of the app retains minSdk 26. Torann is MIT-licensed and documents 1,352 shared test vectors plus interop tests, but it explicitly states that it has not been independently audited and is not production-ready; RKRemote must obtain an independent review before production use.
+## Relay frame format and bounds
 
-Each peer sends its binding statement as encrypted Noise handshake payload (responder message 2 and initiator message 3). The receiver verifies the P-256 signature, derives the Peer ID from the P-256 public key, and compares it to the locally pinned/approved Peer ID. The binding generation is signed and available for pin/rotation policy. A self-signed advertisement is not itself user approval. First pairing requires explicit owner confirmation (preferably QR or a short authentication string derived from the Noise handshake hash); reject unknown peers by default. On every reconnect, verify the same pinned identity. Revocation deletes the pin and rejects future handshakes.
+- Worker maximum binary frame: 12 KiB.
+- Noise application marker + AEAD tag: 17 bytes.
+- Maximum plaintext fragment sent to the Noise session: 12 KiB minus 17 bytes.
+- Logical application message maximum: 64 KiB.
+- Reassembly uses bounded in-flight messages, strict fragment count and length checks, duplicate rejection and expiry.
+- Compression runs before encryption; already-compressed payloads are sent uncompressed if DEFLATE does not materially reduce size.
 
-## Handshake and session
+## Privacy boundary
 
-1. Open WSS to the rendezvous. Cloudflare sees the room ID, connecting IPs, role, timing, and traffic volume.
-2. Exchange Noise XX handshake messages as binary WebSocket messages. Cloudflare forwards bytes without parsing or storing them. The worker accepts no client text/JSON messages.
-3. Verify both P-256-signed X25519 binding statements against the paired peer records and pinned identities.
-4. Compare the 6-digit short authentication string derived from the final Noise handshake hash. The bridge reports the peer ID and SAS to the UI; the owner must explicitly approve the peer ID and code on each device.
-5. After local approval, each peer sends an encrypted READY message. Application frames remain blocked until the bridge receives the remote READY as well. Frames arriving before local approval are held in a bounded queue of eight encrypted frames; overflow fails closed.
-6. Derive directional transport keys and nonces from Noise's completed handshake state. Never reuse a key/nonce pair, manually roll counters back, or persist session keys.
-7. Only after mutual approval, exchange WebRTC offer/answer/ICE as encrypted Noise transport payloads. The SDP and ICE candidates are never sent as clear text to Cloudflare.
-8. Exchange the WebRTC DTLS certificate fingerprints inside the authenticated Noise channel and bind the expected fingerprint to the approved peer identity and current session. Reject mismatches before accepting the peer connection.
-9. Close and erase in-memory session state on local stop, peer revoke, authentication failure, or session expiry.
+Cloudflare sees IP addresses, room ID, role, connection timing, frame sizes and traffic volume. It forwards opaque Noise ciphertext and does not persist application frames. WSS additionally protects each phone-to-Cloudflare hop; WSS is not a replacement for end-to-end Noise encryption.
 
-Room IDs are random 256-bit temporary rendezvous invitations, not cryptographic peer identities or session keys. Use one target and one controller per room, a short room lifetime, rate limits, and local cancel. Do not put tokens or capabilities in the room ID.
+## Trade-offs and remaining verification
 
-## Data path and latency
+All app traffic, including media and files, traverses Cloudflare. This avoids direct ICE/STUN/TURN dependencies but increases Worker bandwidth use and may increase latency. Automatic WebSocket reconnect/resume is not implemented; a lost connection requires a fresh handshake and owner approval.
 
-- **Signaling:** Noise transport messages over WSS. This is the only traffic Cloudflare should forward.
-- **Screen/camera/audio:** WebRTC media with SRTP protection. Do not encrypt the same media again at the application layer.
-- **Commands, notifications, file control/data:** WebRTC DataChannel, protected by DTLS. Use binary framing and bounded chunks. Keep large file transfer on a separate ordered/reliable channel so it cannot block low-latency control messages.
-- **Direct path first:** ICE/STUN attempts a direct UDP path. A relay is fallback only; relay sees encrypted packets and network metadata, not plaintext.
-- **No extra JSON/base64:** JSON is restricted to tiny, non-sensitive room lifecycle messages generated by the worker. Encrypted Noise frames are binary WebSocket messages. WebRTC data is binary.
-- **Backpressure:** screen/video uses latest-frame semantics and drops stale frames; voice uses bounded jitter buffers; control messages have priority; file chunks are throttled. Never queue unbounded media.
-- **Handshake cost:** one XX handshake at session start/rekey. Do not perform public-key operations per video/audio frame. Noise transport AEAD is only used for signaling messages; WebRTC DTLS/SRTP handles the live media/data path.
-
-## Application envelope
-
-After the secure peer channel is authenticated, application messages use a compact fixed binary header:
-
-| Field | Size | Purpose |
-|---|---:|---|
-| version | 1 byte | Envelope version |
-| type | 1 byte | Capability/message type |
-| flags | 2 bytes | Reserved; must be zero in v1 |
-| session ID | 16 bytes | Random per-session binding |
-| sequence | 8 bytes | Monotonic per-direction sequence |
-| request ID | 8 bytes | Idempotency/correlation |
-| capability ID | 4 bytes | Explicitly granted capability |
-| payload length | 4 bytes | Exact following payload length |
-
-All integers are network byte order. Reject unknown versions/types, non-zero reserved flags, length mismatch, oversized payloads, wrong session IDs, stale sequence values, and revoked capability IDs. Maintain a bounded replay/idempotency cache for commands; never automatically replay non-idempotent input or file operations after reconnect. This envelope is application framing, not a replacement for Noise or DTLS authentication.
-
-## Cloudflare worker wire contract
-
-- Client-to-worker and worker-to-peer data messages are **binary WebSocket frames only**, each 1–12 KiB.
-- The worker forwards each binary frame byte-for-byte to the other socket. It does not parse, transform, persist, log, or inspect payload bytes.
-- Client text frames are rejected. The only text messages are small worker-generated lifecycle events: `peer-joined`, `peer-left`, and `peer-not-ready`.
-- The worker never receives plaintext SDP/ICE, app commands, files, notifications, or media.
-- WSS still protects each client-to-Cloudflare hop; Noise protects peer-to-peer signaling end-to-end. WSS alone is not end-to-end encryption.
-
-## Implementation gate
-
-Before enabling Internet remote control, complete all of the following:
-
-1. Torann 0.3.1 is pinned and integrated for API 33+; review its transitive Bouncy Castle dependency and obtain an independent security audit before production.
-2. Encrypted-at-rest X25519 key storage, generation tracking, P-256-signed identity binding, and a three-message XX state machine are implemented. JVM tests cover two-party handshake, identity pin mismatch, signature tampering, SAS agreement, and encrypted transport round-trip.
-3. Run the upstream official Noise test vectors on the actual Android API 33+ runtime and expand negative tests for malformed/replayed frames, revoked peers, and key rotation. A local source test is not a substitute for this run.
-4. Add bridge-level tests using an in-memory frame channel, including early-frame buffering, mutual READY gating, malformed app frames, room loss, and bounded-queue failure.
-5. Implement WebRTC and authenticate its DTLS fingerprint through the Noise channel.
-6. Add independent security review and physical two-device tests on separate networks, including direct and relay paths.
-7. Migrate each capability only after explicit capability authorization, local owner visibility, stop/revoke behavior, and encrypted transport are tested.
-
-Until the remaining gates pass, the Cloudflare-to-Noise signaling bridge is only a secure signaling foundation; it is not integrated with WebRTC or existing remote-control features and must not be treated as a secure remote-control product. The legacy LAN path remains plaintext.
+The source changes have not been Android-built or tested in this milestone. JVM codec/handshake tests are not a substitute for Android runtime, two-device, network-failure, large-file, media, long-duration or independent security tests.
