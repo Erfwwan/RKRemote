@@ -32,6 +32,7 @@ class SecureWebRtcPeer(
     private val authenticatedPeerId: String,
     private val role: Role,
     turnServers: List<TurnServer> = emptyList(),
+    private val forceTurnRelay: Boolean = false,
     private val listener: Listener
 ) : AutoCloseable {
 
@@ -227,6 +228,9 @@ class SecureWebRtcPeer(
             bundlePolicy = PeerConnection.BundlePolicy.MAXBUNDLE
             rtcpMuxPolicy = PeerConnection.RtcpMuxPolicy.REQUIRE
             tcpCandidatePolicy = PeerConnection.TcpCandidatePolicy.ENABLED
+            // Diagnostic mode: require TURN relay candidates; never silently use direct paths.
+            iceTransportsType = if (forceTurnRelay) PeerConnection.IceTransportsType.RELAY
+                else PeerConnection.IceTransportsType.ALL
         }
         peerConnection = factory!!.createPeerConnection(rtcConfig, observer)
             ?: error("WebRTC could not create a PeerConnection")
