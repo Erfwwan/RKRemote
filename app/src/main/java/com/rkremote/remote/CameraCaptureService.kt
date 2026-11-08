@@ -275,15 +275,38 @@ class CameraCaptureService : Service() {
     }
 
     private fun compressForTransfer(jpeg: ByteArray): ByteArray {
-        val bitmap = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size) ?: return jpeg
-        return try {
-            val output = ByteArrayOutputStream()
-            if (bitmap.compress(Bitmap.CompressFormat.JPEG, 84, output) && output.size() > 0) output.toByteArray()
-            else jpeg
-        } catch (_: Exception) {
-            jpeg
+        val original = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size)
+            ?: throw IllegalStateException("Camera returned an unreadable JPEG")
+        var working = original
+        try {
+            var quality = 84
+            repeat(20) {
+                val output = ByteArrayOutputStream()
+                check(working.compress(Bitmap.CompressFormat.JPEG, quality, output)) {
+                    "JPEG compression failed"
+                }
+                if (output.size() in 1..SecureImageFrameAssembler.MAX_IMAGE_BYTES) {
+                    return output.toByteArray()
+                }
+
+                if (quality > 54) {
+                    quality -= 10
+                } else {
+                    val nextWidth = (working.width * 3 / 4).coerceAtLeast(320)
+                    val nextHeight = (working.height * 3 / 4).coerceAtLeast(320)
+                    check(nextWidth < working.width || nextHeight < working.height) {
+                        "Photo cannot be reduced below the secure 2 MiB transfer limit"
+                    }
+                    val scaled = Bitmap.createScaledBitmap(working, nextWidth, nextHeight, true)
+                    if (working !== original && working !== scaled) working.recycle()
+                    working = scaled
+                    quality = 80
+                }
+            }
+            error("Photo cannot be reduced below the secure 2 MiB transfer limit")
         } finally {
-            bitmap.recycle()
+            if (working !== original) working.recycle()
+            original.recycle()
         }
     }
 
