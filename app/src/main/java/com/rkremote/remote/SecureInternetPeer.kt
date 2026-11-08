@@ -268,14 +268,22 @@ class SecureInternetPeer(
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
-        synchronized(lock) {
+        val rtc = synchronized(lock) {
             pendingSignals.clear()
-            webRtc?.close()
-            webRtc = null
+            webRtc.also { webRtc = null }
         }
-        commandRouter?.endSession()
-        authenticatedPeerId = null
-        secureSession.close()
+        // A native WebRTC disposal problem must never preserve command grants,
+        // authenticated identity state, or the Noise signaling socket.
+        try {
+            rtc?.close()
+        } finally {
+            try {
+                commandRouter?.endSession()
+            } finally {
+                authenticatedPeerId = null
+                secureSession.close()
+            }
+        }
     }
 
     companion object {
