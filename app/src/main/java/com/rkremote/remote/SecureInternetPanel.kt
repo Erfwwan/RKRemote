@@ -2,6 +2,7 @@ package com.rkremote.remote
 
 import android.os.Build
 import android.provider.CallLog
+import android.provider.Telephony
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -52,7 +53,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 enum class SecureFeatureSection {
-    CONNECTION, SCREEN, CAMERA, AUDIO, FILES, NOTIFICATIONS, CALL_LOGS, SESSION_PERMISSIONS
+    CONNECTION, SCREEN, CAMERA, AUDIO, FILES, NOTIFICATIONS, CALL_LOGS, SMS_MESSAGES, SESSION_PERMISSIONS
 }
 
 @Composable
@@ -98,6 +99,8 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
     val notificationSummary = remember { mutableStateOf("No notification sync requested") }
     val callLogItems = remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     val callLogStatus = remember { mutableStateOf("هنوز گزارشی بارگذاری نشده است") }
+    val smsItems = remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+    val smsStatus = remember { mutableStateOf("هنوز گزارشی بارگذاری نشده است") }
     val fileItems = remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     val fileStatus = remember { mutableStateOf("No folder loaded") }
     val fileParentId = remember { mutableStateOf("") }
@@ -325,6 +328,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     SecureFeatureSection.FILES -> "مدیریت و انتقال فایل‌ها"
                     SecureFeatureSection.NOTIFICATIONS -> "همگام‌سازی اعلان‌ها"
                     SecureFeatureSection.CALL_LOGS -> "گزارش تاریخچه تماس‌ها"
+                    SecureFeatureSection.SMS_MESSAGES -> "گزارش پیامک‌ها"
                     SecureFeatureSection.SESSION_PERMISSIONS -> "مجوزهای نشست"
                     SecureFeatureSection.CONNECTION -> "اتصال و روش‌ها"
                 }
@@ -754,6 +758,16 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                         }
                                         "notifications.sync.result"
                                     }
+                                    register("sms.sync.request", RemoteCapability.CALL_LOG) { message ->
+                                        val response = SecureSmsSync.buildLatestResponse(
+                                            context,
+                                            message.payload.getString("requestId")
+                                        )
+                                        check(activePeer?.sendMessage("sms.sync.result", response) == true) {
+                                            "Could not send encrypted SMS report"
+                                        }
+                                        "sms.sync.result"
+                                    }
                                     register("calllog.sync.request", RemoteCapability.CALL_LOG) { message ->
                                         val response = SecureCallLogSync.buildLatestResponse(
                                             context,
@@ -922,6 +936,15 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                 }
                                             }
                                             "command.result" -> {
+                                                if (message.payload.optString("commandType") == "sms.sync.request" &&
+                                                    !message.payload.optBoolean("accepted")
+                                                ) {
+                                                    mainHandler.post {
+                                                        if (activePeerRef.get() !== activePeer) return@post
+                                                        smsStatus.value = "دریافت پیامک‌ها رد شد: " +
+                                                            message.payload.optString("reason", "دسترسی تأیید نشد")
+                                                    }
+                                                }
                                                 if (message.payload.optString("commandType") == "calllog.sync.request" &&
                                                     !message.payload.optBoolean("accepted")
                                                 ) {
@@ -1076,6 +1099,23 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                     fileDownloadStatus.value = if (retryable)
                                                         "Connection interrupted · ${downloadReceiver.pendingOffset()} bytes saved · resume after reconnect"
                                                     else reason
+                                                }
+                                            }
+                                            "sms.sync.result" -> {
+                                                val records = message.payload.optJSONArray("records")
+                                                val entries = buildList {
+                                                    for (index in 0 until (records?.length() ?: 0)) {
+                                                        records?.optJSONObject(index)?.let { add(JSONObject(it.toString())) }
+                                                    }
+                                                }
+                                                mainHandler.post {
+                                                    if (activePeerRef.get() !== activePeer) return@post
+                                                    smsItems.value = entries
+                                                    val returned = message.payload.optInt("returned", entries.size)
+                                                    val available = message.payload.optInt("available", returned)
+                                                    smsStatus.value = if (message.payload.optBoolean("truncated"))
+                                                        "$returned پیامک از $available پیامک (گزارش محدود شده)"
+                                                    else "$returned پیامک دریافت شد"
                                                 }
                                             }
                                             "calllog.sync.result" -> {
@@ -1490,6 +1530,72 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                         "Notification sync requested" else "Could not request notification sync"
                 }) { Text("Fetch recent notifications") }
                 Text(notificationSummary.value, style = MaterialTheme.typography.bodySmall)
+                }
+                if (feature == SecureFeatureSection.SMS_MESSAGES) {
+                    if (role.value == CloudflareSignalingClient.Role.CONTROLLER) {
+                        OutlinedButton(
+                            enabled = session.value != null && dataChannelConnected.value,
+                            onClick = {
+                                smsStatus.value = if (sendInput("sms.sync.request", JSONObject()))
+                                    "درخواست گزارش پیامک‌ها به دستگاه مقصد ارسال شد"
+                                else "ارسال درخواست گزارش ناموفق بود"
+                            }
+                        ) { Text("دریافت گزارش پیامک‌های دستگاه مقصد") }
+                    } else {
+                        Text(
+                            if (SecureSmsSync.hasSmsPermission(context))
+                                "مجوز پیامک فعال است. گزارش فقط با فشردن دکمه زیر روی همین دستگاه خوانده می‌شود."
+                            else "برای مشاهده گزارش، ابتدا مجوز «پیامک‌ها» را در بخش مجوزهای اندروید فعال کن.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        OutlinedButton(
+                            enabled = SecureSmsSync.hasSmsPermission(context),
+                            onClick = {
+                                runCatching { SecureSmsSync.readLatest(context) }
+                                    .onSuccess { result ->
+                                        smsItems.value = buildList {
+                                            for (index in 0 until result.records.length()) {
+                                                result.records.optJSONObject(index)?.let { add(JSONObject(it.toString())) }
+                                            }
+                                        }
+                                        smsStatus.value = "${result.records.length()} پیامک از ${result.totalAvailable} پیامک"
+                                    }
+                                    .onFailure { smsStatus.value = it.message ?: "خواندن پیامک‌ها ناموفق بود" }
+                            }
+                        ) { Text("نمایش پیامک‌های همین گوشی") }
+                    }
+                    Text(smsStatus.value, style = MaterialTheme.typography.bodySmall)
+                    smsItems.value.forEach { item ->
+                        val typeLabel = when (item.optInt("type")) {
+                            Telephony.Sms.MESSAGE_TYPE_INBOX -> "دریافتی"
+                            Telephony.Sms.MESSAGE_TYPE_SENT -> "ارسالی"
+                            Telephony.Sms.MESSAGE_TYPE_DRAFT -> "پیش‌نویس"
+                            Telephony.Sms.MESSAGE_TYPE_OUTBOX -> "در صف ارسال"
+                            Telephony.Sms.MESSAGE_TYPE_FAILED -> "ناموفق"
+                            Telephony.Sms.MESSAGE_TYPE_QUEUED -> "در انتظار ارسال"
+                            else -> "نامشخص"
+                        }
+                        Card(modifier = Modifier.fillMaxWidth()) {
+                            Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Text(item.optString("address").ifBlank { "شماره ناشناس" }, fontWeight = FontWeight.SemiBold)
+                                Text(typeLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                Text(item.optString("body"), style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+                                        .format(Date(item.optLong("timestamp"))),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                    if (role.value == CloudflareSignalingClient.Role.CONTROLLER) {
+                        Text(
+                            "گزارش فقط پس از فعال‌سازی مجوز SMS و تأیید مالک دستگاه در همان نشست قابل دریافت است. فقط پیامک‌های متنی SMS خوانده می‌شوند؛ MMS شامل این گزارش نیست.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
                 if (feature == SecureFeatureSection.CALL_LOGS) {
                     if (role.value == CloudflareSignalingClient.Role.CONTROLLER) {
