@@ -25,9 +25,15 @@ import java.util.concurrent.atomic.AtomicBoolean
 object PttAudioQueue {
     private const val MAX_QUEUED_CHUNKS = 24
     private val queue = ArrayBlockingQueue<ByteArray>(MAX_QUEUED_CHUNKS)
+    private val enabled = AtomicBoolean(false)
+
+    fun setEnabled(value: Boolean) {
+        enabled.set(value)
+        if (!value) queue.clear()
+    }
 
     fun offer(chunk: ByteArray): Boolean {
-        if (chunk.isEmpty() || chunk.size > MAX_CHUNK_BYTES) return false
+        if (!enabled.get() || chunk.isEmpty() || chunk.size > MAX_CHUNK_BYTES) return false
         // Keep latency bounded: discard the oldest chunk when the queue is full.
         if (!queue.offer(chunk.copyOf())) {
             queue.poll()
@@ -126,6 +132,7 @@ class PttPlaybackService : Service() {
         require(audioTrack.state == AudioTrack.STATE_INITIALIZED) { "Unable to initialize PTT speaker" }
         track = audioTrack
         active.set(true)
+        PttAudioQueue.setEnabled(true)
         audioTrack.play()
         playbackThread = Thread({
             try {
@@ -153,6 +160,7 @@ class PttPlaybackService : Service() {
 
     private fun stopPlayback() {
         active.set(false)
+        PttAudioQueue.setEnabled(false)
         PttAudioQueue.clear()
         playbackThread?.interrupt()
         playbackThread = null
