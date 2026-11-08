@@ -938,6 +938,11 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                             if (activePeerRef.get() !== activePeer) return@post
                                             dataChannelConnected.value = true
                                             status.value = "WebRTC DataChannel connected (DTLS)"
+                                            if (role.value == CloudflareSignalingClient.Role.TARGET) {
+                                                LocationHistoryStore(context).readAll().lastOrNull()?.let {
+                                                    LocationSessionBridge.sendIfOwnerApproved(context, it)
+                                                }
+                                            }
                                             resumePendingDownloadAfterReconnect()
                                         }
                                     }
