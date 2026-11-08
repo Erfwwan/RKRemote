@@ -28,6 +28,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -68,6 +69,10 @@ private fun LocalSetupScreen() {
     val context = LocalContext.current
     var refreshKey by remember { mutableIntStateOf(0) }
     var selectedFolder by remember { mutableStateOf(readSavedFolder(context)) }
+    var notificationSharingEnabled by remember {
+        mutableStateOf(context.getSharedPreferences("rkremote_setup", Context.MODE_PRIVATE)
+            .getBoolean("notification_sharing_enabled", false))
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -214,6 +219,34 @@ private fun LocalSetupScreen() {
                         context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                     }) {
                         Text("Open Notification Access settings")
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Allow sharing with paired controller", fontWeight = FontWeight.Medium)
+                            Text(
+                                "Separate local opt-in. Turn this off to block remote notification viewing.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        Switch(
+                            checked = notificationSharingEnabled,
+                            enabled = notificationAccess,
+                            onCheckedChange = { enabled ->
+                                context.getSharedPreferences("rkremote_setup", Context.MODE_PRIVATE)
+                                    .edit().putBoolean("notification_sharing_enabled", enabled).apply()
+                                notificationSharingEnabled = enabled
+                                refreshKey++
+                            }
+                        )
+                    }
+                    if (!notificationAccess) {
+                        Text("Enable Notification Access first. Sharing remains unavailable until Android access is granted.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
