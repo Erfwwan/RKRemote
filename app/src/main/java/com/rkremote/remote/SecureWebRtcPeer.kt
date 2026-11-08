@@ -290,7 +290,7 @@ class SecureWebRtcPeer(
     }
 
     private fun setLocalAndSignal(description: SessionDescription, type: String) {
-        val fingerprint = extractSha256Fingerprint(description.description)
+        val fingerprint = DtlsFingerprint.extractSha256(description.description)
         peerConnection!!.setLocalDescription(
             sdpObserver(onSet = {
                 sendSignal(JSONObject()
@@ -312,20 +312,7 @@ class SecureWebRtcPeer(
     }
 
     private fun requireFingerprintMatches(sdp: String, envelopeFingerprint: String) {
-        val fromSdp = extractSha256Fingerprint(sdp)
-        require(MessageDigest.isEqual(
-            fromSdp.toByteArray(Charsets.US_ASCII),
-            envelopeFingerprint.uppercase().toByteArray(Charsets.US_ASCII)
-        )) { "Authenticated DTLS fingerprint does not match SDP fingerprint" }
-    }
-
-    private fun extractSha256Fingerprint(sdp: String): String {
-        val matches = Regex("(?im)^a=fingerprint:sha-256 ([0-9A-F:]{95})\\s*$")
-            .findAll(sdp).map { it.groupValues[1].uppercase() }.distinct().toList()
-        require(matches.isNotEmpty() && matches.size == 1) {
-            "SDP must contain one consistent SHA-256 DTLS fingerprint"
-        }
-        return matches.single()
+        DtlsFingerprint.requireMatches(sdp, envelopeFingerprint)
     }
 
     private fun guarded(block: () -> Unit) {
