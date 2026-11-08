@@ -187,7 +187,7 @@ class SessionForegroundService : Service() {
             if (running == null) {
                 val pending = pendingInternetPeer
                 pendingInternetPeer = null
-                runCatching { pending?.close() }
+                runCatching { pending?.stopFromOwnerAction("نشست توسط صاحب دستگاه متوقف شد") }
                 context.applicationContext.stopService(
                     Intent(context, SessionForegroundService::class.java)
                 )
