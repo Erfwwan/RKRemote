@@ -4,6 +4,7 @@ import android.content.Context
 import org.json.JSONObject
 import org.webrtc.DataChannel
 import org.webrtc.IceCandidate
+import org.webrtc.MediaConstraints
 import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
 import org.webrtc.SdpObserver
@@ -28,6 +29,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class SecureWebRtcPeer(
     context: Context,
     private val secureLink: SecureLinkCloudflareSession,
+    private val localPeerId: String,
     private val authenticatedPeerId: String,
     private val role: Role,
     turnServers: List<TurnServer> = emptyList(),
@@ -63,13 +65,13 @@ class SecureWebRtcPeer(
     private val lock = Any()
     private var peerConnection: PeerConnection? = null
     private var dataChannel: DataChannel? = null
-    private var localFingerprint: String? = null
-    private var remoteFingerprint: String? = null
-    private var remoteDescriptionType: SessionDescription.Type? = null
 
     init {
-        require(authenticatedPeerId.matches(Regex("[a-f0-9]{64}"))) {
-            "Authenticated peer ID must be a SHA-256 hex identity"
+        require(localPeerId.matches(Regex("[a-f0-9]{64}"))) {
+            "Local peer ID must be a SHA-256 hex identity"
+        }
+        require(authenticatedPeerId.matches(Regex("[a-f0-9]{64}")) && localPeerId != authenticatedPeerId) {
+            "Authenticated remote peer ID is invalid"
         }
         initializeFactory(appContext)
         val iceServers = mutableListOf(
@@ -139,7 +141,7 @@ class SecureWebRtcPeer(
         override fun onIceCandidate(candidate: IceCandidate) {
             sendSignal(JSONObject()
                 .put("type", "ice")
-                .put("peerId", authenticatedPeerId)
+                .put("peerId", localPeerId)
                 .put("mid", candidate.sdpMid)
                 .put("mLine", candidate.sdpMLineIndex)
                 .put("candidate", candidate.sdp))
@@ -157,7 +159,7 @@ class SecureWebRtcPeer(
             observeDataChannel(channel)
         }
         override fun onRenegotiationNeeded() = Unit
-        override fun onAddTrack(receiver: org.webrtc.RtpReceiver, streams: Array<out org.webrtc.MediaStream>) = Unit
+        override fun onAddTrack(receiver: org.webrtc.RtpReceiver, streams: Array<org.webrtc.MediaStream>) = Unit
         override fun onTrack(transceiver: org.webrtc.RtpTransceiver) = Unit
         override fun onConnectionChange(newState: PeerConnection.PeerConnectionState) {
             if (newState == PeerConnection.PeerConnectionState.FAILED) {
@@ -189,7 +191,7 @@ class SecureWebRtcPeer(
         })
     }
 
-    private fun handleSecureSignal(payload: ByteArray) {
+    fun acceptSecureSignal(payload: ByteArray) {
         if (closed.get() || payload.size > MAX_SIGNAL_BYTES) return
         try {
             val message = JSONObject(payload.toString(Charsets.UTF_8))
@@ -202,8 +204,6 @@ class SecureWebRtcPeer(
                     val sdp = message.getString("sdp")
                     val fingerprint = message.getString("fingerprint")
                     requireFingerprintMatches(sdp, fingerprint)
-                    remoteFingerprint = fingerprint
-                    remoteDescriptionType = SessionDescription.Type.OFFER
                     peerConnection!!.setRemoteDescription(sdpObserver {
                         remoteDescriptionSet.set(true)
                         flushRemoteIce()
@@ -217,8 +217,6 @@ class SecureWebRtcPeer(
                     val sdp = message.getString("sdp")
                     val fingerprint = message.getString("fingerprint")
                     requireFingerprintMatches(sdp, fingerprint)
-                    remoteFingerprint = fingerprint
-                    remoteDescriptionType = SessionDescription.Type.ANSWER
                     peerConnection!!.setRemoteDescription(sdpObserver {
                         remoteDescriptionSet.set(true)
                         flushRemoteIce()
@@ -264,11 +262,10 @@ class SecureWebRtcPeer(
 
     private fun setLocalAndSignal(description: SessionDescription, type: String) {
         val fingerprint = extractSha256Fingerprint(description.description)
-        localFingerprint = fingerprint
         peerConnection!!.setLocalDescription(sdpObserver {
             sendSignal(JSONObject()
                 .put("type", type)
-                .put("peerId", authenticatedPeerId)
+                .put("peerId", localPeerId)
                 .put("fingerprint", fingerprint)
                 .put("sdp", description.description))
         }, description)
