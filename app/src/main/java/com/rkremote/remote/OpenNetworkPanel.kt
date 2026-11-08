@@ -54,7 +54,7 @@ private data class NetworkProfile(
             val signalingUri = runCatching { URI(signaling) }.getOrNull()
             require(
                 signalingUri != null &&
-                    signalingUri.scheme.equals("wss", ignoreCase = true) &&
+                    signalingUri.scheme?.equals("wss", ignoreCase = true) == true &&
                     !signalingUri.host.isNullOrBlank() &&
                     signalingUri.rawUserInfo == null &&
                     signalingUri.rawFragment == null &&
@@ -80,7 +80,7 @@ private data class NetworkProfile(
                         !parsedAuthority.host.isNullOrBlank() &&
                         parsedAuthority.rawUserInfo == null &&
                         parsedAuthority.rawPath.isNullOrEmpty() &&
-                        parsedAuthority.rawQuery == null &&
+                        (parsedAuthority.rawQuery == null || parsedAuthority.rawQuery.matches(Regex("transport=(udp|tcp)", RegexOption.IGNORE_CASE))) &&
                         parsedAuthority.rawFragment == null &&
                         parsedAuthority.port in -1..65535
                 ) { "ICE address must contain a valid host and optional port only" }
