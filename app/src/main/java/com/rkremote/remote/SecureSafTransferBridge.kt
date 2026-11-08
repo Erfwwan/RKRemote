@@ -273,9 +273,14 @@ class SecureSafTransferBridge(context: Context) {
         require(offset == pending.nextOffset) { "Upload chunk is missing, duplicated or out of order" }
         require(bytes.isNotEmpty() && bytes.size <= MAX_CHUNK_BYTES)
         require(pending.nextOffset + bytes.size <= pending.expectedBytes) { "Upload exceeds announced size" }
-        pending.output.write(bytes)
-        pending.digest.update(bytes)
-        pending.nextOffset += bytes.size
+        try {
+            pending.output.write(bytes)
+            pending.digest.update(bytes)
+            pending.nextOffset += bytes.size
+        } catch (error: Exception) {
+            abortPendingUpload(pending)
+            throw error
+        }
     }
 
     @Synchronized
