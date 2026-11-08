@@ -922,6 +922,15 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                 }
                                             }
                                             "command.result" -> {
+                                                if (message.payload.optString("commandType") == "calllog.sync.request" &&
+                                                    !message.payload.optBoolean("accepted")
+                                                ) {
+                                                    mainHandler.post {
+                                                        if (activePeerRef.get() !== activePeer) return@post
+                                                        callLogStatus.value = "دریافت گزارش رد شد: " +
+                                                            message.payload.optString("reason", "دسترسی تأیید نشد")
+                                                    }
+                                                }
                                                 if (message.payload.optString("commandType").startsWith("file.")) {
                                                     val accepted = message.payload.optBoolean("accepted")
                                                     val transferId = message.payload.optString("transferId")
