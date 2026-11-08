@@ -279,7 +279,7 @@ class LocationCaptureWorker(
             ContextCompat.checkSelfPermission(
                 applicationContext, Manifest.permission.ACCESS_BACKGROUND_LOCATION
             ) != PackageManager.PERMISSION_GRANTED
-        ) return Result.retry()
+        ) return Result.success()
 
         val manager = applicationContext.getSystemService(Context.LOCATION_SERVICE) as LocationManager
         val enabled = runCatching {
