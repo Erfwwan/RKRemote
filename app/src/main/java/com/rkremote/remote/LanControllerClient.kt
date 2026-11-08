@@ -26,7 +26,19 @@ object LanControllerClient {
                 "Authorization: Bearer $token\r\n" +
                 "Connection: close\r\n\r\n"
             s.getOutputStream().write(request.toByteArray(Charsets.US_ASCII))
-            val response = s.getInputStream().readBytes()
+            val response = s.getInputStream().use { input ->
+                val output = java.io.ByteArrayOutputStream()
+                val buffer = ByteArray(8192)
+                var total = 0
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    total += count
+                    require(total <= MAX_RESPONSE_BYTES) { "Response is too large" }
+                    output.write(buffer, 0, count)
+                }
+                output.toByteArray()
+            }
             val split = (0 until (response.size - 3).coerceAtLeast(0)).firstOrNull { i ->
                 response[i] == 13.toByte() && response[i + 1] == 10.toByte() &&
                     response[i + 2] == 13.toByte() && response[i + 3] == 10.toByte()
@@ -39,6 +51,8 @@ object LanControllerClient {
             return response.copyOfRange(split + 4, response.size)
         }
     }
+
+    private const val MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 
     fun localIpv4(): String? = runCatching {
         NetworkInterface.getNetworkInterfaces().toList()
