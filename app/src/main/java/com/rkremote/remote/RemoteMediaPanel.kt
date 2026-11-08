@@ -2,6 +2,8 @@ package com.rkremote.remote
 
 import android.Manifest
 import android.content.Intent
+import android.content.Context
+import android.hardware.camera2.CameraCharacteristics
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -63,6 +65,7 @@ fun RemoteMediaPanel(
     var cameraJob by remember { mutableStateOf<Job?>(null) }
     var audioJob by remember { mutableStateOf<Job?>(null) }
     var cameraPreview by remember { mutableStateOf(false) }
+    var pendingCameraFacing by remember { mutableStateOf(CameraCharacteristics.LENS_FACING_BACK) }
     var audioListening by remember { mutableStateOf(false) }
     var pttPermissionGranted by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
@@ -136,13 +139,10 @@ fun RemoteMediaPanel(
     }
 
     val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) {
-            runCatching {
-                ContextCompat.startForegroundService(context, Intent(context, CameraCaptureService::class.java))
-            }.onSuccess { onStatus("Camera capture started. The target phone shows a persistent stop notification.") }
-                .onFailure { onStatus("Could not start camera: ${it.message}") }
-        } else onStatus("Camera permission was denied.")
+        if (granted) startCameraCapture(context, pendingCameraFacing, onStatus)
+        else onStatus("Camera permission was denied.")
     }
+
     val microphonePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
             runCatching {
@@ -174,19 +174,23 @@ fun RemoteMediaPanel(
             Text("TARGET PHONE · LOCAL SENSOR CONTROLS", fontWeight = FontWeight.SemiBold)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = {
+                    pendingCameraFacing = CameraCharacteristics.LENS_FACING_BACK
                     if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-                        runCatching {
-                            ContextCompat.startForegroundService(context, Intent(context, CameraCaptureService::class.java))
-                        }.onSuccess { onStatus("Camera capture started.") }
-                            .onFailure { onStatus("Could not start camera: ${it.message}") }
+                        startCameraCapture(context, pendingCameraFacing, onStatus)
                     } else cameraPermission.launch(Manifest.permission.CAMERA)
-                }) { Text("Start camera") }
+                }) { Text("Start rear camera") }
                 OutlinedButton(onClick = {
-                    context.startService(Intent(context, CameraCaptureService::class.java).setAction(CameraCaptureService.ACTION_STOP))
-                    cameraBitmap = null
-                    onStatus("Camera stop requested on this phone.")
-                }) { Text("Stop camera") }
+                    pendingCameraFacing = CameraCharacteristics.LENS_FACING_FRONT
+                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                        startCameraCapture(context, pendingCameraFacing, onStatus)
+                    } else cameraPermission.launch(Manifest.permission.CAMERA)
+                }) { Text("Start front camera") }
             }
+            OutlinedButton(onClick = {
+                context.startService(Intent(context, CameraCaptureService::class.java).setAction(CameraCaptureService.ACTION_STOP))
+                cameraBitmap = null
+                onStatus("Camera stop requested on this phone.")
+            }) { Text("Stop camera") }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = {
                     if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
@@ -263,7 +267,7 @@ fun RemoteMediaPanel(
                                 val frame = withContext(Dispatchers.IO) {
                                     val bytes = LanControllerClient.requestBytes(ip, token, "/camera.jpg")
                                     BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                                        ?: error("Camera returned an invalid JPEG frame")
+                                        ?: error("Camera returned an invalid image frame")
                                 }
                                 cameraBitmap = frame
                                 delay(650)
@@ -348,10 +352,28 @@ fun RemoteMediaPanel(
                 }) { Text("Stop listening") }
             }
             Text(
-                "Audio uses mono PCM, 16 kHz, 16-bit. Hold-to-talk sends short chunks; the target must locally enable its speaker. Use headphones to reduce acoustic feedback. Camera preview is low-rate JPEG. This is a LAN prototype, not encrypted internet streaming.",
+                "Audio uses mono PCM, 16 kHz, 16-bit. Hold-to-talk sends short chunks; the target must locally enable its speaker. Use headphones to reduce acoustic feedback. Camera frames use lossless WebP when smaller than the original JPEG; otherwise the original JPEG is sent unchanged. This is a LAN prototype, not encrypted internet streaming.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+    }
+}
+
+
+private fun startCameraCapture(
+    context: Context,
+    lensFacing: Int,
+    onStatus: (String) -> Unit
+) {
+    val intent = Intent(context, CameraCaptureService::class.java)
+        .putExtra(CameraCaptureService.EXTRA_LENS_FACING, lensFacing)
+    runCatching {
+        ContextCompat.startForegroundService(context, intent)
+    }.onSuccess {
+        val cameraName = if (lensFacing == CameraCharacteristics.LENS_FACING_FRONT) "Front" else "Rear"
+        onStatus(cameraName + " camera started. Its persistent notification is visible.")
+    }.onFailure { error ->
+        onStatus("Could not start camera: " + (error.message ?: "unknown error"))
     }
 }
