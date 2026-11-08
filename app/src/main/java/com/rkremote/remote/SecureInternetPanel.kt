@@ -1661,6 +1661,15 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                         .onFailure { error.value = it.message ?: "Could not remember SMS permission" }
                 }) { Text("Always allow SMS report for this paired device") }
                 OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
+                    runCatching {
+                        check(SecureContactsSync.hasContactsPermission(context)) {
+                            "Enable Android Contacts permission locally first"
+                        }
+                        session.value?.grantOwnerApprovedCapabilities(setOf(RemoteCapability.ADDRESS_BOOK))
+                    }.onSuccess { status.value = "Contacts access allowed for this session only" }
+                        .onFailure { error.value = it.message ?: "Could not grant contacts permission" }
+                }) { Text("Allow contacts for this session") }
+                OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
                     runCatching { grantRememberedReportCapability(RemoteCapability.ADDRESS_BOOK) }
                         .onSuccess { status.value = "Address book access remembered for this paired device" }
                         .onFailure { error.value = it.message ?: "Could not remember contacts permission" }
