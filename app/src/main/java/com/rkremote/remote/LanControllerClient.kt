@@ -5,6 +5,8 @@ import java.net.Inet4Address
 import java.net.InetSocketAddress
 import java.net.NetworkInterface
 import java.net.Socket
+import java.net.URLEncoder
+import java.util.Base64
 
 /**
  * LAN client for a trusted private network. The temporary bearer token is not
@@ -17,6 +19,12 @@ object LanControllerClient {
     fun requestBytes(ip: String, token: String, endpoint: String): ByteArray =
         requestRaw("GET", ip, token, endpoint, null)
 
+    fun downloadFile(ip: String, token: String, documentId: String): ByteArray {
+        require(documentId.isNotBlank() && documentId.length <= 1024)
+        val encoded = URLEncoder.encode(documentId, "UTF-8")
+        return requestBytes(ip, token, "/file/download?id=$encoded")
+    }
+
     fun postJson(ip: String, token: String, endpoint: String, body: JSONObject): String =
         JSONObject(requestRaw("POST", ip, token, endpoint, body.toString().toByteArray(Charsets.UTF_8))
             .toString(Charsets.UTF_8)).toString(2)
@@ -25,32 +33,13 @@ object LanControllerClient {
         require(bytes.isNotEmpty() && bytes.size <= MAX_TRANSFER_BYTES) { "File must be 1 byte to 8 MiB" }
         require(fileName.isNotBlank() && fileName.length <= 180 &&
             fileName.none { it == '/' || it == '\\' || it.code < 32 }) { "Invalid file name" }
-        val encodedName = java.util.Base64.getUrlEncoder().withoutPadding()
+        val encodedName = Base64.getUrlEncoder().withoutPadding()
             .encodeToString(fileName.toByteArray(Charsets.UTF_8))
+        val mime = mimeType.takeIf {
+            it.matches(Regex("[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+"))
+        } ?: "application/octet-stream"
         return requestRaw(
-            "POST", ip, token, "/file/upload", bytes,
-            mimeType.takeIf { it.matches(Regex("[A-Za-z0-9!#    fun postJson(ip: String, token: String, endpoint: String, body: JSONObject): String =
-        JSONObject(requestRaw("POST", ip, token, endpoint, body.toString().toByteArray(Charsets.UTF_8))
-            .toString(Charsets.UTF_8)).toString(2)
-
-    private fun requestRaw(
-        method: String,
-        ip: String,
-        token: String,
-        endpoint: String,
-        body: ByteArray?
-    ): ByteArray {^_.+-]+/[A-Za-z0-9!#    fun postJson(ip: String, token: String, endpoint: String, body: JSONObject): String =
-        JSONObject(requestRaw("POST", ip, token, endpoint, body.toString().toByteArray(Charsets.UTF_8))
-            .toString(Charsets.UTF_8)).toString(2)
-
-    private fun requestRaw(
-        method: String,
-        ip: String,
-        token: String,
-        endpoint: String,
-        body: ByteArray?
-    ): ByteArray {^_.+-]+")) }
-                ?: "application/octet-stream",
+            "POST", ip, token, "/file/upload", bytes, mime,
             mapOf("X-File-Name" to encodedName)
         ).toString(Charsets.UTF_8)
     }
@@ -70,13 +59,14 @@ object LanControllerClient {
         }
         require(token.length >= 24) { "Invalid session token" }
         require(
-            (method == "GET" && (endpoint in setOf("/health", "/files", "/screen.jpg") || endpoint.startsWith("/file/download?"))) ||
+            (method == "GET" && (endpoint in setOf("/health", "/files", "/screen.jpg") ||
+                endpoint.startsWith("/file/download?"))) ||
                 (method == "POST" && endpoint in setOf("/input/tap", "/input/gesture", "/input/text", "/file/upload"))
         ) { "Unsupported request" }
 
         val socket = Socket()
         socket.connect(InetSocketAddress(ip, LanAgentServer.DEFAULT_PORT), 5000)
-        socket.soTimeout = 7000
+        socket.soTimeout = if (endpoint.startsWith("/file/")) 30_000 else 7000
         socket.use { s ->
             val headers = StringBuilder()
                 .append("$method $endpoint HTTP/1.1\r\n")
@@ -85,7 +75,7 @@ object LanControllerClient {
                 .append("Connection: close\r\n")
             if (body != null) {
                 headers.append("Content-Type: $contentType\r\n")
-                    .append("Content-Length: ${body.size}\r\n")
+                    .append("Content-Length: \${body.size}\r\n")
                 extraHeaders.forEach { (name, value) -> headers.append("$name: $value\r\n") }
             }
             headers.append("\r\n")
