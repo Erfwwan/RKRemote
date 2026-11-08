@@ -866,6 +866,9 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                 null
                                             }
                                             register("ptt.start", RemoteCapability.PUSH_TO_TALK) {
+                                                check(!microphoneStreamActive.get()) {
+                                                    "Stop the independent microphone stream before using push-to-talk"
+                                                }
                                                 check(PttAudioQueue.isEnabled()) {
                                                     "Enable the PTT speaker locally on the target first"
                                                 }
@@ -2686,8 +2689,8 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                         OutlinedButton(
                             enabled = session.value != null && secureRelayConnected.value && (fineGranted || coarseGranted),
                             onClick = {
-                                runCatching { grantRememberedReportCapability(RemoteCapability.LOCATION); LocationCaptureScheduler.start(context) }
-                                    .onSuccess { locationStatus.value = "ارسال موقعیت برای همین دستگاه جفت‌شده مجاز شد" }
+                                runCatching { grantRememberedReportCapability(RemoteCapability.LOCATION) }
+                                    .onSuccess { locationStatus.value = "درخواست موقعیت فعلی برای همین دستگاه جفت‌شده مجاز شد؛ ثبت دوره‌ای جداگانه و اختیاری است." }
                                     .onFailure { locationStatus.value = it.message ?: "اعطای دسترسی ناموفق بود" }
                             }
                         ) { Text("اجازه دائمی ارسال موقعیت به این دستگاه جفت‌شده") }
