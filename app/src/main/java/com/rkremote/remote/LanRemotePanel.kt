@@ -456,7 +456,7 @@ fun LanRemotePanel() {
             }
             Text("PART 6 · REMOTE NOTIFICATION HISTORY", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(
-                "On the target phone, enable Android Notification Access and separately turn on notification sharing. Only then can this controller read the locally encrypted event history.",
+                "Enable Android Notification Access once on the target phone. RKRemote keeps the latest 500 captured events in its encrypted local store.",
                 style = MaterialTheme.typography.bodySmall
             )
             OutlinedButton(
@@ -477,7 +477,7 @@ fun LanRemotePanel() {
                             val items = response.optJSONArray("items") ?: JSONArray()
                             notificationItems = (0 until items.length()).mapNotNull { items.optJSONObject(it) }
                             notificationResult = "Received " + notificationItems.size + " events" +
-                                if (response.optBoolean("truncated")) " · showing latest 100" else "."
+                                if (response.optBoolean("truncated")) " · showing latest 500" else "."
                         }.onFailure {
                             notificationResult = "Could not read notifications: " + it.message
                         }
