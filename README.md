@@ -21,7 +21,7 @@ RKRemote does not implement covert camera/microphone capture, hidden persistence
 
 **Screen-sharing prototype added:** the target phone can request Android MediaProjection consent, start a visible foreground capture session, and expose the latest JPEG screen snapshot to the authenticated controller on the same trusted Wi-Fi. The controller can request a single snapshot or poll snapshots at roughly one per second for a low-rate preview. This remains JPEG polling, not a continuous video stream. Remote input is available after the target owner manually enables RKRemote touch control in Android Accessibility settings: tap, swipe, long press, and text insertion into the currently focused editable field (using ACTION_SET_TEXT, not individual key events). This is not a secure internet transport.
 
-**Camera and microphone prototype added:** the target owner can start each sensor locally after Android runtime permission. Separate camera and microphone foreground services keep persistent stop notifications. The controller can poll low-rate JPEG camera frames and receive mono 16 kHz / 16-bit PCM microphone chunks. Sensor endpoints only read an already-running local capture service; remote commands cannot activate the camera or microphone. This is prototype chunk polling, not a production real-time media transport.
+**Camera and microphone prototype added:** the target owner can start each sensor locally after Android runtime permission. Separate camera and microphone foreground services keep persistent stop notifications. The controller can poll low-rate JPEG camera frames and receive mono 16 kHz / 16-bit PCM microphone chunks. Sensor endpoints only read an already-running local capture service; remote commands cannot activate the camera or microphone. This is prototype chunk polling, not a production real-time media transport.\n\n**Two-way audio / push-to-talk prototype added:** the target owner must locally enable a dedicated PTT speaker foreground service before it can play incoming voice. The controller captures microphone audio only while the user holds **Hold to talk**, sends bounded 100 ms mono PCM chunks, and stops on release. The existing target-microphone-to-controller listen path provides the reverse direction. This is half-duplex push-to-talk plus the existing one-way listen path, not a synchronized full-duplex VoIP system; use headphones to reduce feedback.
 
 ## Build
 
@@ -40,7 +40,7 @@ Open the repository in Android Studio and run the app configuration on an Androi
 4. User-started camera/microphone sessions with foreground-service indicators.
 5. Scoped file/gallery browsing, contacts and call-history access.
 6. Notification history forwarding after explicit pairing and user opt-in.
-7. Owner-approved camera and microphone capture prototypes (low-rate JPEG and PCM chunk polling); two-way push-to-talk remains future work.
+7. Owner-approved camera and microphone capture prototypes (low-rate JPEG and PCM chunk polling).\n8. Two-way audio prototype: target-local PTT speaker opt-in, hold-to-talk PCM transmission from controller, and existing target-microphone listen path.
 8. Connection recovery, diagnostics, and long-duration battery/stability testing.
 
 ## Privacy and security
@@ -58,7 +58,7 @@ Open the repository in Android Studio and run the app configuration on an Androi
 
 A GitHub Actions workflow now runs a debug APK compilation on pushes, pull requests, and manual dispatches. The workflow uses Gradle 8.11.1 with JDK 17.
 
-**Important:** the repository is not yet a complete remote-control product. The current Android application includes local capability setup, an authenticated LAN agent/controller, JPEG screen snapshots, and an owner-enabled single-tap prototype. Continuous screen video, encrypted media transport, low-latency audio streaming, camera/microphone physical-device validation, and secure internet access remain future work. Do not rely on the app for remote access until those features are implemented and tested on real devices.
+**Important:** the repository is not yet a complete remote-control product. The current Android application includes local capability setup, an authenticated LAN agent/controller, JPEG screen snapshots, and an owner-enabled single-tap prototype. Continuous screen video, encrypted media transport, low-latency/jitter-buffered voice, physical-device audio/camera validation, and secure internet access remain future work. Do not rely on the app for remote access until those features are implemented and tested on real devices.
 
 
 
