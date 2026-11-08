@@ -277,7 +277,7 @@ class SecureSafTransferBridge(context: Context) {
 
     @Synchronized
     fun completeUpload(transferId: String, expectedSha256: String) {
-        val pending = pendingUpload ?: throw IllegalStateException("No upload is active")
+        val pending = pendingUploads[transferId] ?: throw IllegalStateException("No upload is active")
         require(pending.transferId == transferId) { "Unexpected upload identifier" }
         try {
             require(pending.nextOffset == pending.expectedBytes) { "Upload is incomplete" }
@@ -289,7 +289,7 @@ class SecureSafTransferBridge(context: Context) {
         } catch (error: Exception) {
             runCatching { pending.output.close() }
             runCatching { DocumentsContract.deleteDocument(resolver, pending.documentUri) }
-            pendingUpload = null
+            pendingUploads.remove(transferId)
             throw error
         }
     }
@@ -307,7 +307,7 @@ class SecureSafTransferBridge(context: Context) {
 
     @Synchronized
     fun abortUpload(transferId: String): Boolean {
-        val pending = pendingUpload ?: return false
+        val pending = pendingUploads[transferId] ?: return false
         if (pending.transferId != transferId) return false
         abortPendingUpload(pending)
         return true
