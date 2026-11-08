@@ -10,6 +10,7 @@ import java.io.IOException
 import java.io.OutputStream
 import java.util.Base64
 import java.security.MessageDigest
+import java.util.LinkedHashMap
 
 /**
  * Secure-channel SAF bridge. Every document ID is checked against the exact
