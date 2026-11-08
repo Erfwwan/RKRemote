@@ -1,7 +1,7 @@
 name: Android build
 
 on:
-  # UI polish verification: compact inline help and GitHub-free Wrangler deployment flow.
+  # Role split and one-way report flow verification: target/controller navigation, PTT and result panels.
   push:
     branches:
       - feature/remote-agent-foundation
