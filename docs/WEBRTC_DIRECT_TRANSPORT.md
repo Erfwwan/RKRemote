@@ -4,6 +4,7 @@
 
 - The target joins the Cloudflare Durable Object room first; the controller joins second.
 - Cloudflare accepts bounded binary WebSocket frames only. It cannot parse SDP or ICE and forwards the Noise frames unchanged.
+- The Android signaling client accepts only the three known bounded room lifecycle events as text. Malformed, oversized, or unknown control messages close the WSS socket instead of being ignored.
 - Noise XX authenticates the long-lived P-256 peer identities through the signed X25519 static-key binding. Both owners must compare the six-digit SAS and approve the other peer ID.
 - Application signaling is blocked until both sides have approved. WebRTC offer, answer, and trickled ICE candidates are carried as Noise-encrypted application messages.
 - Every SHA-256 fingerprint attribute in SDP is parsed strictly as exactly 32 hexadecimal octets; malformed attributes or inconsistent fingerprints are rejected. The normalized SDP fingerprint is compared in constant time with the fingerprint field inside the authenticated Noise message. libwebrtc then validates the remote DTLS certificate against the SDP fingerprint during the DTLS handshake.
@@ -34,7 +35,7 @@ For reliable use across restrictive networks, provision a separately operated TU
 ## Current limits
 
 - Keep RKRemote open while testing: the Internet session is not yet owned by a persistent foreground service and will not survive app-process termination. Live screen, remote input, notification sync, owner-scoped file browsing/upload/download, camera snapshots, microphone monitoring, and half-duplex PTT are integrated at source level; live camera video and WebRTC media tracks are not implemented.
-- No media tracks are added yet; live screen/camera video and audio need separate explicit owner-started capture and WebRTC track integration.
+- No WebRTC media tracks are added yet. Screen video currently travels as bounded application messages over the DataChannel; live camera video and native audio tracks remain future work.
 - There is no persistent trusted-peer registry, revocation UI, or key-rotation workflow beyond the existing local key stores.
 - No automatic TURN provisioning, DHT peer discovery, multi-path racing, relay fallback service, or session rekey/reconnect exists.
 - Worker deployment, real internet connection between two devices, NAT matrix, Android API 33+ runtime, and physical-device performance have not been verified.
