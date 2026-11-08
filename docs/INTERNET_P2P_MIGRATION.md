@@ -2,92 +2,75 @@
 
 ## Target architecture
 
-The controller and target are peers with stable cryptographic identities. The DHT is used only to discover signed, short-lived peer advertisements. It never stores credentials, commands, notification contents, files, camera frames, screen video, or audio.
+The controller and target are peers with stable cryptographic identities. Discovery is used only to locate signed, short-lived peer advertisements. It never stores credentials, commands, notification contents, files, camera frames, screen video, or audio.
 
 Preferred connection order:
 
-1. Discover the target's signed advertisement through a public, distributed Kademlia DHT.
-2. Attempt a direct authenticated peer connection using NAT discovery and hole punching.
-3. Upgrade the connection to an authenticated encrypted channel and verify the paired peer identity.
-4. If direct connectivity fails, offer/attempt a temporary community relay path. Relay traffic remains end-to-end encrypted; relay nodes must not receive plaintext payloads or session keys.
-5. If neither direct nor relay connectivity is available, report offline. Do not silently downgrade to plaintext HTTP.
+1. Discover the target's signed advertisement.
+2. Attempt a direct authenticated peer connection using ICE/STUN and UDP hole punching where supported.
+3. Authenticate the exact paired peer using RK-SecureLink v1.
+4. If direct connectivity fails, offer a temporary independently operated/community relay path. Relay traffic remains end-to-end encrypted.
+5. If neither direct nor relay connectivity is available, report offline. Never downgrade to plaintext HTTP.
 
-There is no RKRemote-operated central application server. A small set of public DHT bootstrap peers may be used to join the distributed network; bootstrap peers are entry points, not authoritative coordinators. A temporary relay is a transport fallback, not a central data store.
+There is no RKRemote-operated central application server. Bootstrap peers are entry points, not authoritative coordinators. A temporary relay is a transport fallback, not a central data store.
 
 ## Stage 1 — device identity and signed discovery record
 
-Implemented in this pass:
+Implemented foundation:
 
-- A stable P-256 EC signing key is generated and retained by Android Keystore.
-- The private key is non-exportable and is never written to preferences or source control.
+- Stable P-256 EC signing key generated and retained by Android Keystore.
+- Private key is non-exportable and is never written to preferences or source control.
 - Peer ID is SHA-256 of the encoded public key.
-- Peer advertisements bind peer ID, public key, monotonic sequence, issue/expiry times, and transport multiaddresses with ECDSA/SHA-256.
+- Peer advertisements bind peer ID, public key, sequence, issue/expiry times, and transport multiaddresses with ECDSA/SHA-256.
 - Advertisements are bounded to 8 KiB, 8 addresses, and a maximum 10-minute lifetime.
-- Parsing verifies the signature, peer-ID/public-key binding, expiry, clock skew, size and address syntax.
-- Unit tests cover valid round-trip, tampering, expiry, overlong TTL, and invalid address syntax.
+- Parsing verifies signature, peer-ID/public-key binding, expiry, clock skew, size and address syntax.
 
-This stage creates the signed identity/record format only. It does **not** yet publish or retrieve records from a DHT, open a public listener, perform NAT traversal, establish an internet connection, or activate any remote capability.
+This is identity/record code only. DHT publication/lookup, NAT traversal, direct peer transport, relay fallback, and internet access remain unimplemented.
 
 ## Stage 2 — DHT integration
 
 - Select and pin a maintained Android-compatible libp2p implementation only after confirming Kademlia DHT, peer identity, Android API 26+, UDP behavior, and dependency supply-chain support.
-- Use bootstrap peers only to enter the DHT; keep a configurable list and support multiple independent peers.
-- Publish only the signed, short-lived peer advertisement under a deterministic key derived from the target Peer ID.
+- Use multiple independent bootstrap peers.
+- Publish only signed, short-lived advertisements under a deterministic key derived from target Peer ID.
 - Validate signatures and monotonic sequence on every retrieved record; ignore expired or older records.
-- Never publish static bearer tokens, session keys, personal data, LAN-only addresses, or media metadata.
-- Add bounded lookup concurrency, rate limits, record refresh, stale-record cleanup, and backoff.
+- Never publish tokens, session keys, personal data, LAN-only addresses, or media metadata.
+- Add bounded lookup concurrency, rate limits, refresh, stale-record cleanup, and backoff.
 
-The current JVM libp2p candidate is not yet approved for production: its published component matrix marks Kademlia DHT as not implemented and Circuit Relay v2 as prototype/beta. Do not add it as a dependency and claim DHT support until this gap is resolved.
+The previously reviewed JVM libp2p candidate is not approved for production DHT/relay support; do not claim Kademlia or Circuit Relay v2 support until verified.
 
-## Stage 3 — direct internet transport
+## Stage 3 — authenticated transport and Cloudflare rendezvous
 
-- Prefer an authenticated direct connection after DHT discovery.
-- Use a reviewed NAT traversal implementation (ICE/STUN with UDP hole punching where supported).
-- STUN is used for address discovery only; it must not carry application payloads.
-- Negotiate fresh session keys using an authenticated handshake bound to the paired public keys and fresh nonces.
-- Carry the existing versioned message envelope over a transport-neutral channel; add bounded binary streams for media and file transfer.
-- Preserve replay protection, capability grants, owner-visible foreground state, and local stop/revoke controls.
-- Keep the existing LAN transport available only as a compatibility path until internet transport passes acceptance tests.
+The design and binary rendezvous scaffold are specified in [RK-SecureLink v1](RK_SECURELINK_V1.md). The Cloudflare worker now accepts opaque binary frames only and rejects client text messages. The Android client forwards byte arrays without parsing them.
 
-## Stage 4 — temporary encrypted relay fallback
+The cryptographic Noise engine, P-256-to-X25519 key binding, authenticated WebRTC fingerprint exchange, and WebRTC PeerConnection are **not implemented yet**. Therefore this stage is not complete and must not be treated as secure Internet access.
 
-- Try relay only after direct connectivity fails or is explicitly unavailable.
-- Prefer independently operated/community libp2p Circuit Relay v2 peers, not a single RKRemote relay.
-- Authenticate both endpoints end-to-end before forwarding application data.
-- Encrypt all application payloads end-to-end; a relay sees peer IDs, traffic timing and volume, but not plaintext content or session keys.
-- Bound relay bandwidth, connection duration and queue sizes. Drop to offline rather than downgrade encryption.
+The legacy Cloudflare JSON offer/answer/ICE protocol has been removed from the worker. Do not deploy the worker as a usable secure connection until the handshake engine and peer authentication are implemented and tested.
+
+## Stage 4 — direct transport and relay
+
+- Prefer ICE direct UDP paths. STUN is for address discovery; it does not carry application payloads.
+- Bind WebRTC DTLS fingerprints to the peer identity authenticated through Noise.
+- Use WebRTC DTLS for DataChannels and SRTP for media. Do not add a redundant application encryption layer over those transports.
+- If direct connectivity fails, use an independently operated/community relay only after peer authentication. Relay nodes forward ciphertext and see network metadata, not plaintext or session keys.
+- Bound bandwidth, connection duration and queue sizes. Drop to offline rather than downgrade encryption.
 - Relay usage must be visible in connection diagnostics.
 
 ## Stage 5 — migrate feature traffic
 
-Migrate screen video, camera, microphone/PTT, notification snapshots, remote input, and SAF file streams only after the secure peer channel is complete. Preserve each feature's existing Android owner-consent requirements. Sensor capture must remain locally started and visibly stoppable; network pairing does not grant Android permissions.
+Migrate screen video, camera, microphone/PTT, notification snapshots, remote input, and SAF file streams only after the authenticated peer channel and explicit capability grants are complete. Preserve Android owner-consent requirements. Sensor capture must remain locally started and visibly stoppable.
 
 ## Acceptance criteria
 
-- Two physical Android devices on different mobile/Wi-Fi networks can pair once and discover each other without manual IP/token entry.
-- DHT records are signed, short-lived, replay-resistant, bounded, and contain no secrets.
+- Noise XX official test vectors pass on Android API 26+.
+- Two physical Android devices authenticate the exact previously paired identities on separate networks.
+- Wrong keys, MITM attempts, replay, malformed frames, stale records, revoked peers, and DTLS fingerprint mismatch are rejected.
 - Direct path works where NAT topology permits; diagnostics distinguish direct, relay, and offline.
-- Relay fallback works without revealing plaintext to the relay.
-- Invalid signatures, expired records, replayed messages, revoked peers and stale sequence numbers are rejected.
-- Wi-Fi/mobile handover and changing public IP trigger bounded rediscovery/reconnect.
+- Relay fallback never exposes plaintext to relay operator.
+- Network handover and changing public IP trigger bounded reconnect.
 - No public endpoint exposes the legacy plaintext TCP protocol.
 - Target retains visible session notification, local emergency stop, and ability to revoke pairing.
-- CI plus two-device tests pass before internet access is described as implemented.
+- CI, security review, and two-device tests pass before Internet access is described as implemented.
 
 ## Current security boundary
 
-The existing executable agent still uses plaintext bearer-token HTTP/TCP on port 18765. It is not safe for public internet exposure. Do not configure port forwarding or expose that port. The signed identity work in Stage 1 does not change this fact. No internet P2P transport is currently active.
-
-
-## Stage 2A — Cloudflare signaling rendezvous scaffold
-
-A first signaling-only scaffold has been added under `cloudflare/worker`:
-
-- Workers routes a WSS request to a SQLite-backed Durable Object keyed by a random 256-bit room ID.
-- The target connects first; one controller may join. Duplicate roles and extra peers are rejected.
-- The room forwards only bounded `offer`, `answer`, `ice`, `ready`, `reject`, and `bye` messages, and expires after ten minutes.
-- The Android `CloudflareSignalingClient` generates room IDs and implements a bounded WSS signaling client.
-
-This scaffold is not yet integrated into the Compose UI and does not contain a WebRTC implementation. The room ID is a temporary bearer invitation; share it only with the intended controller. The signaling server can see SDP/ICE metadata. Peer identity authentication and signed handshake binding must be completed before trusting signaling messages. No application data or media is permitted on this channel.
-
-Deployment instructions are in [CLOUDFLARE_SIGNALING.md](CLOUDFLARE_SIGNALING.md). This is source-only: no Cloudflare deployment, Android build, or two-device test has been verified.
+The existing executable agent still uses plaintext bearer-token HTTP/TCP on port 18765. It is not safe for public Internet exposure. Do not configure port forwarding or expose that port. The P2P identity and Cloudflare binary signaling work do not change this fact.
