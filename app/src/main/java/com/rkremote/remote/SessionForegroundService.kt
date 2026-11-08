@@ -5,8 +5,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.content.Intent
 import android.content.Context
+import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
@@ -16,12 +16,10 @@ import androidx.core.content.ContextCompat
 import com.rkremote.MainActivity
 
 /**
- * Visible foreground owner for active LAN or secure Internet sessions.
- * A Cloudflare encrypted relay session is kept alive while this service remains in the process;
- * it cannot be reconstructed after process death and is never silently resumed.
+ * Visible foreground owner for an explicitly started Cloudflare relay session.
+ * Encrypted sessions are never silently reconstructed after process death.
  */
 class SessionForegroundService : Service() {
-    private var lanServer: LanAgentServer? = null
     private var internetPeer: SecureInternetPeer? = null
 
     override fun onCreate() {
@@ -31,121 +29,60 @@ class SessionForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
-            SessionCredentialStore.clearActiveSession(this)
+        if (intent?.action == ACTION_STOP || intent?.action == ACTION_STOP_INTERNET) {
             stopInternetPeer()
-            lanServer?.stop()
-            lanServer = null
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf(startId)
             return START_NOT_STICKY
         }
 
-        if (intent?.action == ACTION_STOP_INTERNET) {
+        if (intent?.action != ACTION_START_INTERNET) {
+            // Never restore legacy LAN agents or interpret a null/redelivered
+            // Intent as permission to start any remote-access service.
             stopInternetPeer()
-            if (lanServer == null) {
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf(startId)
-                return START_NOT_STICKY
-            }
-            getSystemService(NotificationManager::class.java).notify(
-                NOTIFICATION_ID,
-                buildNotification("LAN remote session remains active")
-            )
-            return START_STICKY
-        }
-
-        if (intent?.action == ACTION_START_INTERNET) {
-            val foregroundStart = runCatching {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    startForeground(
-                        NOTIFICATION_ID,
-                        buildNotification("Secure Cloudflare relay session active"),
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
-                    )
-                } else {
-                    startForeground(NOTIFICATION_ID, buildNotification("Secure Internet P2P session active"))
-                }
-            }
-            if (foregroundStart.isFailure) {
-                pendingInternetPeer?.close()
-                pendingInternetPeer = null
-                Log.e(TAG, "Unable to start visible Internet session service", foregroundStart.exceptionOrNull())
-                stopSelf(startId)
-                return START_NOT_STICKY
-            }
-            val incoming = pendingInternetPeer
-            pendingInternetPeer = null
-            if (incoming == null) {
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf(startId)
-                return START_NOT_STICKY
-            }
-            stopInternetPeer()
-            internetPeer = incoming
-            // Preserve an independently active LAN agent's existing sticky
-            // restoration behavior; never attempt to recreate an encrypted relay session.
-            return if (lanServer != null) START_STICKY else START_NOT_STICKY
-        }
-
-        val token = when (intent?.action) {
-            ACTION_START_LAN -> intent.getStringExtra(EXTRA_TOKEN)
-            ACTION_RESTORE_LAN, null -> SessionCredentialStore.activeToken(this)
-            else -> null
-        }?.takeIf { it.length >= 24 }
-
-        if (token == null) {
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf(startId)
             return START_NOT_STICKY
         }
 
-        if (intent?.action == ACTION_START_LAN) {
-            runCatching { SessionCredentialStore.saveActiveSession(this, token) }
-                .onFailure {
-                    stopSelf(startId)
-                    return START_NOT_STICKY
-                }
-        }
-
-        val notification = buildNotification()
         val foregroundStart = runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 startForeground(
                     NOTIFICATION_ID,
-                    notification,
+                    buildNotification("Secure Cloudflare relay session active"),
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
                 )
             } else {
-                startForeground(NOTIFICATION_ID, notification)
+                startForeground(NOTIFICATION_ID, buildNotification("Secure Cloudflare relay session active"))
             }
         }
         if (foregroundStart.isFailure) {
-            Log.e(TAG, "Unable to enter foreground state; session is retained for manual retry", foregroundStart.exceptionOrNull())
-            // Keep the encrypted owner session for a later manual retry, but do not
-            // leave a partially started service running without its foreground state.
+            val pending = pendingInternetPeer
+            pendingInternetPeer = null
+            runCatching { pending?.close() }
+            Log.e(TAG, "Unable to start visible Internet session service", foregroundStart.exceptionOrNull())
             stopSelf(startId)
             return START_NOT_STICKY
         }
 
-        lanServer?.stop()
-        lanServer = LanAgentServer(applicationContext, token) { reason ->
-            getSystemService(NotificationManager::class.java).notify(
-                NOTIFICATION_ID,
-                buildNotification("LAN agent stopped · " + reason.take(100))
-            )
-        }.also { it.start() }
+        val incoming = pendingInternetPeer
+        pendingInternetPeer = null
+        if (incoming == null) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
 
-        // Do not ask Android to retain/redeliver the start Intent: it contains the
-        // bearer token. START_STICKY recreates with a null Intent and restores only
-        // from the Android-Keystore-encrypted session store.
-        return START_STICKY
+        stopInternetPeer()
+        internetPeer = incoming
+        return START_NOT_STICKY
     }
 
     override fun onDestroy() {
         stopInternetPeer()
-        lanServer?.stop()
-        lanServer = null
+        val pending = pendingInternetPeer
+        pendingInternetPeer = null
+        runCatching { pending?.close() }
         if (serviceInstance === this) serviceInstance = null
         super.onDestroy()
     }
@@ -161,31 +98,24 @@ class SessionForegroundService : Service() {
 
     private fun stopInternetSessionAndUpdate() {
         stopInternetPeer()
-        if (lanServer == null) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-        } else {
-            getSystemService(NotificationManager::class.java).notify(
-                NOTIFICATION_ID,
-                buildNotification("LAN remote session remains active")
-            )
-        }
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 
     private fun createChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Active remote session",
+                "Active secure session",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Visible status and stop control for an active RKRemote session"
+                description = "Visible status and stop control for an active RKRemote Cloudflare session"
             }
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
     }
 
-    private fun buildNotification(statusText: String = "Remote access is active on this device."): Notification {
+    private fun buildNotification(statusText: String): Notification {
         val stopIntent = PendingIntent.getService(
             this,
             1,
@@ -200,7 +130,7 @@ class SessionForegroundService : Service() {
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
-            .setContentTitle("RKRemote session active")
+            .setContentTitle("RKRemote secure session active")
             .setContentText(statusText)
             .setContentIntent(openIntent)
             .setOngoing(true)
@@ -212,16 +142,14 @@ class SessionForegroundService : Service() {
         const val ACTION_STOP = "com.rkremote.action.STOP_SESSION"
         const val ACTION_START_INTERNET = "com.rkremote.action.START_INTERNET_SESSION"
         const val ACTION_STOP_INTERNET = "com.rkremote.action.STOP_INTERNET_SESSION"
-        const val ACTION_START_LAN = "com.rkremote.action.START_LAN"
-        const val ACTION_RESTORE_LAN = "com.rkremote.action.RESTORE_LAN"
-        const val EXTRA_TOKEN = "session_token"
         private const val CHANNEL_ID = "rkremote_active_session"
         private const val NOTIFICATION_ID = 4201
         private const val TAG = "RKRemoteSession"
+
         @Volatile private var serviceInstance: SessionForegroundService? = null
         @Volatile private var pendingInternetPeer: SecureInternetPeer? = null
 
-        /** Called only from the explicit Connect button after local owner action. */
+        /** Called only from the explicit Connect action after local owner action. */
         fun startInternetSession(context: Context, peer: SecureInternetPeer) {
             pendingInternetPeer?.close()
             pendingInternetPeer = peer
@@ -237,7 +165,6 @@ class SessionForegroundService : Service() {
             }
         }
 
-        /** Stop the Internet transport without revoking a separately active LAN session. */
         fun stopInternetSession(context: Context) {
             val running = serviceInstance
             if (running == null) {
