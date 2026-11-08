@@ -49,7 +49,7 @@ fun SecureInternetPanel() {
         ) {
             Text("Secure Internet P2P", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
-                "Noise XX authentication + WebRTC ICE/DTLS data channel. Both owners must compare and approve the same code. This is a transport test panel; it does not yet route screen, files, notifications, camera or microphone controls.",
+                "Noise XX authentication + WebRTC ICE/DTLS data channel. Both owners must compare and approve the same code. This panel exchanges versioned, replay-checked messages; legacy feature controls are not yet migrated.",
                 style = MaterialTheme.typography.bodySmall
             )
             OutlinedTextField(
@@ -126,7 +126,16 @@ fun SecureInternetPanel() {
                                         mainHandler.post { status.value = "WebRTC DataChannel connected (DTLS)" }
                                     }
                                     override fun onData(payload: ByteArray) {
-                                        mainHandler.post { status.value = "Secure data received · ${payload.size} bytes" }
+                                        mainHandler.post { status.value = "Secure transport received · ${payload.size} bytes" }
+                                    }
+                                    override fun onRemoteMessage(message: RemoteMessage) {
+                                        mainHandler.post {
+                                            status.value = "Secure message: ${message.type} · seq ${message.sequence}"
+                                            if (message.type == "secure.ping") {
+                                                val correlation = message.payload.optString("correlationId")
+                                                session.value?.sendMessage("secure.pong", JSONObject().put("correlationId", correlation))
+                                            }
+                                        }
                                     }
                                     override fun onRoomEvent(type: String, payload: JSONObject) {
                                         mainHandler.post { status.value = "Signaling room: $type" }
@@ -164,10 +173,11 @@ fun SecureInternetPanel() {
             OutlinedButton(
                 enabled = session.value != null && status.value.contains("DataChannel connected"),
                 onClick = {
-                    val sent = session.value?.send("RKREMOTE_SECURE_CHANNEL_TEST".toByteArray()) == true
-                    status.value = if (sent) "Test frame sent · check the other phone" else "DataChannel is not open"
+                    val correlation = java.util.UUID.randomUUID().toString()
+                    val sent = session.value?.sendMessage("secure.ping", JSONObject().put("correlationId", correlation)) == true
+                    status.value = if (sent) "Secure ping sent · waiting for peer response" else "DataChannel is not open"
                 }
-            ) { Text("Send test frame") }
+            ) { Text("Test secure message exchange") }
             peerId.value?.let {
                 Text("Peer ID: $it", style = MaterialTheme.typography.bodySmall)
             }
