@@ -89,7 +89,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
     val url = remember { mutableStateOf(setupPrefs.getString("worker_url", "").orEmpty()) }
     val room = remember { mutableStateOf(setupPrefs.getString("room_id", "").orEmpty()) }
     val role = remember { mutableStateOf(if (savedRole == "controller") CloudflareSignalingClient.Role.CONTROLLER else CloudflareSignalingClient.Role.TARGET) }
-    val guideOpen = remember { mutableStateOf(false) }
+    val guideExpanded = remember { mutableStateOf(false) }
     val cloudflareApiTokenInput = remember { mutableStateOf("") }
     val cloudflareApiTokenSaved = remember { mutableStateOf(CloudflareApiTokenStore.hasToken(context)) }
     val cloudflareAccountId = remember { mutableStateOf(setupPrefs.getString("cloudflare_account_id", "").orEmpty()) }
@@ -1689,7 +1689,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://dash.cloudflare.com/")))
                     }.onFailure { error.value = it.message ?: "بازکردن داشبورد Cloudflare ناموفق بود." }
                 }) { Text("داشبورد Cloudflare") }
-                OutlinedButton(onClick = { guideOpen.value = true }) { Text("راهنمای فارسی") }
+                OutlinedButton(onClick = { guideExpanded.value = !guideExpanded.value }, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp)) { Text("?", fontWeight = FontWeight.Bold) }
             }
             OutlinedTextField(
                 value = cloudflareAccountId.value,
@@ -1742,32 +1742,26 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
             if (cloudflareDeployStatus.value.isNotBlank()) {
                 Text(cloudflareDeployStatus.value, style = MaterialTheme.typography.bodySmall)
             }
-            if (guideOpen.value) {
-                androidx.compose.material3.AlertDialog(
-                    onDismissRequest = { guideOpen.value = false },
-                    title = { Text("راهنمای ساده اتصال Cloudflare") },
-                    text = {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("۱) دکمه «دانلود بسته Worker» فقط فایل ZIP عمومی سورس را دانلود می‌کند؛ این کار هیچ اتصال یا مجوزی به GitHub نمی‌دهد.")
-                            Text("۲) در Termux یا ترمینال کامپیوتر، پوشه cloudflare/worker را از ZIP باز کن؛ سپس npm install را اجرا کن.")
-                            Text("۳) در همان پوشه دستور npx wrangler login را اجرا کن و فقط حساب Cloudflare خودت را از صفحه رسمی Cloudflare تأیید کن؛ نیازی به ورود یا اتصال GitHub نیست.")
-                            Text("۴) دستور npx wrangler deploy را اجرا کن و ایجاد Durable Object را تأیید کن. Wrangler آدرس Worker را در پایان نمایش می‌دهد.")
-                            Text("۵) آدرس ساخته‌شده را با قالب wss://نام‌Worker.نام‌کاربری‌تو.workers.dev در فیلد آدرس Worker وارد کن. برای اتصال عادی API Token لازم نیست.")
-                            Text("۶) API Token و Account ID فقط برای قابلیت اختیاری به‌روزرسانی Worker از داخل برنامه‌اند؛ برای ساخت اولیه و اتصال دو گوشی آن‌ها را وارد نکن.")
-                            Text("۷) گوشی دوم لینک دعوت را باز می‌کند و بدون واردکردن Room ID یا انتخاب نقش، به همان اتاق وصل می‌شود.")
-                            Text("۸) هر دو گوشی باید شناسه دستگاه و کد شش‌رقمی یکسان را بررسی و اتصال را جداگانه تأیید کنند.")
-                            Text("۹) بعد از اتصال، فقط قابلیت‌هایی را که صاحب گوشی مقصد اجازه می‌دهد فعال کن. دوربین، میکروفن و ضبط صفحه همچنان باید محلی و با اعلان قابل‌مشاهده شروع شوند.")
-                            Text("نکته: Cloudflare محتوای داده‌ها را نمی‌خواند، اما IP، زمان اتصال و حجم ترافیک را می‌بیند. تمام ترافیک از Worker عبور می‌کند و مشمول محدودیت و سهمیه حساب Cloudflare است.")
-                            Text("اگر Worker را فقط دستی ساخته‌ای و قصد به‌روزرسانی از داخل برنامه را نداری، واردکردن API Token لازم نیست؛ آدرس Worker برای اتصال کافی است.")
-                        }
-                    },
-                    confirmButton = {
-                        Button(onClick = { guideOpen.value = false }) { Text("متوجه شدم") }
+            androidx.compose.animation.AnimatedVisibility(visible = guideExpanded.value) {
+                Card(
+                    modifier = Modifier.fillMaxWidth().animateContentSize(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+                ) {
+                    Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("راهنمای اتصال Cloudflare", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                        Text("۱) دکمه «دانلود بسته Worker» فقط ZIP عمومی سورس را دریافت می‌کند و هیچ دسترسی GitHub ایجاد نمی‌کند.", fontSize = 11.sp, lineHeight = 15.sp)
+                        Text("۲) در Termux یا کامپیوتر، پوشه cloudflare/worker را از ZIP استخراج کن و npm install را اجرا کن.", fontSize = 11.sp, lineHeight = 15.sp)
+                        Text("۳) دستور npx wrangler login را اجرا کن و فقط حساب Cloudflare خودت را در صفحه رسمی تأیید کن؛ اتصال GitHub لازم نیست.", fontSize = 11.sp, lineHeight = 15.sp)
+                        Text("۴) دستور npx wrangler deploy را اجرا و ایجاد Durable Object را تأیید کن. آدرس Worker در پایان نمایش داده می‌شود.", fontSize = 11.sp, lineHeight = 15.sp)
+                        Text("۵) آدرس را با قالب wss://نام‌Worker.زیر‌دامنه‌تو.workers.dev در کادر بالا وارد کن.", fontSize = 11.sp, lineHeight = 15.sp)
+                        Text("۶) برای اتصال عادی API Token و Account ID لازم نیست؛ این دو فقط برای به‌روزرسانی اختیاری Worker از داخل برنامه‌اند.", fontSize = 11.sp, lineHeight = 15.sp)
+                        Text("۷) گوشی مقصد را به اتاق متصل کن و لینک دعوت را برای گوشی دوم بفرست. هر دو گوشی باید کد شش‌رقمی یکسان را بررسی و تأیید کنند.", fontSize = 11.sp, lineHeight = 15.sp)
+                        Text("نکته: Cloudflare محتوای رمزنگاری‌شده را نمی‌خواند، اما IP، زمان اتصال و حجم ترافیک را می‌بیند.", fontSize = 10.sp, lineHeight = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                )
+                }
             }
-            Text(
-                if (role.value == CloudflareSignalingClient.Role.TARGET)
+            if (role.value == CloudflareSignalingClient.Role.TARGET)
                     "این گوشی نقش مقصد را دارد. با شروع اتصال، لینک دعوت گوشی کنترل‌کننده ساخته می‌شود."
                 else "دعوت‌نامه دریافت شد؛ برنامه نقش کنترل‌کننده و اتاق اتصال را به‌صورت خودکار تنظیم کرده است.",
                 style = MaterialTheme.typography.bodySmall,
