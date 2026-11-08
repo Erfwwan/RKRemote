@@ -1,9 +1,14 @@
 package com.rkremote
 
 import android.Manifest
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -20,14 +25,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -42,11 +47,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             MaterialTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    PermissionDashboard()
+                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    LocalSetupScreen()
                 }
             }
         }
@@ -56,91 +58,120 @@ class MainActivity : ComponentActivity() {
 private data class PermissionItem(
     val title: String,
     val description: String,
-    val permissions: List<String>,
-    val optional: Boolean = false
+    val permissions: List<String>
 )
 
 @Composable
-private fun PermissionDashboard() {
+private fun LocalSetupScreen() {
     val context = LocalContext.current
     var refreshKey by remember { mutableIntStateOf(0) }
+    var selectedFolder by remember { mutableStateOf(readSavedFolder(context)) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) {
+    ) { refreshKey++ }
+
+    val folderPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(uri, flags)
+                context.getSharedPreferences("rkremote_setup", Context.MODE_PRIVATE)
+                    .edit().putString("selected_tree_uri", uri.toString()).apply()
+                selectedFolder = uri.toString()
+            }
+        }
         refreshKey++
     }
 
-    val items = listOf(
-        PermissionItem(
-            title = "Camera",
-            description = "Only used in a clearly indicated, user-started camera session.",
-            permissions = listOf(Manifest.permission.CAMERA)
-        ),
-        PermissionItem(
-            title = "Microphone",
-            description = "Only used in a clearly indicated, user-started audio session.",
-            permissions = listOf(Manifest.permission.RECORD_AUDIO)
-        ),
-        PermissionItem(
-            title = "Location",
-            description = "Foreground location only. Background tracking is not enabled.",
-            permissions = listOf(
-                Manifest.permission.ACCESS_COARSE_LOCATION,
-                Manifest.permission.ACCESS_FINE_LOCATION
-            )
-        ),
-        PermissionItem(
-            title = "Notifications",
-            description = "Android 13+ notification permission. Notification forwarding requires a separate, explicit Notification Access setting.",
-            permissions = if (Build.VERSION.SDK_INT >= 33) {
+    val permissionItems = buildList {
+        add(PermissionItem(
+            "Camera",
+            "Required only when the owner starts a visible camera session.",
+            listOf(Manifest.permission.CAMERA)
+        ))
+        add(PermissionItem(
+            "Microphone",
+            "Required only during an explicitly started audio or walkie-talkie session.",
+            listOf(Manifest.permission.RECORD_AUDIO)
+        ))
+        add(PermissionItem(
+            "Contacts",
+            "Allows reading contacts on this device after permission is granted.",
+            listOf(Manifest.permission.READ_CONTACTS)
+        ))
+        add(PermissionItem(
+            "Call history",
+            "Allows reading call-log records where Android and device policy permit it.",
+            listOf(Manifest.permission.READ_CALL_LOG)
+        ))
+        add(PermissionItem(
+            "Location",
+            "Foreground location permission. Background location is not requested in this build.",
+            listOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION)
+        ))
+        if (Build.VERSION.SDK_INT >= 33) {
+            add(PermissionItem(
+                "Photos and videos",
+                "Requests access to media. Android may offer selected-media access.",
+                buildList {
+                    add(Manifest.permission.READ_MEDIA_IMAGES)
+                    add(Manifest.permission.READ_MEDIA_VIDEO)
+                    if (Build.VERSION.SDK_INT >= 34) add(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
+                }
+            ))
+            add(PermissionItem(
+                "Notifications",
+                "Runtime notification permission. Reading other apps' notifications requires the separate Notification Access switch below.",
                 listOf(Manifest.permission.POST_NOTIFICATIONS)
-            } else {
-                emptyList()
-            },
-            optional = Build.VERSION.SDK_INT < 33
-        )
-    )
+            ))
+        } else {
+            add(PermissionItem(
+                "Photos and videos",
+                "Legacy shared-storage read permission. Folder access is separately granted below.",
+                listOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+            ))
+        }
+    }
 
-    // Read current grants during composition; refreshKey is incremented after a permission result.
     @Suppress("UNUSED_VARIABLE")
-    val refresh = refreshKey
+    val observedRefresh = refreshKey
+    val notificationAccess = hasNotificationAccess(context)
+    val notificationCount = EncryptedNotificationStore.readAll(context).length()
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        modifier = Modifier.fillMaxSize().padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
+            Text("RKRemote", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Text(
-                text = "RK Remote",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = "Personal device management · transparent sessions",
+                "Local device setup · owner-approved access",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Spacer(modifier = Modifier.height(8.dp))
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Local setup", fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(6.dp))
+            Card {
+                Column(Modifier.padding(14.dp)) {
+                    Text("Build milestone 1", fontWeight = FontWeight.SemiBold)
                     Text(
-                        "This starter build does not connect to another phone yet. Grant only the permissions you intend to use. Camera, microphone and location sessions will require visible user action.",
+                        "This build adds local permission setup, a user-selected file folder, and encrypted on-device notification history. Remote pairing and streaming are not connected yet.",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
             }
         }
-
-        items(items) { item ->
-            val granted = item.permissions.isEmpty() ||
-                item.permissions.all { permission ->
-                    ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
-                }
-
+        item {
+            Text("Android permissions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        }
+        items(permissionItems) { item ->
+            val granted = item.permissions.all { permission ->
+                ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+            }
             Card {
-                Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                Column(Modifier.fillMaxWidth().padding(14.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -148,43 +179,78 @@ private fun PermissionDashboard() {
                     ) {
                         Text(item.title, fontWeight = FontWeight.SemiBold)
                         Text(
-                            text = when {
-                                item.optional -> "Not required"
-                                granted -> "Granted"
-                                else -> "Not granted"
-                            },
+                            if (granted) "Granted" else "Not granted",
                             color = if (granted) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.labelMedium
                         )
                     }
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(Modifier.height(4.dp))
                     Text(item.description, style = MaterialTheme.typography.bodySmall)
-                    if (!granted && !item.optional) {
-                        Spacer(modifier = Modifier.height(10.dp))
-                        OutlinedButton(
-                            onClick = { permissionLauncher.launch(item.permissions.toTypedArray()) }
-                        ) {
-                            Text("Grant permission")
+                    if (!granted) {
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedButton(onClick = { permissionLauncher.launch(item.permissions.toTypedArray()) }) {
+                            Text("Request")
                         }
                     }
                 }
             }
         }
-
         item {
-            Button(
-                onClick = { refreshKey++ },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Refresh permission status")
+            Card {
+                Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                    Text("Notification history", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        if (notificationAccess) "Notification Access is enabled · $notificationCount local events stored"
+                        else "Notification Access is not enabled · no notification content is being captured",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Button(onClick = {
+                        context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                    }) {
+                        Text("Open Notification Access settings")
+                    }
+                }
             }
-            Spacer(modifier = Modifier.height(8.dp))
+        }
+        item {
+            Card {
+                Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                    Text("File and gallery folder", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        selectedFolder ?: "No folder selected. Choose a folder to grant persistent access to its contents.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(onClick = { folderPicker.launch(null) }) {
+                        Text("Choose folder")
+                    }
+                }
+            }
+        }
+        item {
+            OutlinedButton(modifier = Modifier.fillMaxWidth(), onClick = { refreshKey++ }) {
+                Text("Refresh access status")
+            }
             Text(
-                "Pairing, encrypted remote transport, screen sharing and file transfer are planned milestones and are not implemented in this starter version.",
+                "Notification content is encrypted locally with an Android Keystore AES-GCM key and is not transmitted by this milestone.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
+}
+
+private fun readSavedFolder(context: Context): String? =
+    context.getSharedPreferences("rkremote_setup", Context.MODE_PRIVATE)
+        .getString("selected_tree_uri", null)
+
+private fun hasNotificationAccess(context: Context): Boolean {
+    val enabled = Settings.Secure.getString(
+        context.contentResolver,
+        "enabled_notification_listeners"
+    ) ?: return false
+    val component = ComponentName(context, NotificationCaptureService::class.java)
+    return enabled.split(':').any { it.equals(component.flattenToString(), ignoreCase = true) }
 }
