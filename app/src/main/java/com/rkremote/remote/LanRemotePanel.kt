@@ -77,6 +77,8 @@ fun LanRemotePanel() {
     var swipeEndY by remember { mutableStateOf("0.5") }
     var remoteText by remember { mutableStateOf("") }
     var remoteFileItems by remember { mutableStateOf(emptyList<RemoteFileItem>()) }
+    var notificationItems by remember { mutableStateOf(emptyList<JSONObject>()) }
+    var notificationResult by remember { mutableStateOf("No notification history requested yet.") }
     var pendingDownloadId by remember { mutableStateOf("") }
     var pendingDownloadName by remember { mutableStateOf("download.bin") }
     DisposableEffect(Unit) { onDispose { previewJob?.cancel() } }
@@ -286,6 +288,61 @@ fun LanRemotePanel() {
                 }
             } else {
                 Text("No file list loaded. Tap List selected folder after connecting.", style = MaterialTheme.typography.bodySmall)
+            }
+            Text("PART 6 · REMOTE NOTIFICATION HISTORY", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(
+                "On the target phone, enable Android Notification Access and separately turn on notification sharing. Only then can this controller read the locally encrypted event history.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            OutlinedButton(
+                enabled = !busy && targetIp.isNotBlank() && targetToken.isNotBlank(),
+                onClick = {
+                    busy = true
+                    scope.launch {
+                        val result = runCatching {
+                            withContext(Dispatchers.IO) {
+                                JSONObject(
+                                    LanControllerClient.requestBytes(
+                                        targetIp.trim(), targetToken.trim(), "/notifications"
+                                    ).toString(Charsets.UTF_8)
+                                )
+                            }
+                        }
+                        result.onSuccess { response ->
+                            val items = response.optJSONArray("items") ?: JSONArray()
+                            notificationItems = (0 until items.length()).mapNotNull { items.optJSONObject(it) }
+                            notificationResult = "Received " + notificationItems.size + " events" +
+                                if (response.optBoolean("truncated")) " · showing latest 100" else "."
+                        }.onFailure {
+                            notificationResult = "Could not read notifications: " + it.message
+                        }
+                        busy = false
+                    }
+                }
+            ) { Text("Load notification history") }
+            Text(notificationResult, style = MaterialTheme.typography.bodySmall)
+            if (notificationItems.isNotEmpty()) {
+                notificationItems.asReversed().forEach { event ->
+                    Column(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
+                        Text(
+                            event.optString("package", "Unknown app") +
+                                " · " + event.optString("type", "posted"),
+                            fontWeight = FontWeight.SemiBold,
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                        val title = event.optString("title", "")
+                        if (title.isNotBlank()) Text(title, fontWeight = FontWeight.Medium)
+                        val body = event.optString("text", "")
+                        if (body.isNotBlank()) Text(body, style = MaterialTheme.typography.bodySmall)
+                        val conversation = event.optString("conversation", "")
+                        if (conversation.isNotBlank()) Text(conversation, style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            "Captured: " + java.util.Date(event.optLong("capturedAt", 0L)).toString(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
             RemoteMediaPanel(targetIp = targetIp, targetToken = targetToken) { message ->
                 output = message
