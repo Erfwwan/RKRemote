@@ -41,6 +41,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.rkremote.remote.PairingPanel
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -157,12 +158,13 @@ private fun LocalSetupScreen() {
                 Column(Modifier.padding(14.dp)) {
                     Text("Build milestone 1", fontWeight = FontWeight.SemiBold)
                     Text(
-                        "This build adds local permission setup, a user-selected file folder, and encrypted on-device notification history. Remote pairing and streaming are not connected yet.",
+                        "Local permission setup, encrypted notification history, pairing-code prototype, protocol foundation, and pinned WSS transport. Remote commands and media streaming are not connected yet.",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
             }
         }
+        item { PairingPanel() }
         item {
             Text("Android permissions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         }
