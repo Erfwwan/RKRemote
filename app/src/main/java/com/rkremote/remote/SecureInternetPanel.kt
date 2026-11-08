@@ -196,7 +196,7 @@ fun SecureInternetPanel() {
         onDispose {
             transferActive.set(false)
             activeTransferId.set(null)
-            safBridge.cancelAllDownloads()
+            safBridge.cancelAllTransfers()
             cameraTransferActive.set(false)
             imageAssembler.abort()
             cameraExecutor.shutdownNow()
@@ -909,7 +909,7 @@ fun SecureInternetPanel() {
                                             if (activePeerRef.get() !== activePeer) return@post
                                             transferActive.set(false)
                                             activeTransferId.set(null)
-                                            safBridge.cancelAllDownloads()
+                                            safBridge.cancelAllTransfers()
                                             cameraTransferActive.set(false)
                                             imageAssembler.abort()
                                             audioRelayActive.set(false)
@@ -937,7 +937,7 @@ fun SecureInternetPanel() {
                                             if (activePeerRef.get() !== activePeer) return@post
                                             transferActive.set(false)
                                             activeTransferId.set(null)
-                                            safBridge.cancelAllDownloads()
+                                            safBridge.cancelAllTransfers()
                                             cameraTransferActive.set(false)
                                             imageAssembler.abort()
                                             audioRelayActive.set(false)
@@ -988,7 +988,7 @@ fun SecureInternetPanel() {
                     onClick = {
                         transferActive.set(false)
                         activeTransferId.set(null)
-                        safBridge.cancelAllDownloads()
+                        safBridge.cancelAllTransfers()
                         cameraTransferActive.set(false)
                         audioRelayActive.set(false)
                         pttRelayActive.set(false)
