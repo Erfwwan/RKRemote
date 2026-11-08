@@ -39,6 +39,26 @@ class SecureDataChannelFramerTest {
     }
 
     @Test
+    fun rejectsShortNonFinalAndOversizedFinalFragments() {
+        val sender = SecureDataChannelFramer()
+        val payload = ByteArray(30_000) { (it * 7).toByte() }
+        val frames = sender.fragment(payload)
+        assertTrue(frames.size > 1)
+
+        val shortFirst = frames.first().copyOf(frames.first().size - 1)
+        assertThrows(IllegalArgumentException::class.java) {
+            SecureDataChannelFramer().accept(shortFirst)
+        }
+
+        val last = frames.last()
+        val oversizedLast = last.copyOf(last.size + 1)
+        oversizedLast[oversizedLast.lastIndex] = 1
+        assertThrows(IllegalArgumentException::class.java) {
+            SecureDataChannelFramer().accept(oversizedLast)
+        }
+    }
+
+    @Test
     fun rejectsCorruptedHeader() {
         val sender = SecureDataChannelFramer()
         val receiver = SecureDataChannelFramer()
