@@ -255,6 +255,7 @@ fun SecureInternetPanel() {
                         error.value = null
                         peerId.value = null
                         sas.value = null
+                        var createdSession: SecureInternetPeer? = null
                         try {
                             val identityStore = P2pIdentityStore()
                             val handshake = SecureLinkHandshake.create(
@@ -925,10 +926,18 @@ fun SecureInternetPanel() {
                                 }
                             )
                             activePeer = created
+                            createdSession = created
                             session.value = created
                             status.value = "Connecting to Cloudflare rendezvous"
                             created.connect()
                         } catch (failure: Throwable) {
+                            createdSession?.close()
+                            if (session.value === createdSession) {
+                                session.value = null
+                                dataChannelConnected.value = false
+                                renderer.value?.close()
+                                renderer.value = null
+                            }
                             error.value = failure.message ?: "Could not start SecureLink"
                         }
                     }
