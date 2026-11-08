@@ -424,9 +424,6 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 val hasLocation = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
                     ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
                 check(hasLocation) { "Enable Android location permission locally first" }
-                if (Build.VERSION.SDK_INT >= 29) check(
-                    ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
-                ) { "Enable Allow all the time location access in Android app settings first" }
             }
             else -> error("This permission cannot be remembered")
         }
@@ -927,7 +924,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                 check(microphoneStreamActive.compareAndSet(false, true)) {
                                                     "Independent microphone stream is already active"
                                                 }
-                                                microphoneStreamStatus.value = "در حال ارسال صدای میکروفن مستقل…"
+                                                mainHandler.post { microphoneStreamStatus.value = "در حال ارسال صدای میکروفن مستقل…" }
                                                 microphoneExecutor.execute {
                                                     try {
                                                         while (microphoneStreamActive.get() && MicrophoneChunkStore.isCapturing()) {
@@ -1039,9 +1036,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                                 }
                                                                 val hasLocation = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
                                                                     ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-                                                                val hasBackgroundLocation = Build.VERSION.SDK_INT < 29 ||
-                                                                    ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
-                                                                if (RemoteCapability.LOCATION in saved && hasLocation && hasBackgroundLocation) {
+                                                                if (RemoteCapability.LOCATION in saved && hasLocation) {
                                                                     add(RemoteCapability.LOCATION)
                                                                 }
                                                                 if (RemoteCapability.MICROPHONE in saved && ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
@@ -2652,9 +2647,9 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                         OutlinedButton(
                             enabled = session.value != null && secureRelayConnected.value,
                             onClick = {
-                                locationStatus.value = if (sendInput("location.sync.request", JSONObject())) "درخواست تاریخچه موقعیت به دستگاه مقصد ارسال شد" else "ارسال درخواست ناموفق بود"
+                                locationStatus.value = if (sendInput("location.sync.request", JSONObject())) "درخواست موقعیت فعلی به دستگاه مقصد ارسال شد" else "ارسال درخواست ناموفق بود"
                             }
-                        ) { Text("دریافت تاریخچه موقعیت دستگاه مقصد") }
+                        ) { Text("دریافت موقعیت فعلی دستگاه مقصد") }
                     } else {
                         Text("ردیابی فقط پس از فعال‌سازی توسط صاحب همین گوشی انجام می‌شود. داده‌ها در برنامه رمزنگاری و ذخیره می‌شوند.")
                         if (!fineGranted && !coarseGranted) {
@@ -2689,7 +2684,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                             locationStatus.value = "تاریخچه محلی به‌روزرسانی شد"
                         }) { Text("نمایش تاریخچه ذخیره‌شده") }
                         OutlinedButton(
-                            enabled = session.value != null && secureRelayConnected.value && backgroundGranted && (fineGranted || coarseGranted),
+                            enabled = session.value != null && secureRelayConnected.value && (fineGranted || coarseGranted),
                             onClick = {
                                 runCatching { grantRememberedReportCapability(RemoteCapability.LOCATION); LocationCaptureScheduler.start(context) }
                                     .onSuccess { locationStatus.value = "ارسال موقعیت برای همین دستگاه جفت‌شده مجاز شد" }
