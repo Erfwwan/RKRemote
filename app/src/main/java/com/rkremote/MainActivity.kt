@@ -98,6 +98,7 @@ class MainActivity : ComponentActivity() {
                 .putString("worker_url", worker)
                 .putString("room_id", room)
                 .putString("role", "controller")
+                .putBoolean("auto_connect", true)
                 .apply()
         }
     }
@@ -121,7 +122,12 @@ private fun LocalSetupScreen() {
     val context = LocalContext.current
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
-    var currentPage by remember { mutableStateOf(AppPage.HOME) }
+    var currentPage by remember {
+        mutableStateOf(
+            if (context.getSharedPreferences("rkremote_cloudflare_setup", Context.MODE_PRIVATE)
+                    .getBoolean("auto_connect", false)) AppPage.CONNECTIONS else AppPage.HOME
+        )
+    }
     var refreshKey by remember { mutableIntStateOf(0) }
     var selectedFolder by remember { mutableStateOf(readSavedFolder(context)) }
 
