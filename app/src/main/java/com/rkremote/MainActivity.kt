@@ -144,12 +144,31 @@ private data class PermissionItem(
 @Composable
 private fun LocalSetupScreen(darkMode: Boolean, onToggleTheme: () -> Unit) {
     val context = LocalContext.current
+    val setupPrefs = remember(context) {
+        context.getSharedPreferences("rkremote_cloudflare_setup", Context.MODE_PRIVATE)
+    }
+    var selectedRole by remember {
+        mutableStateOf(setupPrefs.getString("role", null)?.takeIf { it == "controller" || it == "target" })
+    }
+    val visiblePages = remember(selectedRole) {
+        if (selectedRole == "target") {
+            listOf(AppPage.CONNECTIONS, AppPage.AUDIO, AppPage.SESSION_PERMISSIONS, AppPage.PERMISSIONS)
+        } else {
+            listOf(
+                AppPage.HOME, AppPage.CONNECTIONS, AppPage.SCREEN, AppPage.CAMERA,
+                AppPage.AUDIO, AppPage.REMOTE_FILES, AppPage.REMOTE_NOTIFICATIONS,
+                AppPage.CALL_HISTORY, AppPage.SMS_HISTORY, AppPage.LOCATION,
+                AppPage.NOTIFICATIONS, AppPage.FILES
+            )
+        }
+    }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     var currentPage by remember {
         mutableStateOf(
-            if (context.getSharedPreferences("rkremote_cloudflare_setup", Context.MODE_PRIVATE)
-                    .getBoolean("auto_connect", false)) AppPage.CONNECTIONS else AppPage.HOME
+            if (setupPrefs.getBoolean("auto_connect", false) || selectedRole == "target") {
+                AppPage.CONNECTIONS
+            } else AppPage.HOME
         )
     }
     var refreshKey by remember { mutableIntStateOf(0) }
@@ -239,6 +258,18 @@ private fun LocalSetupScreen(darkMode: Boolean, onToggleTheme: () -> Unit) {
 
     @Suppress("UNUSED_VARIABLE")
     val observedRefresh = refreshKey
+
+    if (selectedRole == null) {
+        RoleSelectionScreen(
+            onSelect = { chosen ->
+                setupPrefs.edit().putString("role", chosen).putBoolean("auto_connect", false).apply()
+                selectedRole = chosen
+                currentPage = if (chosen == "target") AppPage.CONNECTIONS else AppPage.HOME
+            }
+        )
+        return
+    }
+
     val notificationAccess = hasNotificationAccess(context)
     val notificationCount = EncryptedNotificationStore.readAll(context).length()
 
@@ -267,7 +298,7 @@ private fun LocalSetupScreen(darkMode: Boolean, onToggleTheme: () -> Unit) {
                 }
                 Text("ناوبری", modifier = Modifier.padding(start = 22.dp, top = 8.dp, bottom = 10.dp),
                     style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                AppPage.entries.forEach { page ->
+                visiblePages.forEach { page ->
                     NavigationDrawerItem(
                         label = { Text(page.title) },
                         selected = currentPage == page,
@@ -550,6 +581,58 @@ private fun LocalSetupScreen(darkMode: Boolean, onToggleTheme: () -> Unit) {
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RoleSelectionScreen(onSelect: (String) -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 32.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("RKREMOTE", style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.ExtraBold)
+        Spacer(Modifier.height(12.dp))
+        Text("این گوشی چه نقشی دارد؟", style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.ExtraBold)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "نقش هر دستگاه جداگانه ذخیره می‌شود و بعداً می‌توانی با پاک‌کردن داده‌های برنامه آن را از نو انتخاب کنی.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(28.dp))
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+        ) {
+            Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("کنترل‌کننده", style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                Text("پنل کامل مدیریت، ارسال درخواست دریافت اطلاعات و مشاهده پاسخ‌های دستگاه مقصد.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                Button(onClick = { onSelect("controller") }, modifier = Modifier.fillMaxWidth()) {
+                    Text("انتخاب کنترل‌کننده")
+                }
+            }
+        }
+        Spacer(Modifier.height(14.dp))
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+        ) {
+            Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("کنترل‌شونده", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("صفحه ساده برای مجوزها، اتصال امن Cloudflare و واکی‌تاکی. گزارش‌ها فقط در پاسخ به درخواست کنترل‌کننده ارسال می‌شوند.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedButton(onClick = { onSelect("target") }, modifier = Modifier.fillMaxWidth()) {
+                    Text("انتخاب کنترل‌شونده")
                 }
             }
         }
