@@ -35,5 +35,6 @@ The Worker can see source IP addresses, room ID, role, connection times, frame s
 - This is a relay architecture, not P2P. It may have higher latency than a successful direct local/Internet path.
 - A lost WebSocket currently requires a new session and fresh owner approval. Automatic reconnect/resume is not claimed.
 - The room ID is only a rendezvous identifier; Noise identity binding, SAS comparison and owner approval remain mandatory.
+- An encrypted heartbeat is sent every 60 seconds after mutual approval so an idle but active session refreshes the Worker's inactivity lease.
 - The app must remain active with its visible session notification. Camera, microphone and screen capture still require local owner action and Android consent.
 - Torann/Noise implementation has not been independently audited. Physical two-device and hostile-network tests are still outstanding.
