@@ -162,9 +162,9 @@ private fun LocalSetupScreen() {
             Spacer(Modifier.height(6.dp))
             Card {
                 Column(Modifier.padding(14.dp)) {
-                    Text("Build milestone 1 + LAN prototype", fontWeight = FontWeight.SemiBold)
+                    Text("RKRemote prototype · Sections 1–7", fontWeight = FontWeight.SemiBold)
                     Text(
-                        "Local permissions, LAN control, screen sharing and remote input, file transfer, camera/microphone, push-to-talk, and owner-approved notification history prototypes. Use only on trusted private Wi-Fi; several security and device-validation tasks remain.",
+                        "Local permissions, LAN control, screen sharing and remote input, file transfer, camera/microphone, push-to-talk, and owner-approved notification history prototypes. Includes bounded connection retry and health diagnostics. Use only on trusted private Wi-Fi; security and physical-device validation remain.",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
