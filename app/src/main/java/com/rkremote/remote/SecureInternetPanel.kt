@@ -770,6 +770,12 @@ fun SecureInternetPanel() {
                     enabled = session.value != null,
                     onClick = {
                         transferActive.set(false)
+                        cameraTransferActive.set(false)
+                        audioRelayActive.set(false)
+                        pttRelayActive.set(false)
+                        PttAudioQueue.clear()
+                        audioPlayback.close()
+                        imageAssembler.abort()
                         safBridge.abortUpload()
                         streamSender.value?.close()
                         streamSender.value = null
@@ -848,6 +854,13 @@ fun SecureInternetPanel() {
                 }) { Text("Allow secure file access") }
                 OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
                     transferActive.set(false)
+                    cameraTransferActive.set(false)
+                    audioRelayActive.set(false)
+                    pttRelayActive.set(false)
+                    PttAudioQueue.clear()
+                    audioPlayback.close()
+                    imageAssembler.abort()
+                    safBridge.abortUpload()
                     streamSender.value?.close()
                     streamSender.value = null
                     session.value?.revokeOwnerApprovedCommands()
