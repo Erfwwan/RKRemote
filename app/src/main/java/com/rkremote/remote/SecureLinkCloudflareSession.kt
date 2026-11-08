@@ -268,8 +268,11 @@ class SecureLinkCloudflareSession internal constructor(
         override fun connect() = client.connect()
         override fun send(frame: ByteArray): Boolean = client.sendEncryptedFrame(frame)
         override fun close() {
-            client.close()
-            frameListener = null
+            try {
+                client.close()
+            } finally {
+                frameListener = null
+            }
         }
     }
 }
