@@ -113,6 +113,7 @@ fun SecureInternetPanel() {
                     val transferId = UUID.randomUUID().toString()
                     if (!outgoingUploadIds.add(transferId)) return@forEach
                     transferExecutor.execute {
+                        var uploadFailureMessage: String? = null
                         try {
                             var displayName = "upload.bin"
                             var sizeBytes = -1L
@@ -205,12 +206,16 @@ fun SecureInternetPanel() {
                                         .put("transferId", transferId)
                                 )
                             }
-                            mainHandler.post { fileUploadStatus.value = failure.message ?: "Upload failed" }
+                            uploadFailureMessage = failure.message ?: "Upload failed"
                         } finally {
                             outgoingUploadIds.remove(transferId)
                             mainHandler.post {
                                 if (outgoingUploadIds.isEmpty()) {
-                                    fileUploadStatus.value = "No outgoing uploads active"
+                                    if (uploadFailureMessage != null) {
+                                        fileUploadStatus.value = "Upload failed: $uploadFailureMessage"
+                                    } else if (fileUploadStatus.value.startsWith("Uploading")) {
+                                        fileUploadStatus.value = "Upload sent · waiting for target verification"
+                                    }
                                 }
                             }
                         }
