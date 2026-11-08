@@ -36,6 +36,7 @@ fun SecureInternetPanel() {
     val turnUsername = remember { mutableStateOf("") }
     val turnCredential = remember { mutableStateOf("") }
     val status = remember { mutableStateOf("Not connected") }
+    val dataChannelConnected = remember { mutableStateOf(false) }
     val peerId = remember { mutableStateOf<String?>(null) }
     val sas = remember { mutableStateOf<String?>(null) }
     val error = remember { mutableStateOf<String?>(null) }
@@ -123,7 +124,10 @@ fun SecureInternetPanel() {
                                         mainHandler.post { status.value = "Establishing direct P2P connection" }
                                     }
                                     override fun onWebRtcConnected() {
-                                        mainHandler.post { status.value = "WebRTC DataChannel connected (DTLS)" }
+                                        mainHandler.post {
+                                            dataChannelConnected.value = true
+                                            status.value = "WebRTC DataChannel connected (DTLS)"
+                                        }
                                     }
                                     override fun onData(payload: ByteArray) {
                                         mainHandler.post { status.value = "Secure transport received · ${payload.size} bytes" }
@@ -141,10 +145,16 @@ fun SecureInternetPanel() {
                                         mainHandler.post { status.value = "Signaling room: $type" }
                                     }
                                     override fun onDisconnected(reason: String) {
-                                        mainHandler.post { status.value = reason }
+                                        mainHandler.post {
+                                            dataChannelConnected.value = false
+                                            status.value = reason
+                                        }
                                     }
                                     override fun onFailure(failure: Throwable) {
-                                        mainHandler.post { error.value = failure.message ?: "Secure connection failed" }
+                                        mainHandler.post {
+                                            dataChannelConnected.value = false
+                                            error.value = failure.message ?: "Secure connection failed"
+                                        }
                                     }
                                 }
                             )
@@ -161,6 +171,7 @@ fun SecureInternetPanel() {
                     onClick = {
                         session.value?.close()
                         session.value = null
+                        dataChannelConnected.value = false
                         peerId.value = null
                         sas.value = null
                         status.value = "Disconnected locally"
@@ -171,7 +182,7 @@ fun SecureInternetPanel() {
                 Text("SecureLink requires Android 13 (API 33) or later in this build.")
             }
             OutlinedButton(
-                enabled = session.value != null && status.value.contains("DataChannel connected"),
+                enabled = session.value != null && dataChannelConnected.value,
                 onClick = {
                     val correlation = java.util.UUID.randomUUID().toString()
                     val sent = session.value?.sendMessage("secure.ping", JSONObject().put("correlationId", correlation)) == true
