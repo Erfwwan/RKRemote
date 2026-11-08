@@ -155,7 +155,7 @@ fun LanRemotePanel() {
         }
     }
 
-    val localIp = remember { LanControllerClient.localIpv4() ?: "Wi-Fi address unavailable" }
+    var localIp by remember { mutableStateOf(LanControllerClient.localIpv4() ?: "Wi-Fi address unavailable") }
     val notificationsAllowed = Build.VERSION.SDK_INT < 33 ||
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
@@ -168,6 +168,9 @@ fun LanRemotePanel() {
             Text("Start the agent on the phone you want to access. Both phones must be on the same trusted Wi-Fi network.")
             Text("TARGET PHONE · AGENT", fontWeight = FontWeight.SemiBold)
             Text("This phone's local IP: $localIp")
+            OutlinedButton(onClick = {
+                localIp = LanControllerClient.localIpv4() ?: "Wi-Fi address unavailable"
+            }) { Text("Refresh local IP") }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = {
                     val bytes = ByteArray(24).also { SecureRandom().nextBytes(it) }
