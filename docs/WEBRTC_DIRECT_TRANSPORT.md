@@ -84,3 +84,14 @@ The current screen-video path is connected end to end at source level:
 The target can revoke remote command permissions immediately, stop the stream from the controller, stop the secure session, or use Android's local persistent notification to stop MediaProjection. Local capture ending also terminates the sender. Remote commands do not start MediaProjection.
 
 This is not yet hardware-validated. Android codec implementations can differ, and real-world frame loss, latency, orientation changes, screen rotation and NAT/TURN behavior still need testing on two physical devices. Remote touch input is not yet migrated to this Internet path.
+
+
+## Secure remote input
+
+The controller video surface now supports tap and drag gestures. Coordinates are normalized to the visible video area and sent as authenticated `screen.input` commands. The controller also has a bounded text field for inserting text into the currently focused editable target field.
+
+The target must meet both independent conditions:
+- RKRemote Accessibility must be manually enabled by the owner in Android Settings.
+- The target owner must grant the `SCREEN_INPUT` capability in the secure Internet panel for the current session.
+
+The target routes only the gesture and text actions through its existing Accessibility service. It does not read or record accessibility events. Gesture coordinates are constrained to 0..1, duration is bounded by the Accessibility service, and text is capped at 4096 characters. The owner can revoke all remote command permissions immediately or stop the secure session.
