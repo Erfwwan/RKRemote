@@ -142,7 +142,7 @@ class LanAgentServer(
                 return
             }
             val endpoint = parts[1].substringBefore('?')
-            if (parts[0] == "POST" && endpoint == "/input/tap") {
+            if (parts[0] == "POST" && endpoint in setOf("/input/tap", "/input/gesture", "/input/text")) {
                 val length = headers["content-length"]?.toIntOrNull()
                 if (length == null || length !in 1..MAX_INPUT_BODY_BYTES) {
                     respond(output, 400, JSONObject().put("error", "Invalid request body size"))
@@ -154,17 +154,43 @@ class LanAgentServer(
                         return
                     }
                 val command = runCatching { JSONObject(String(bodyBytes, Charsets.UTF_8)) }.getOrNull()
-                val x = command?.optDouble("x", Double.NaN) ?: Double.NaN
-                val y = command?.optDouble("y", Double.NaN) ?: Double.NaN
-                if (!x.isFinite() || !y.isFinite() || x !in 0.0..1.0 || y !in 0.0..1.0) {
-                    respond(output, 400, JSONObject().put("error", "x and y must be normalized between 0 and 1"))
+                if (command == null) {
+                    respond(output, 400, JSONObject().put("error", "Invalid JSON body"))
                     return
                 }
-                val accepted = RemoteAccessibilityService.dispatchTapNormalized(x.toFloat(), y.toFloat())
+                val accepted: Boolean
+                val action: String
+                when (endpoint) {
+                    "/input/tap", "/input/gesture" -> {
+                        val x1 = command.optDouble("x", command.optDouble("startX", Double.NaN))
+                        val y1 = command.optDouble("y", command.optDouble("startY", Double.NaN))
+                        val x2 = command.optDouble("endX", x1)
+                        val y2 = command.optDouble("endY", y1)
+                        val duration = command.optLong("durationMs", 80L)
+                        if (listOf(x1, y1, x2, y2).any { !it.isFinite() || it !in 0.0..1.0 } ||
+                            duration !in 40L..1500L) {
+                            respond(output, 400, JSONObject().put("error", "Coordinates must be 0..1 and duration 40..1500 ms"))
+                            return
+                        }
+                        accepted = RemoteAccessibilityService.dispatchGestureNormalized(
+                            x1.toFloat(), y1.toFloat(), x2.toFloat(), y2.toFloat(), duration
+                        )
+                        action = if (duration >= 500L && x1 == x2 && y1 == y2) "long_press" else if (x1 == x2 && y1 == y2) "tap" else "swipe"
+                    }
+                    else -> {
+                        val value = command.optString("text", "")
+                        if (value.length > MAX_REMOTE_TEXT_LENGTH) {
+                            respond(output, 400, JSONObject().put("error", "Text exceeds 4096 characters"))
+                            return
+                        }
+                        accepted = RemoteAccessibilityService.setFocusedText(value)
+                        action = "text"
+                    }
+                }
                 if (!accepted) {
-                    respond(output, 503, JSONObject().put("error", "Accessibility service is not enabled"))
+                    respond(output, 503, JSONObject().put("error", "Accessibility service unavailable, no focused editable field, or gesture rejected"))
                 } else {
-                    respond(output, 202, JSONObject().put("accepted", true).put("action", "tap"))
+                    respond(output, 202, JSONObject().put("accepted", true).put("action", action))
                 }
                 return
             }
@@ -283,6 +309,6 @@ class LanAgentServer(
         private const val MAX_HEADER_LINE_BYTES = 2048
         private const val MAX_HEADERS = 24
         private const val MAX_HEADER_BYTES = 8192
-        private const val MAX_INPUT_BODY_BYTES = 1024
+        private const val MAX_INPUT_BODY_BYTES = 16 * 1024\n        private const val MAX_REMOTE_TEXT_LENGTH = 4096
     }
 }
