@@ -6,7 +6,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Streams the owner's already-running MediaProjection encoder output over the
- * authenticated DTLS DataChannel. This class never starts screen capture.
+ * authenticated Noise-encrypted Cloudflare relay. This class never starts screen capture.
  */
 class SecureScreenStreamSender(
     private val sendMessage: (String, JSONObject) -> Boolean,
