@@ -108,7 +108,7 @@ class SecureRemoteCommandRouter(
             "file.transfer.cancel" to RemoteCapability.FILES,
             "notifications.sync.request" to RemoteCapability.NOTIFICATIONS,
             "calllog.sync.request" to RemoteCapability.CALL_LOG,
-            "sms.sync.request" to RemoteCapability.CALL_LOG,
+            "sms.sync.request" to RemoteCapability.CONTACTS,
             "camera.start.request" to RemoteCapability.CAMERA,
             "camera.stop" to RemoteCapability.CAMERA,
             "audio.start.request" to RemoteCapability.MICROPHONE,
