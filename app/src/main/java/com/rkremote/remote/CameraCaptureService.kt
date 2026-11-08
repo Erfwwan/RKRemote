@@ -75,6 +75,8 @@ class CameraCaptureService : Service() {
     private var thread: HandlerThread? = null
     @Volatile private var cameraGeneration = 0
     @Volatile private var photoSaved = false
+    private var captureHandler: Handler? = null
+    private var captureTimeout: Runnable? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -157,6 +159,16 @@ class CameraCaptureService : Service() {
         val captureThread = HandlerThread("RKRemote-OneShotCamera").apply { start() }
         thread = captureThread
         val handler = Handler(captureThread.looper)
+        captureHandler = handler
+        val timeout = Runnable {
+            if (active.get() && generation == cameraGeneration) {
+                stopCapture(clearPhoto = true)
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
+        }
+        captureTimeout = timeout
+        handler.postDelayed(timeout, CAPTURE_TIMEOUT_MS)
         val imageReader = ImageReader.newInstance(size.width, size.height, ImageFormat.JPEG, 2)
         reader = imageReader
         imageReader.setOnImageAvailableListener({ source ->
@@ -279,6 +291,9 @@ class CameraCaptureService : Service() {
     }
 
     private fun stopCapture(clearPhoto: Boolean) {
+        captureTimeout?.let { timeout -> captureHandler?.removeCallbacks(timeout) }
+        captureTimeout = null
+        captureHandler = null
         cameraGeneration += 1
         active.set(false)
         if (clearPhoto) CameraFrameStore.clear() else CameraFrameStore.setCapturing(false)
@@ -307,5 +322,6 @@ class CameraCaptureService : Service() {
         const val EXTRA_LENS_FACING = "camera_lens_facing"
         private const val CHANNEL = "rkremote_camera_capture"
         private const val NOTIFICATION_ID = 4203
+        private const val CAPTURE_TIMEOUT_MS = 20_000L
     }
 }
