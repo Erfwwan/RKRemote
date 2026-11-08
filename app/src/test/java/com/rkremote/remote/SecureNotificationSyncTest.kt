@@ -18,7 +18,7 @@ class SecureNotificationSyncTest {
 
     @Test
     fun boundsHeavilyEscapedNotificationText() {
-        val huge = JSONObject().put("text", "\\"".repeat(20_000))
+        val huge = JSONObject().put("text", "\"".repeat(40_000))
         val response = SecureNotificationSync.buildBoundedResponse("request-2", 1, listOf(huge))
         assertEquals(0, response.getInt("returned"))
         assertTrue(response.getBoolean("truncated"))
