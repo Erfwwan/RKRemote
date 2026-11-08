@@ -112,13 +112,35 @@ class RemoteScreenshotService : Service() {
         val thread = HandlerThread("RKRemote-Still-Capture").apply { start() }
         worker = thread
         val handler = Handler(thread.looper)
-        val reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
+        var densityDpi = metrics.densityDpi
+        fun createReader(w: Int, h: Int): ImageReader =
+            ImageReader.newInstance(w.coerceAtLeast(2), h.coerceAtLeast(2), PixelFormat.RGBA_8888, 2)
+                .also { source ->
+                    source.setOnImageAvailableListener({ available ->
+                        runCatching { available.acquireLatestImage() }
+                            .onSuccess { RemoteScreenshotStore.offer(it) }
+                    }, handler)
+                }
+        val reader = createReader(width, height)
         imageReader = reader
-        reader.setOnImageAvailableListener({ source ->
-            RemoteScreenshotStore.offer(source.acquireLatestImage())
-        }, handler)
 
         mediaProjection.registerCallback(object : MediaProjection.Callback() {
+            override fun onCapturedContentResize(width: Int, height: Int) {
+                if (width < 2 || height < 2) return
+                val currentDisplay = display ?: return
+                val replacement = createReader(width, height)
+                runCatching {
+                    currentDisplay.resize(width, height, densityDpi)
+                    currentDisplay.setSurface(replacement.surface)
+                    val previous = imageReader
+                    imageReader = replacement
+                    previous?.setOnImageAvailableListener(null, null)
+                    previous?.close()
+                }.onFailure {
+                    runCatching { replacement.close() }
+                }
+            }
+
             override fun onStop() {
                 if (projection === mediaProjection) {
                     stopCapture()
