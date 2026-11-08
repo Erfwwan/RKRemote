@@ -150,3 +150,10 @@ Validation for this pass: source and JVM tests were committed, but no Gradle bui
 - **Not yet migrated:** existing remote input, screen video, files, notifications, camera, microphone and PTT feature traffic. This milestone provides an authenticated data-channel transport and manual connection panel, not complete remote-control functionality.
 - **Not deployed or verified:** Worker deployment, TURN service, Android API 33+ runtime, real two-device internet connection, NAT traversal matrix, DataChannel payload test, independent security review, and current-head CI/build. The WebRTC artifact is documented at Maven Central; see [the SDK project](https://github.com/webrtc-sdk/android).
 - The legacy LAN port 18765 remains plaintext and must stay on trusted private LAN only.
+
+
+### CI note for WebRTC transport milestone
+
+- GitHub Actions completed both `:app:testDebugUnitTest` and `:app:assembleDebug` successfully for commit `16455720dc76dac9f3293adb2faed88114b9e119` (the first integrated coordinator + main-screen panel).
+- The follow-up UI test-frame change at `8de82d63e974c33e23d9532e557afb64bc5fcb08` passed unit tests; its APK assembly was still running at the time this status was updated.
+- Subsequent changes were an API-level annotation and documentation updates. The current branch head has a newer workflow run in progress, so do not treat the latest branch head as fully CI-verified until that run completes.
