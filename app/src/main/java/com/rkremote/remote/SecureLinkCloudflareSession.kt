@@ -22,6 +22,7 @@ class SecureLinkCloudflareSession internal constructor(
 ) : AutoCloseable {
 
     interface Listener {
+        fun onRelayConnected() {}
         fun onPeerVerificationRequired(peerId: String, shortAuthenticationString: String)
         fun onSecureReady(peerId: String)
         fun onApplicationFrame(payload: ByteArray)
@@ -56,6 +57,7 @@ class SecureLinkCloudflareSession internal constructor(
                 synchronized(this@SecureLinkCloudflareSession) {
                     if (closed) return
                     try {
+                        listener.onRelayConnected()
                         if (initiator) sendRequired(handshake.start())
                     } catch (error: Throwable) {
                         fail(error)
