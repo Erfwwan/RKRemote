@@ -28,10 +28,6 @@ object LanControllerClient {
     fun requestBytes(ip: String, token: String, endpoint: String): ByteArray =
         requestRaw("GET", ip, token, endpoint, null)
 
-    fun downloadFile(ip: String, token: String, documentId: String): ByteArray {
-        throw UnsupportedOperationException("Use downloadFileToReceivedFolder for streaming downloads")
-    }
-
     fun downloadFileToReceivedFolder(
         context: Context,
         ip: String,
