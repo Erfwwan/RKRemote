@@ -242,3 +242,11 @@ Validation for this pass: source and JVM tests were committed, but no Gradle bui
 - Audio is kept in a latest-chunk store on the target and a bounded playback queue on the controller; no audio is written to disk. If the network cannot keep up, older queued playback chunks are dropped to bound latency.
 - Remote requests never start or stop Android microphone capture. The owner can stop the local service or revoke the session capability at any time.
 - This is source-integrated and awaits the current CI run and physical two-device audio/feedback testing. Echo cancellation and noise suppression depend on device support and do not guarantee feedback-free operation.
+
+
+## Secure PTT over Internet P2P
+
+- The target owner must start the PTT speaker locally; it remains a visible foreground service with a persistent stop action. The target owner separately grants `PUSH_TO_TALK` for the secure session.
+- The controller must start its microphone capture locally with Android permission before holding the push-to-talk surface. While held, short mono 16 kHz PCM chunks are sent over the authenticated DTLS DataChannel; release sends the stop command and clears queued target audio.
+- The target never starts its speaker or microphone from a remote command. If the target speaker is not locally enabled, PTT requests are rejected. Queue depth remains bounded and old chunks are dropped under congestion.
+- This source integration requires CI and physical two-device testing for latency, audio route and feedback. It is half-duplex and not a phone-call/full-duplex path.
