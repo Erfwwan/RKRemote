@@ -208,22 +208,28 @@ class SecureWebRtcPeer(
                     require(role == Role.TARGET) { "Controller cannot accept a remote offer" }
                     val sdp = message.getString("sdp")
                     requireFingerprintMatches(sdp, message.getString("fingerprint"))
-                    peerConnection!!.setRemoteDescription(sdpObserver {
-                        remoteDescriptionSet.set(true)
-                        flushRemoteIce()
-                        peerConnection!!.createAnswer(sdpObserver { answer ->
-                            setLocalAndSignal(answer, "answer")
-                        }, MediaConstraints())
-                    }, SessionDescription(SessionDescription.Type.OFFER, sdp))
+                    peerConnection!!.setRemoteDescription(
+                        sdpObserver(onSet = {
+                            remoteDescriptionSet.set(true)
+                            flushRemoteIce()
+                            peerConnection!!.createAnswer(sdpObserver { answer ->
+                                setLocalAndSignal(answer, "answer")
+                            }, MediaConstraints())
+                        }),
+                        SessionDescription(SessionDescription.Type.OFFER, sdp)
+                    )
                 }
                 "answer" -> {
                     require(role == Role.CONTROLLER) { "Target cannot accept an answer" }
                     val sdp = message.getString("sdp")
                     requireFingerprintMatches(sdp, message.getString("fingerprint"))
-                    peerConnection!!.setRemoteDescription(sdpObserver {
-                        remoteDescriptionSet.set(true)
-                        flushRemoteIce()
-                    }, SessionDescription(SessionDescription.Type.ANSWER, sdp))
+                    peerConnection!!.setRemoteDescription(
+                        sdpObserver(onSet = {
+                            remoteDescriptionSet.set(true)
+                            flushRemoteIce()
+                        }),
+                        SessionDescription(SessionDescription.Type.ANSWER, sdp)
+                    )
                 }
                 "ice" -> {
                     val candidate = IceCandidate(
@@ -265,13 +271,16 @@ class SecureWebRtcPeer(
 
     private fun setLocalAndSignal(description: SessionDescription, type: String) {
         val fingerprint = extractSha256Fingerprint(description.description)
-        peerConnection!!.setLocalDescription(sdpObserver {
-            sendSignal(JSONObject()
-                .put("type", type)
-                .put("peerId", localPeerId)
-                .put("fingerprint", fingerprint)
-                .put("sdp", description.description))
-        }, description)
+        peerConnection!!.setLocalDescription(
+            sdpObserver(onSet = {
+                sendSignal(JSONObject()
+                    .put("type", type)
+                    .put("peerId", localPeerId)
+                    .put("fingerprint", fingerprint)
+                    .put("sdp", description.description))
+            }),
+            description
+        )
     }
 
     private fun sendSignal(message: JSONObject) {
@@ -299,16 +308,28 @@ class SecureWebRtcPeer(
         return matches.single()
     }
 
-    private fun sdpObserver(onSuccess: (SessionDescription) -> Unit = {}): SdpObserver =
+    private fun guarded(block: () -> Unit) {
+        try {
+            if (!closed.get()) block()
+        } catch (error: Throwable) {
+            listener.onFailure(error)
+            close()
+        }
+    }
+
+    private fun sdpObserver(
+        onCreate: (SessionDescription) -> Unit = {},
+        onSet: () -> Unit = {}
+    ): SdpObserver =
         object : SdpObserver {
-            override fun onCreateSuccess(description: SessionDescription) = onSuccess(description)
-            override fun onSetSuccess() = Unit
+            override fun onCreateSuccess(description: SessionDescription) = guarded { onCreate(description) }
+            override fun onSetSuccess() = guarded { onSet() }
             override fun onCreateFailure(error: String) {
-                listener.onFailure(IllegalStateException("WebRTC SDP operation failed: $error"))
+                listener.onFailure(IllegalStateException("WebRTC SDP creation failed: $error"))
                 close()
             }
             override fun onSetFailure(error: String) {
-                listener.onFailure(IllegalStateException("WebRTC SDP operation failed: $error"))
+                listener.onFailure(IllegalStateException("WebRTC SDP setup failed: $error"))
                 close()
             }
         }
