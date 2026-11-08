@@ -191,10 +191,23 @@ object CloudflareAccountApi {
                         .toRequestBody("application/json".toMediaType())
                 ).build()
         )
-        val subdomainJson = request(
-            Request.Builder().url("$API/accounts/$accountId/workers/subdomain")
-                .header("Authorization", "Bearer $accessToken").get().build()
-        )
+        val accountSubdomainUrl = "$API/accounts/$accountId/workers/subdomain"
+        val subdomainJson = runCatching {
+            request(
+                Request.Builder().url(accountSubdomainUrl)
+                    .header("Authorization", "Bearer $accessToken").get().build()
+            )
+        }.getOrElse {
+            val generated = "rkremote-" + java.util.UUID.randomUUID().toString().replace("-", "").take(8)
+            request(
+                Request.Builder().url(accountSubdomainUrl)
+                    .header("Authorization", "Bearer $accessToken")
+                    .put(
+                        JSONObject().put("subdomain", generated).toString()
+                            .toRequestBody("application/json".toMediaType())
+                    ).build()
+            )
+        }
         val subdomain = subdomainJson.optJSONObject("result")?.optString("subdomain").orEmpty()
         require(subdomain.isNotBlank()) { "Cloudflare did not return a workers.dev subdomain" }
         return "wss://$WORKER_NAME.$subdomain.workers.dev"
