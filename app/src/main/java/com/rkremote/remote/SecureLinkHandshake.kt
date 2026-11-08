@@ -181,7 +181,7 @@ class SecureLinkHandshake(
 
     @Synchronized
     override fun close() {
-        if (state == State.CLOSED) return
+        if (state == State.CLOSED || state == State.FAILED) return
         state = State.CLOSED
         approved = false
         try {
