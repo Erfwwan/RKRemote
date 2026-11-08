@@ -41,7 +41,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import com.rkremote.remote.PairingPanel
+import com.rkremote.remote.PairingPanel\nimport com.rkremote.remote.LanRemotePanel
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -156,15 +156,15 @@ private fun LocalSetupScreen() {
             Spacer(Modifier.height(6.dp))
             Card {
                 Column(Modifier.padding(14.dp)) {
-                    Text("Build milestone 1", fontWeight = FontWeight.SemiBold)
+                    Text("Build milestone 1 + LAN prototype", fontWeight = FontWeight.SemiBold)
                     Text(
-                        "Local permission setup, encrypted notification history, pairing-code prototype, protocol foundation, and pinned WSS transport. Remote commands and media streaming are not connected yet.",
+                        "Local permission setup, encrypted notification history, pairing-code prototype, protocol foundation, and pinned WSS transport. Part 1 adds read-only local Wi-Fi status and selected-folder listing. Screen, camera, microphone and audio controls are not connected yet.",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
             }
         }
-        item { PairingPanel() }
+        item { PairingPanel() }\n        item { LanRemotePanel() }
         item {
             Text("Android permissions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         }
