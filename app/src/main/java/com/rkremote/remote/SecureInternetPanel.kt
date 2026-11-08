@@ -1829,7 +1829,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     session.value?.revokeOwnerApprovedCommands()
                     status.value = "All remote command permissions revoked for this session"
                 }) { Text("Revoke all remote permissions for this session") }
-            } else if (feature == SecureFeatureSection.CAMERA) {
+            } else if (role.value == CloudflareSignalingClient.Role.TARGET && feature == SecureFeatureSection.CAMERA) {
                 Text("ثبت عکس روی همین گوشی", style = MaterialTheme.typography.titleSmall)
                 Text(
                     "دوربین فقط با لمس دکمه‌های زیر و روی خود دستگاه فعال می‌شود. کنترل‌کننده از راه دور نمی‌تواند دوربین را روشن کند.",
