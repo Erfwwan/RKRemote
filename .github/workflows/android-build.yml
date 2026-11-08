@@ -1,7 +1,13 @@
 name: Android build
 
 on:
-  # Builds are started manually only after explicit owner approval.
+  # One-time build trigger: only a change to this workflow file starts a build.
+  push:
+    branches:
+      - feature/remote-agent-foundation
+    paths:
+      - '.github/workflows/android-build.yml'
+  # Manual builds remain available after explicit owner approval.
   workflow_dispatch:
 
 permissions:
