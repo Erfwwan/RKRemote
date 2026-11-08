@@ -99,6 +99,9 @@ class SecureInternetPeer(
                         }
                         val message = RemoteMessage.parse(messageBytes.toString(Charsets.UTF_8))
                         messageGuard.accept(message, System.currentTimeMillis())
+                        require(RemoteMessageDirection.isAllowedIncoming(role, message.type)) {
+                            "Unexpected application message direction for this device role"
+                        }
                         listener.onData(messageBytes)
                         if (role == CloudflareSignalingClient.Role.TARGET &&
                             SecureRemoteCommandRouter.isCommandType(message.type)) {
