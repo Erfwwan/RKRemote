@@ -440,8 +440,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                         (role.value == CloudflareSignalingClient.Role.TARGET ||
                             room.value.matches(Regex("[a-f0-9]{64}"))),
                     onClick = {
-                        if (role.value == CloudflareSignalingClient.Role.TARGET &&
-                            !room.value.matches(Regex("[a-f0-9]{64}"))) {
+                        if (role.value == CloudflareSignalingClient.Role.TARGET) {
                             room.value = CloudflareSignalingClient.newRoomId()
                         }
                         setupPrefs.edit()
@@ -837,6 +836,20 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                 identityStore = identityStore,
                                 commandRouter = targetRouter,
                                 listener = object : SecureInternetPeer.Listener {
+                                    override fun onRelayConnected() {
+                                        if (role.value == CloudflareSignalingClient.Role.TARGET) {
+                                            mainHandler.post {
+                                                if (activePeerRef.get() !== activePeer) return@post
+                                                val invite = "rkremote://pair?worker=${Uri.encode(url.value)}&room=${room.value}"
+                                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                                    type = "text/plain"
+                                                    putExtra(Intent.EXTRA_TEXT, invite)
+                                                }
+                                                context.startActivity(Intent.createChooser(shareIntent, "دعوت گوشی دوم به RKRemote"))
+                                                status.value = "اتصال مقصد به Worker برقرار شد · لینک دعوت آماده است"
+                                            }
+                                        }
+                                    }
                                     override fun onPeerVerificationRequired(id: String, code: String) {
                                         mainHandler.post {
                                             if (activePeerRef.get() !== activePeer) return@post
@@ -1350,14 +1363,6 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                             SessionForegroundService.startInternetSession(context, created)
                             status.value = "Connecting to encrypted Cloudflare relay"
                             created.connect()
-                            if (role.value == CloudflareSignalingClient.Role.TARGET) {
-                                val invite = "rkremote://pair?worker=${Uri.encode(url.value)}&room=${room.value}"
-                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(Intent.EXTRA_TEXT, invite)
-                                }
-                                context.startActivity(Intent.createChooser(shareIntent, "دعوت گوشی دوم به RKRemote"))
-                            }
                         } catch (failure: Throwable) {
                             createdSession?.let { activePeerRef.compareAndSet(it, null) }
                             createdSession?.close()
@@ -1370,7 +1375,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                             error.value = failure.message ?: "Could not start SecureLink"
                         }
                     }
-                ) { Text("Connect") }
+                ) { Text(if (role.value == CloudflareSignalingClient.Role.TARGET) "شروع اتصال و دعوت گوشی دوم" else "اتصال به گوشی مقصد") }
                 OutlinedButton(
                     enabled = session.value != null,
                     onClick = {
