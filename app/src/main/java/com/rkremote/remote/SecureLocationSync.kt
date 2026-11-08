@@ -77,9 +77,8 @@ private fun JSONObject.optNullableLong(name: String): Long? =
 class LocationHistoryStore(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    @Synchronized
-    fun append(snapshot: LocationSnapshot) {
-        val history = readAll().toMutableList()
+    fun append(snapshot: LocationSnapshot) = synchronized(LOCK) {
+        val history = readAllUnlocked().toMutableList()
         history.add(snapshot)
         val bounded = history.takeLast(MAX_RECORDS)
         val json = JSONArray()
@@ -87,8 +86,11 @@ class LocationHistoryStore(context: Context) {
         writeEncrypted(json.toString())
     }
 
-    @Synchronized
-    fun readAll(): List<LocationSnapshot> = runCatching {
+    fun readAll(): List<LocationSnapshot> = synchronized(LOCK) {
+        readAllUnlocked()
+    }
+
+    private fun readAllUnlocked(): List<LocationSnapshot> = runCatching {
         val raw = readEncrypted() ?: return emptyList()
         val array = JSONArray(raw)
         (0 until array.length()).mapNotNull { index ->
@@ -150,6 +152,7 @@ class LocationHistoryStore(context: Context) {
 
     companion object {
         const val MAX_RECORDS = 500
+        private val LOCK = Any()
         private const val PREFS = "rkremote_location_history"
         private const val DATA = "encrypted_history"
         private const val TRACKING_ENABLED = "tracking_enabled"
