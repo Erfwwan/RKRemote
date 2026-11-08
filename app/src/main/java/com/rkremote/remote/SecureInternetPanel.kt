@@ -1,6 +1,9 @@
 package com.rkremote.remote
 
+import android.content.ContentValues
+import android.net.Uri
 import android.os.Build
+import android.provider.MediaStore
 import android.os.Handler
 import android.os.Looper
 import android.view.SurfaceView
@@ -32,6 +35,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.platform.LocalContext
 import org.json.JSONObject
+import java.io.OutputStream
+import java.security.MessageDigest
+import java.util.Base64
 
 @Composable
 fun SecureInternetPanel() {
@@ -53,6 +59,10 @@ fun SecureInternetPanel() {
     val streamSenderState = remember { mutableStateOf<SecureScreenStreamSender?>(null) }
     val remoteText = remember { mutableStateOf("") }
     val notificationSummary = remember { mutableStateOf("No notification sync requested") }
+    val fileEntries = remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+    val fileParentId = remember { mutableStateOf("") }
+    val selectedFileId = remember { mutableStateOf<String?>(null) }
+    val fileStatus = remember { mutableStateOf("File browser idle") }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     DisposableEffect(Unit) {
         onDispose {
@@ -125,8 +135,73 @@ fun SecureInternetPanel() {
                                 listOf(SecureWebRtcPeer.TurnServer(turnUrls.value.split(',').map { it.trim() }.filter { it.isNotEmpty() }, turnUsername.value, turnCredential.value))
                             }
                             var activePeer: SecureInternetPeer? = null
+                            var downloadUri: Uri? = null
+                            var downloadOutput: OutputStream? = null
+                            var downloadDigest: MessageDigest? = null
+                            var downloadBytes = 0L
+                            var downloadExpectedBytes = -1L
                             val targetRouter = if (role.value == CloudflareSignalingClient.Role.TARGET) {
                                 SecureRemoteCommandRouter().apply {
+                                    val safBridge = SecureSafTransferBridge(context)
+                                    register("file.list.request", RemoteCapability.FILES) { message ->
+                                        val response = safBridge.list(message.payload.optString("parentId").takeIf { it.isNotBlank() })
+                                            .put("requestId", message.payload.getString("requestId"))
+                                        check(activePeer?.sendMessage("file.list.result", response) == true) {
+                                            "Could not send secure file listing"
+                                        }
+                                        "file.list.result"
+                                    }
+                                    register("file.download.request", RemoteCapability.FILES) { message ->
+                                        val requestId = message.payload.getString("requestId")
+                                        val documentId = message.payload.getString("documentId")
+                                        Thread({
+                                            try {
+                                                var streamedSize = -1L
+                                                safBridge.streamFile(
+                                                    documentId = documentId,
+                                                    onStart = { metadata ->
+                                                        streamedSize = metadata.sizeBytes
+                                                        activePeer?.sendMessage(
+                                                            "file.download.begin",
+                                                            JSONObject()
+                                                                .put("requestId", requestId)
+                                                                .put("documentId", metadata.documentId)
+                                                                .put("name", metadata.name.take(255))
+                                                                .put("mimeType", metadata.mimeType.take(160))
+                                                                .put("totalBytes", metadata.sizeBytes)
+                                                        ) == true
+                                                    },
+                                                    onChunk = { offset, bytes ->
+                                                        val sent = activePeer?.sendMessage(
+                                                            "file.download.chunk",
+                                                            JSONObject()
+                                                                .put("requestId", requestId)
+                                                                .put("offset", offset)
+                                                                .put("data", Base64.getEncoder().encodeToString(bytes))
+                                                        ) == true
+                                                        if (sent) Thread.sleep(15)
+                                                        sent
+                                                    },
+                                                    onComplete = { sha256 ->
+                                                        check(activePeer?.sendMessage(
+                                                            "file.download.complete",
+                                                            JSONObject()
+                                                                .put("requestId", requestId)
+                                                                .put("totalBytes", streamedSize)
+                                                                .put("sha256", sha256)
+                                                        ) == true) { "Could not send file transfer completion" }
+                                                    }
+                                                )
+                                            } catch (failure: Throwable) {
+                                                activePeer?.sendMessage(
+                                                    "file.download.error",
+                                                    JSONObject().put("requestId", requestId)
+                                                        .put("reason", failure.message?.take(180) ?: "File transfer failed")
+                                                )
+                                            }
+                                        }, "RKRemote-Secure-File-Download").start()
+                                        "file.download.begin"
+                                    }
                                     register("screen.stream.start", RemoteCapability.SCREEN_VIEW) {
                                         check(ScreenVideoStore.hasConfig()) {
                                             "Start screen sharing locally on the target first"
