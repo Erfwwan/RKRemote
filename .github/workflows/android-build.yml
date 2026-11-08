@@ -1,7 +1,7 @@
 name: Android build
 
 on:
-  # Role split and one-way report flow verification: target/controller navigation, PTT and result panels.
+  # Build verification after role split, PTT UI and Kotlin syntax correction.
   push:
     branches:
       - feature/remote-agent-foundation
