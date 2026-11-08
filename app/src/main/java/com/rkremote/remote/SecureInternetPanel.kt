@@ -637,6 +637,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                         }
                                                         val hash = MessageDigest.getInstance("SHA-256").digest(frame).joinToString("") { "%02x".format(it) }
                                                         check(sendWithRetry("camera.frame.complete", JSONObject().put("transferId", transferId).put("sha256", hash))) { "Could not complete secure photo transfer" }
+                                                        CameraFrameStore.clear()
                                                         mainHandler.post { if (activePeerRef.get() === activePeer) cameraStatus.value = "عکس با موفقیت دریافت شد" }
                                                     } catch (failure: Throwable) {
                                                         mainHandler.post { if (activePeerRef.get() === activePeer) cameraStatus.value = failure.message ?: "ارسال عکس ناموفق بود" }
