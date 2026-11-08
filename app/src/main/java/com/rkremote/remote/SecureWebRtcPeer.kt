@@ -93,8 +93,11 @@ class SecureWebRtcPeer(
                 PeerConnection.IceConnectionState.DISCONNECTED ->
                     scheduleDisconnectGracePeriod()
                 PeerConnection.IceConnectionState.FAILED -> {
-                    listener.onFailure(IllegalStateException("WebRTC ICE connectivity failed"))
-                    close()
+                    try {
+                        listener.onFailure(IllegalStateException("WebRTC ICE connectivity failed"))
+                    } finally {
+                        close()
+                    }
                 }
                 PeerConnection.IceConnectionState.CLOSED -> Unit
                 else -> Unit
@@ -103,6 +106,7 @@ class SecureWebRtcPeer(
         override fun onIceConnectionReceivingChange(receiving: Boolean) = Unit
         override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) = Unit
         override fun onIceCandidate(candidate: IceCandidate) {
+            if (closed.get()) return
             runCatching {
                 sendSignal(JSONObject()
                     .put("type", "ice")
@@ -111,15 +115,18 @@ class SecureWebRtcPeer(
                     .put("mLine", candidate.sdpMLineIndex)
                     .put("candidate", candidate.sdp))
             }.onFailure {
-                listener.onFailure(it)
-                close()
+                try {
+                    listener.onFailure(it)
+                } finally {
+                    close()
+                }
             }
         }
         override fun onIceCandidatesRemoved(candidates: Array<IceCandidate>) = Unit
         override fun onAddStream(stream: org.webrtc.MediaStream) = Unit
         override fun onRemoveStream(stream: org.webrtc.MediaStream) = Unit
         override fun onDataChannel(channel: DataChannel) {
-            if (role != Role.TARGET || channel.label() != DATA_CHANNEL_LABEL || dataChannel != null) {
+            if (closed.get() || role != Role.TARGET || channel.label() != DATA_CHANNEL_LABEL || dataChannel != null) {
                 channel.close()
                 channel.dispose()
                 return
@@ -136,11 +143,18 @@ class SecureWebRtcPeer(
                 PeerConnection.PeerConnectionState.CONNECTED -> clearDisconnectGracePeriod()
                 PeerConnection.PeerConnectionState.DISCONNECTED -> scheduleDisconnectGracePeriod()
                 PeerConnection.PeerConnectionState.FAILED -> {
-                    listener.onFailure(IllegalStateException("WebRTC peer connection failed"))
-                    close()
+                    try {
+                        listener.onFailure(IllegalStateException("WebRTC peer connection failed"))
+                    } finally {
+                        close()
+                    }
                 }
                 PeerConnection.PeerConnectionState.CLOSED -> {
-                    listener.onDisconnected("WebRTC peer connection closed")
+                    try {
+                        listener.onDisconnected("WebRTC peer connection closed")
+                    } finally {
+                        close()
+                    }
                 }
                 else -> Unit
             }
