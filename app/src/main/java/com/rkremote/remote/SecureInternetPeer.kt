@@ -5,6 +5,10 @@ import androidx.annotation.RequiresApi
 import org.json.JSONObject
 import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+import java.security.MessageDigest
+import java.util.UUID
+import java.util.LinkedHashMap
 
 /**
  * End-to-end internet connection coordinator:
@@ -32,6 +36,7 @@ class SecureInternetPeer(
         fun onWebRtcConnecting()
         fun onWebRtcConnected()
         fun onData(payload: ByteArray)
+        fun onRemoteMessage(message: RemoteMessage) {}
         fun onRoomEvent(type: String, payload: JSONObject)
         fun onDisconnected(reason: String)
         fun onFailure(error: Throwable)
@@ -41,6 +46,14 @@ class SecureInternetPeer(
     private val localPeerId = identityStore.getOrCreateIdentity().peerId
     private val turnConfig = turnServers.toList()
     private val closed = AtomicBoolean(false)
+    private val outboundSequence = AtomicLong(0)
+    private val inboundSequence = AtomicLong(-1)
+    private val sessionId = MessageDigest.getInstance("SHA-256")
+        .digest(roomId.toByteArray(Charsets.UTF_8))
+        .take(16).joinToString("") { "%02x".format(it) }
+    private val seenMessageIds = object : LinkedHashMap<String, Boolean>(512, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Boolean>?): Boolean = size > 512
+    }
     private val pendingSignals = ArrayDeque<ByteArray>()
     private val lock = Any()
     private var webRtc: SecureWebRtcPeer? = null
@@ -69,7 +82,26 @@ class SecureInternetPeer(
                             object : SecureWebRtcPeer.Listener {
                                 override fun onConnecting() = listener.onWebRtcConnecting()
                                 override fun onConnected() = listener.onWebRtcConnected()
-                                override fun onData(payload: ByteArray) = listener.onData(payload)
+                                override fun onData(payload: ByteArray) {
+                                    try {
+                                        require(payload.size <= RemoteMessage.MAX_MESSAGE_BYTES) { "Secure application message exceeds protocol limit" }
+                                        val message = RemoteMessage.parse(payload.toString(Charsets.UTF_8))
+                                        require(message.sessionId == sessionId) { "Message belongs to another session" }
+                                        require(kotlin.math.abs(System.currentTimeMillis() - message.sentAt) <= MAX_CLOCK_SKEW_MS) { "Message timestamp is outside the accepted window" }
+                                        val previous = inboundSequence.get()
+                                        require(message.sequence > previous) { "Replayed or out-of-order message sequence" }
+                                        synchronized(seenMessageIds) {
+                                            require(!seenMessageIds.containsKey(message.messageId)) { "Duplicate message ID" }
+                                            seenMessageIds[message.messageId] = true
+                                        }
+                                        require(inboundSequence.compareAndSet(previous, message.sequence)) { "Concurrent or out-of-order inbound message" }
+                                        listener.onData(payload)
+                                        listener.onRemoteMessage(message)
+                                    } catch (error: Throwable) {
+                                        listener.onFailure(error)
+                                        close()
+                                    }
+                                }
                                 override fun onDisconnected(reason: String) = listener.onDisconnected(reason)
                                 override fun onFailure(error: Throwable) = listener.onFailure(error)
                             }
@@ -135,6 +167,29 @@ class SecureInternetPeer(
         secureSession.approvePeer(shortAuthenticationString, expectedPeerId)
     }
 
+    /** Send a bounded, versioned application message over the DTLS DataChannel. */
+    fun sendMessage(type: String, payload: JSONObject = JSONObject()): Boolean {
+        if (closed.get()) return false
+        return runCatching {
+            val sequence = outboundSequence.getAndIncrement()
+            require(sequence >= 0) { "Outbound sequence exhausted" }
+            val message = RemoteMessage(
+                type = type,
+                sessionId = sessionId,
+                messageId = UUID.randomUUID().toString(),
+                sequence = sequence,
+                sentAt = System.currentTimeMillis(),
+                payload = payload
+            )
+            val bytes = message.toJson().toString().toByteArray(Charsets.UTF_8)
+            require(bytes.size <= RemoteMessage.MAX_MESSAGE_BYTES) { "Application message exceeds protocol limit" }
+            send(bytes)
+        }.getOrElse {
+            listener.onFailure(it)
+            false
+        }
+    }
+
     /** Application data is sent only over the DTLS-protected WebRTC DataChannel. */
     fun send(payload: ByteArray): Boolean {
         if (closed.get()) return false
@@ -145,6 +200,7 @@ class SecureInternetPeer(
         if (!closed.compareAndSet(false, true)) return
         synchronized(lock) {
             pendingSignals.clear()
+            synchronized(seenMessageIds) { seenMessageIds.clear() }
             webRtc?.close()
             webRtc = null
         }
@@ -153,5 +209,6 @@ class SecureInternetPeer(
 
     companion object {
         private const val MAX_PENDING_SIGNALS = 32
+        private const val MAX_CLOCK_SKEW_MS = 10 * 60 * 1000L
     }
 }
