@@ -32,7 +32,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 class LanAgentServer(
     private val context: Context,
     private val token: String,
-    private val port: Int = DEFAULT_PORT
+    private val port: Int = DEFAULT_PORT,
+    private val onFatalError: (String) -> Unit = {}
 ) {
     private val running = AtomicBoolean(false)
     @Volatile private var server: ServerSocket? = null
@@ -91,7 +92,11 @@ class LanAgentServer(
                     }
                 }
             } catch (error: Exception) {
-                if (running.get()) lastError = error.message ?: error.javaClass.simpleName
+                if (running.get()) {
+                    val reason = error.message ?: error.javaClass.simpleName
+                    lastError = reason
+                    runCatching { onFatalError(reason) }
+                }
                 running.set(false)
             } finally {
                 server = null
