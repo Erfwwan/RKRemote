@@ -191,9 +191,15 @@ class SecureLinkCloudflareSession internal constructor(
         if (closed) return
         closed = true
         pendingInbound.clear()
-        handshake.close()
-        channel.close()
-        listener.onFailure(error)
+        try {
+            handshake.close()
+        } finally {
+            try {
+                channel.close()
+            } finally {
+                listener.onFailure(error)
+            }
+        }
     }
 
     @Synchronized
@@ -201,8 +207,11 @@ class SecureLinkCloudflareSession internal constructor(
         if (closed) return
         closed = true
         pendingInbound.clear()
-        handshake.close()
-        channel.close()
+        try {
+            handshake.close()
+        } finally {
+            channel.close()
+        }
     }
 
     companion object {
