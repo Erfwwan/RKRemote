@@ -774,6 +774,9 @@ fun SecureInternetPanel() {
                                                                     transferActive.set(false)
                                                                     activeTransferId.compareAndSet(transferId, null)
                                                                     downloadReceiver.abort()
+                                                                    downloadResumePrefs.edit().remove("document_id").commit()
+                                                                    pendingDownloadId.value = null
+                                                                    pendingDownloadDocumentId.value = null
                                                                 }
                                                             }
                                                             fileUploadStatus.value =
@@ -798,6 +801,9 @@ fun SecureInternetPanel() {
                                                 }
                                             }.onFailure {
                                                 downloadReceiver.abort()
+                                                downloadResumePrefs.edit().remove("document_id").commit()
+                                                pendingDownloadId.value = null
+                                                pendingDownloadDocumentId.value = null
                                                 val transferId = message.payload.optString("transferId")
                                                 if (transferId.isNotBlank() && activePeerRef.get() === activePeer) {
                                                     activePeer?.sendMessage(
@@ -820,6 +826,9 @@ fun SecureInternetPanel() {
                                                 downloadReceiver.chunk(message.payload)
                                             }.onFailure {
                                                 downloadReceiver.abort()
+                                                downloadResumePrefs.edit().remove("document_id").commit()
+                                                pendingDownloadId.value = null
+                                                pendingDownloadDocumentId.value = null
                                                 val transferId = message.payload.optString("transferId")
                                                 if (transferId.isNotBlank() && activePeerRef.get() === activePeer) {
                                                     activePeer?.sendMessage(
@@ -855,6 +864,9 @@ fun SecureInternetPanel() {
                                             }
                                             }.onFailure {
                                                 downloadReceiver.abort()
+                                                downloadResumePrefs.edit().remove("document_id").commit()
+                                                pendingDownloadId.value = null
+                                                pendingDownloadDocumentId.value = null
                                                 val transferId = message.payload.optString("transferId")
                                                 if (transferId.isNotBlank()) {
                                                     activeTransferId.compareAndSet(transferId, null)
@@ -867,6 +879,9 @@ fun SecureInternetPanel() {
                                             }
                                             "file.download.error" -> {
                                                 downloadReceiver.fail(message.payload)
+                                                downloadResumePrefs.edit().remove("document_id").commit()
+                                                pendingDownloadId.value = null
+                                                pendingDownloadDocumentId.value = null
                                                 val transferId = message.payload.optString("transferId")
                                                 if (transferId.isNotBlank()) {
                                                     activeTransferId.compareAndSet(transferId, null)
