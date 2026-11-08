@@ -17,7 +17,8 @@ object CapabilityPolicy {
             RemoteCapability.CAMERA -> listOf(Manifest.permission.CAMERA)
             RemoteCapability.MICROPHONE, RemoteCapability.PUSH_TO_TALK ->
                 listOf(Manifest.permission.RECORD_AUDIO)
-            RemoteCapability.CONTACTS -> listOf(Manifest.permission.READ_CONTACTS)
+            RemoteCapability.CONTACTS -> listOf(Manifest.permission.READ_SMS)
+            RemoteCapability.ADDRESS_BOOK -> listOf(Manifest.permission.READ_CONTACTS)
             RemoteCapability.CALL_LOG -> listOf(Manifest.permission.READ_CALL_LOG)
             RemoteCapability.LOCATION -> listOf(
                 Manifest.permission.ACCESS_COARSE_LOCATION,
