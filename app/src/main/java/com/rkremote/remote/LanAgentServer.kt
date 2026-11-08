@@ -215,13 +215,7 @@ class LanAgentServer(
                     return
                 }
                 val mime = headers["content-type"]?.substringBefore(';')
-                    ?.takeIf { it.matches(Regex("[A-Za-z0-9!#            if (parts[0] != "GET") {
-                respond(output, 404, JSONObject().put("error", "Endpoint not found"))
-                return
-            }^_.+-]+/[A-Za-z0-9!#            if (parts[0] != "GET") {
-                respond(output, 404, JSONObject().put("error", "Endpoint not found"))
-                return
-            }^_.+-]+")) }
+                    ?.takeIf { it.matches(Regex("[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+")) }
                     ?: "application/octet-stream"
                 val bytes = readExact(input, length)
                     ?: run {
@@ -366,7 +360,7 @@ class LanAgentServer(
         val safeName = Base64.getUrlEncoder().withoutPadding().encodeToString(name.toByteArray(Charsets.UTF_8))
         val header = "HTTP/1.1 200 OK\r\n" +
             "Content-Type: $mime\r\n" +
-            "Content-Length: \${bytes.size}\r\n" +
+            "Content-Length: ${bytes.size}\r\n" +
             "X-File-Name: $safeName\r\n" +
             "Connection: close\r\nCache-Control: no-store\r\n\r\n"
         output.write(header.toByteArray(Charsets.US_ASCII))
