@@ -47,6 +47,12 @@ class CloudflareSignalingClient(
         require(baseUri.host != null && baseUri.rawQuery == null && baseUri.rawFragment == null) {
             "Invalid Cloudflare signaling URL"
         }
+        require(baseUri.rawUserInfo == null) {
+            "Signaling URL must not contain embedded credentials"
+        }
+        require(baseUri.rawPath.isNullOrEmpty() || baseUri.rawPath == "/") {
+            "Signaling URL must be the Worker origin without a custom path"
+        }
         require(roomId.matches(Regex("[a-f0-9]{64}"))) { "Room ID must be 256-bit lowercase hex" }
     }
 
