@@ -22,7 +22,7 @@ class SecureSafTransferBridge(context: Context) {
 
     fun list(parentId: String?, limit: Int = MAX_LIST_ITEMS): JSONObject {
         require(limit in 1..MAX_LIST_ITEMS)
-        val tree = selectedTree()
+        val tree = selectedTree(requireWrite = true)
         val rootId = DocumentsContract.getTreeDocumentId(tree)
         val parent = parentId?.takeIf { it.isNotBlank() } ?: rootId
         requireInsideTree(tree, parent)
@@ -288,7 +288,7 @@ class SecureSafTransferBridge(context: Context) {
         return name
     }
 
-    private fun selectedTree(): Uri {
+    private fun selectedTree(requireWrite: Boolean = false): Uri {
         val raw = app.getSharedPreferences("rkremote_setup", Context.MODE_PRIVATE)
             .getString("selected_tree_uri", null)
             ?: throw SecurityException("No folder has been selected by the device owner")
@@ -296,6 +296,7 @@ class SecureSafTransferBridge(context: Context) {
         val tree = DocumentFile.fromTreeUri(app, uri)
             ?: throw IOException("Owner-selected folder is unavailable")
         if (!tree.canRead()) throw SecurityException("Owner-selected folder is not readable")
+        if (requireWrite && !tree.canWrite()) throw SecurityException("Owner-selected folder is not writable")
         return uri
     }
 
