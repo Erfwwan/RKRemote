@@ -8,6 +8,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.util.Base64
+import java.security.MessageDigest
 
 /**
  * Secure-channel SAF bridge. Every document ID is checked against the exact
@@ -117,6 +118,56 @@ class SecureSafTransferBridge(context: Context) {
             .put("nextOffset", nextOffset)
             .put("eof", nextOffset >= metadata.third)
             .put("data", Base64.getEncoder().encodeToString(bytes))
+    }
+
+
+    data class FileMetadata(val documentId: String, val name: String, val mimeType: String, val sizeBytes: Long)
+
+    /** Streams one owner-selected file sequentially; callback false aborts immediately. */
+    fun streamFile(
+        documentId: String,
+        onStart: (FileMetadata) -> Boolean,
+        onChunk: (Long, ByteArray) -> Boolean,
+        onComplete: (String) -> Unit
+    ) {
+        val tree = selectedTree()
+        requireInsideTree(tree, documentId)
+        val uri = DocumentsContract.buildDocumentUriUsingTree(tree, documentId)
+        val projection = arrayOf(
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE,
+            DocumentsContract.Document.COLUMN_SIZE
+        )
+        val metadata = resolver.query(uri, projection, null, null, null)?.use { cursor ->
+            if (!cursor.moveToFirst()) null else FileMetadata(
+                documentId,
+                cursor.getString(0) ?: "download.bin",
+                cursor.getString(1) ?: "application/octet-stream",
+                if (cursor.isNull(2)) -1L else cursor.getLong(2)
+            )
+        } ?: throw IOException("Document is unavailable")
+        require(metadata.mimeType != DocumentsContract.Document.MIME_TYPE_DIR) { "Folders cannot be downloaded" }
+        require(metadata.sizeBytes in 0L..MAX_FILE_BYTES) { "File is larger than the secure transfer limit" }
+        check(onStart(metadata)) { "Controller rejected the file transfer" }
+        val digest = MessageDigest.getInstance("SHA-256")
+        var total = 0L
+        resolver.openInputStream(uri)?.use { input ->
+            val buffer = ByteArray(MAX_CHUNK_BYTES)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                total += count.toLong()
+                require(total <= MAX_FILE_BYTES) { "File grew beyond the secure transfer limit" }
+                digest.update(buffer, 0, count)
+                if (!onChunk(total - count, buffer.copyOf(count))) {
+                    throw IOException("Controller closed the file transfer")
+                }
+            }
+        } ?: throw IOException("Unable to open document")
+        if (metadata.sizeBytes >= 0L && total != metadata.sizeBytes) {
+            throw IOException("File size changed during transfer")
+        }
+        onComplete(digest.digest().joinToString("") { "%02x".format(it) })
     }
 
     private fun selectedTree(): Uri {
