@@ -77,3 +77,17 @@ Migrate screen video, camera, microphone/PTT, notification snapshots, remote inp
 ## Current security boundary
 
 The existing executable agent still uses plaintext bearer-token HTTP/TCP on port 18765. It is not safe for public internet exposure. Do not configure port forwarding or expose that port. The signed identity work in Stage 1 does not change this fact. No internet P2P transport is currently active.
+
+
+## Stage 2A — Cloudflare signaling rendezvous scaffold
+
+A first signaling-only scaffold has been added under `cloudflare/worker`:
+
+- Workers routes a WSS request to a SQLite-backed Durable Object keyed by a random 256-bit room ID.
+- The target connects first; one controller may join. Duplicate roles and extra peers are rejected.
+- The room forwards only bounded `offer`, `answer`, `ice`, `ready`, `reject`, and `bye` messages, and expires after ten minutes.
+- The Android `CloudflareSignalingClient` generates room IDs and implements a bounded WSS signaling client.
+
+This scaffold is not yet integrated into the Compose UI and does not contain a WebRTC implementation. The room ID is a temporary bearer invitation; share it only with the intended controller. The signaling server can see SDP/ICE metadata. Peer identity authentication and signed handshake binding must be completed before trusting signaling messages. No application data or media is permitted on this channel.
+
+Deployment instructions are in [CLOUDFLARE_SIGNALING.md](CLOUDFLARE_SIGNALING.md). This is source-only: no Cloudflare deployment, Android build, or two-device test has been verified.
