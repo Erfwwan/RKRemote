@@ -1,7 +1,7 @@
 name: Android build
 
 on:
-  # Final verification: GitHub-free Wrangler deployment flow and camera-store tests.
+  # UI polish verification: compact inline help and GitHub-free Wrangler deployment flow.
   push:
     branches:
       - feature/remote-agent-foundation
