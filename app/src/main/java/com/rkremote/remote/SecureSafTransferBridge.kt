@@ -215,6 +215,7 @@ class SecureSafTransferBridge(context: Context) {
     ) {
         require(transferId.matches(Regex("[A-Za-z0-9_-]{1,128}")))
         require(totalBytes in 0L..MAX_FILE_BYTES) { "Upload exceeds the 50 MiB limit" }
+        check(pendingUploads.size < MAX_ACTIVE_UPLOADS) { "Too many concurrent uploads" }
         check(!pendingUploads.containsKey(transferId)) { "This upload ID is already active" }
         val name = sanitizeUploadName(rawName)
         val mime = rawMimeType.takeIf {
@@ -305,6 +306,13 @@ class SecureSafTransferBridge(context: Context) {
         downloadCancellations.clear()
     }
 
+    /** Release every active upload and delete its incomplete destination file. */
+    @Synchronized
+    fun cancelAllTransfers() {
+        downloadCancellations.clear()
+        pendingUploads.values.toList().forEach(::abortPendingUpload)
+    }
+
     @Synchronized
     fun abortUpload(transferId: String): Boolean {
         val pending = pendingUploads[transferId] ?: return false
@@ -366,6 +374,7 @@ class SecureSafTransferBridge(context: Context) {
         const val MAX_LIST_ITEMS = 40
         const val MAX_CHUNK_BYTES = 24 * 1024
         const val MAX_FILE_BYTES = 50L * 1024L * 1024L
+        const val MAX_ACTIVE_UPLOADS = 3
         private const val MAX_DOCUMENT_ID_CHARS = 2048
     }
 }
