@@ -29,6 +29,17 @@ object LanControllerClient {
         JSONObject(requestRaw("POST", ip, token, endpoint, body.toString().toByteArray(Charsets.UTF_8))
             .toString(Charsets.UTF_8)).toString(2)
 
+    fun postPttChunk(ip: String, token: String, bytes: ByteArray): Boolean {
+        require(bytes.isNotEmpty() && bytes.size <= PttAudioQueue.MAX_CHUNK_BYTES) {
+            "PTT audio chunk must be 1..4096 bytes"
+        }
+        val response = requestRaw(
+            "POST", ip, token, "/audio/ptt", bytes,
+            "application/octet-stream"
+        )
+        return JSONObject(response.toString(Charsets.UTF_8)).optBoolean("accepted", false)
+    }
+
     fun uploadFile(ip: String, token: String, fileName: String, mimeType: String, bytes: ByteArray): String {
         require(bytes.isNotEmpty() && bytes.size <= MAX_TRANSFER_BYTES) { "File must be 1 byte to 8 MiB" }
         require(fileName.isNotBlank() && fileName.length <= 180 &&
@@ -61,7 +72,7 @@ object LanControllerClient {
         require(
             (method == "GET" && (endpoint in setOf("/health", "/files", "/screen.jpg", "/camera.jpg", "/audio/chunk") ||
                 endpoint.startsWith("/file/download?"))) ||
-                (method == "POST" && endpoint in setOf("/input/tap", "/input/gesture", "/input/text", "/file/upload"))
+                (method == "POST" && endpoint in setOf("/input/tap", "/input/gesture", "/input/text", "/file/upload", "/audio/ptt"))
         ) { "Unsupported request" }
 
         val socket = Socket()
