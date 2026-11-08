@@ -159,6 +159,10 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
     val notificationSummary = remember { mutableStateOf("No notification sync requested") }
     val callLogItems = remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     val callLogStatus = remember { mutableStateOf("هنوز گزارشی بارگذاری نشده است") }
+    val contactsItems = remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+    val contactsStatus = remember { mutableStateOf("مخاطبین هنوز بارگذاری نشده‌اند") }
+    val contactsSearch = remember { mutableStateOf("") }
+    val callSectionTab = remember { mutableStateOf("calls") }
     val smsItems = remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     val smsStatus = remember { mutableStateOf("هنوز گزارشی بارگذاری نشده است") }
     val locationHistory = remember(context) { mutableStateOf(LocationHistoryStore(context).readAll()) }
@@ -210,6 +214,9 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
             }
             RemoteCapability.CONTACTS -> check(SecureSmsSync.hasSmsPermission(context)) {
                 "Enable Android SMS permission locally first"
+            }
+            RemoteCapability.ADDRESS_BOOK -> check(SecureContactsSync.hasContactsPermission(context)) {
+                "Enable Android Contacts permission locally first"
             }
             RemoteCapability.LOCATION -> {
                 val hasLocation = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
@@ -603,15 +610,13 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                 }
                                                 "file.download.begin"
                                             }
-                                            register("camera.start.request", RemoteCapability.CAMERA) {
-                                                check(CameraFrameStore.latestFrame != null) {
-                                                    "Start the camera locally on the target first"
-                                                }
-                                                check(cameraTransferActive.compareAndSet(false, true)) {
-                                                    "Secure camera stream is already active"
-                                                }
+                                            register("camera.snapshot.request", RemoteCapability.CAMERA) {
+                                                check(CameraFrameStore.latestFrame != null) { "Capture one photo locally on the target phone first" }
+                                                check(cameraTransferActive.compareAndSet(false, true)) { "A photo transfer is already active" }
                                                 cameraExecutor.execute {
                                                     try {
+                                                        val frame = CameraFrameStore.latestFrame?.copyOf() ?: error("No owner-captured photo is available")
+                                                        require(frame.size in 1..SecureImageFrameAssembler.MAX_IMAGE_BYTES) { "Photo exceeds the secure transfer limit" }
                                                         fun sendWithRetry(type: String, payload: JSONObject): Boolean {
                                                             var attempts = 0
                                                             while (cameraTransferActive.get() && attempts < 200) {
@@ -621,66 +626,25 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                             }
                                                             return false
                                                         }
-        
-                                                        // Relay only fresh frames already published by the
-                                                        // locally started CameraCaptureService. This loop
-                                                        // never opens or switches the camera.
-                                                        while (cameraTransferActive.get()) {
-                                                            val frame = CameraFrameStore.latestFrame?.copyOf()
-                                                                ?: error("Local camera capture stopped")
-                                                            require(frame.size in 1..SecureImageFrameAssembler.MAX_IMAGE_BYTES) {
-                                                                "Camera frame exceeds the secure stream limit"
-                                                            }
-                                                            val transferId = UUID.randomUUID().toString()
-                                                            check(sendWithRetry(
-                                                                "camera.frame.begin",
-                                                                JSONObject()
-                                                                    .put("transferId", transferId)
-                                                                    .put("totalBytes", frame.size)
-                                                                    .put("mimeType", CameraFrameStore.latestMimeType)
-                                                            )) { "Could not start secure camera frame transfer" }
-        
-                                                            var offset = 0
-                                                            while (offset < frame.size && cameraTransferActive.get()) {
-                                                                val endOffset = minOf(
-                                                                    offset + SecureImageFrameAssembler.MAX_CHUNK_BYTES,
-                                                                    frame.size
-                                                                )
-                                                                val chunk = frame.copyOfRange(offset, endOffset)
-                                                                check(sendWithRetry(
-                                                                    "camera.frame.chunk",
-                                                                    JSONObject()
-                                                                        .put("transferId", transferId)
-                                                                        .put("offset", offset)
-                                                                        .put("data", Base64.getEncoder().encodeToString(chunk))
-                                                                )) { "Secure camera frame transfer was interrupted" }
-                                                                offset = endOffset
-                                                            }
-                                                            if (!cameraTransferActive.get()) break
-                                                            val hash = MessageDigest.getInstance("SHA-256").digest(frame)
-                                                                .joinToString("") { "%02x".format(it) }
-                                                            check(sendWithRetry(
-                                                                "camera.frame.complete",
-                                                                JSONObject().put("transferId", transferId).put("sha256", hash)
-                                                            )) { "Could not complete secure camera frame transfer" }
-                                                            Thread.sleep(650)
+                                                        val transferId = UUID.randomUUID().toString()
+                                                        check(sendWithRetry("camera.frame.begin", JSONObject().put("transferId", transferId).put("totalBytes", frame.size).put("mimeType", CameraFrameStore.latestMimeType))) { "Could not start secure photo transfer" }
+                                                        var offset = 0
+                                                        while (offset < frame.size && cameraTransferActive.get()) {
+                                                            val endOffset = minOf(offset + SecureImageFrameAssembler.MAX_CHUNK_BYTES, frame.size)
+                                                            val chunk = frame.copyOfRange(offset, endOffset)
+                                                            check(sendWithRetry("camera.frame.chunk", JSONObject().put("transferId", transferId).put("offset", offset).put("data", Base64.getEncoder().encodeToString(chunk)))) { "Secure photo transfer was interrupted" }
+                                                            offset = endOffset
                                                         }
+                                                        val hash = MessageDigest.getInstance("SHA-256").digest(frame).joinToString("") { "%02x".format(it) }
+                                                        check(sendWithRetry("camera.frame.complete", JSONObject().put("transferId", transferId).put("sha256", hash))) { "Could not complete secure photo transfer" }
+                                                        mainHandler.post { if (activePeerRef.get() === activePeer) cameraStatus.value = "عکس با موفقیت دریافت شد" }
                                                     } catch (failure: Throwable) {
-                                                        if (cameraTransferActive.get()) {
-                                                            mainHandler.post {
-                                                                if (activePeerRef.get() !== activePeer) return@post
-                                                                cameraStatus.value = failure.message ?: "Secure camera stream failed"
-                                                            }
-                                                        }
+                                                        mainHandler.post { if (activePeerRef.get() === activePeer) cameraStatus.value = failure.message ?: "ارسال عکس ناموفق بود" }
                                                     } finally {
                                                         cameraTransferActive.set(false)
                                                     }
                                                 }
                                                 "camera.frame.begin"
-                                            }
-                                            register("camera.stop", RemoteCapability.CAMERA) {
-                                                cameraTransferActive.set(false)
-                                                null
                                             }
                                             register("screen.stream.start", RemoteCapability.SCREEN_VIEW) {
                                                 check(ScreenVideoStore.hasConfig()) { "Start screen sharing locally on the target first" }
@@ -781,6 +745,11 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                 }
                                                 "location.sync.result"
                                             }
+                                            register("contacts.sync.request", RemoteCapability.ADDRESS_BOOK) { message ->
+                                                val response = SecureContactsSync.buildLatestResponse(context, message.payload.getString("requestId"))
+                                                check(activePeer?.sendMessage("contacts.sync.result", response) == true) { "Could not send encrypted contacts list" }
+                                                "contacts.sync.result"
+                                            }
                                             register("calllog.sync.request", RemoteCapability.CALL_LOG) { message ->
                                                 val response = SecureCallLogSync.buildLatestResponse(
                                                     context,
@@ -859,6 +828,10 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                                 if (RemoteCapability.CONTACTS in saved &&
                                                                     SecureSmsSync.hasSmsPermission(context)) {
                                                                     add(RemoteCapability.CONTACTS)
+                                                                }
+                                                                if (RemoteCapability.ADDRESS_BOOK in saved &&
+                                                                    SecureContactsSync.hasContactsPermission(context)) {
+                                                                    add(RemoteCapability.ADDRESS_BOOK)
                                                                 }
                                                                 val hasLocation = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
                                                                     ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
@@ -999,6 +972,12 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                         }
                                                     }
                                                     "command.result" -> {
+                                                        if (message.payload.optString("commandType") == "contacts.sync.request" && !message.payload.optBoolean("accepted")) {
+                                                            mainHandler.post {
+                                                                if (activePeerRef.get() !== activePeer) return@post
+                                                                contactsStatus.value = "دریافت مخاطبین رد شد: " + message.payload.optString("reason", "دسترسی تأیید نشد")
+                                                            }
+                                                        }
                                                         if (message.payload.optString("commandType") == "sms.sync.request" &&
                                                             !message.payload.optBoolean("accepted")
                                                         ) {
@@ -1200,6 +1179,17 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                                 !latest.freshFix -> "موقعیت روشن است، اما موقعیت تازه دریافت نشد"
                                                                 else -> "آخرین موقعیت تازه دریافت شد"
                                                             }
+                                                        }
+                                                    }
+                                                    "contacts.sync.result" -> {
+                                                        val records = message.payload.optJSONArray("records")
+                                                        val entries = buildList {
+                                                            for (index in 0 until (records?.length() ?: 0)) records?.optJSONObject(index)?.let { add(JSONObject(it.toString())) }
+                                                        }
+                                                        mainHandler.post {
+                                                            if (activePeerRef.get() !== activePeer) return@post
+                                                            contactsItems.value = entries
+                                                            contactsStatus.value = "${entries.size} مخاطب دریافت شد"
                                                         }
                                                     }
                                                     "calllog.sync.result" -> {
@@ -1426,7 +1416,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
             if (feature != SecureFeatureSection.CONNECTION) {
                 val sectionTitle = when (feature) {
                     SecureFeatureSection.SCREEN -> "نمایش و کنترل گوشی"
-                    SecureFeatureSection.CAMERA -> "دوربین زنده"
+                    SecureFeatureSection.CAMERA -> "ثبت و ارسال عکس"
                     SecureFeatureSection.AUDIO -> "میکروفن و واکی‌تاکی"
                     SecureFeatureSection.FILES -> "مدیریت و انتقال فایل‌ها"
                     SecureFeatureSection.NOTIFICATIONS -> "همگام‌سازی اعلان‌ها"
@@ -1669,6 +1659,11 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                         .onFailure { error.value = it.message ?: "Could not remember SMS permission" }
                 }) { Text("Always allow SMS report for this paired device") }
                 OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
+                    runCatching { grantRememberedReportCapability(RemoteCapability.ADDRESS_BOOK) }
+                        .onSuccess { status.value = "Address book access remembered for this paired device" }
+                        .onFailure { error.value = it.message ?: "Could not remember contacts permission" }
+                }) { Text("Always allow contacts for this paired device") }
+                OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
                     runCatching {
                         check(SecureNotificationSync.isNotificationAccessEnabled(context)) {
                             "Enable RKRemote Notification Access in Android settings first"
@@ -1701,7 +1696,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 Text("Saved report permissions by paired device", style = MaterialTheme.typography.titleSmall)
                 Text(persistentReportConsentStatus.value, style = MaterialTheme.typography.bodySmall)
                 if (rememberedReportGrants.value.isEmpty()) {
-                    Text("No persistent SMS, call-history or location grants are saved.", style = MaterialTheme.typography.bodySmall)
+                    Text("No persistent contacts, SMS, call-history or location grants are saved.", style = MaterialTheme.typography.bodySmall)
                 } else {
                     rememberedReportGrants.value.toSortedMap().forEach { (savedPeer, savedCapabilities) ->
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1728,6 +1723,13 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                             persistentReportConsentStatus.value = "SMS permission revoked for this peer"
                                         }.onFailure { error.value = it.message ?: "Could not revoke saved permission" }
                                     }) { Text("Revoke SMS") }
+                                }
+                                if (RemoteCapability.ADDRESS_BOOK in savedCapabilities) {
+                                    OutlinedButton(onClick = {
+                                        runCatching { revokeRememberedReportCapability(savedPeer, setOf(RemoteCapability.ADDRESS_BOOK)) }
+                                            .onSuccess { persistentReportConsentStatus.value = "Contacts permission revoked for this peer" }
+                                            .onFailure { error.value = it.message ?: "Could not revoke saved permission" }
+                                    }) { Text("Revoke contacts") }
                                 }
                                 if (RemoteCapability.LOCATION in savedCapabilities) {
                                     OutlinedButton(onClick = {
@@ -1763,45 +1765,27 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
             } else if (role.value == CloudflareSignalingClient.Role.CONTROLLER) {
                 Text("Controller", style = MaterialTheme.typography.titleSmall)
                 if (feature == SecureFeatureSection.CAMERA) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(enabled = session.value != null && secureRelayConnected.value && !cameraTransferActive.get(), onClick = {
-                        cameraStatus.value = if (sendInput("camera.start.request", JSONObject()))
-                            "Live camera stream requested" else "Could not start live camera stream"
-                    }) { Text("Start live camera") }
-                    OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
-                        cameraTransferActive.set(false)
-                        imageAssembler.abort()
-                        sendInput("camera.stop", JSONObject())
-                        cameraStatus.value = "Live camera stream stopped"
-                    }) { Text("Stop camera stream") }
-                }
-                androidx.compose.material3.Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant
-                ) {
-                    Text(cameraStatus.value, modifier = Modifier.padding(12.dp),
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                cameraBitmap.value?.let { bitmap ->
-                    Card(
-                        modifier = Modifier.fillMaxWidth().animateContentSize(),
-                        shape = RoundedCornerShape(22.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                    ) {
-                        Column(Modifier.fillMaxWidth().padding(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("LIVE CAMERA PREVIEW", modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.ExtraBold)
-                            Image(
-                                bitmap = bitmap.asImageBitmap(),
-                                contentDescription = "Secure owner-approved live camera frame",
-                                modifier = Modifier.fillMaxWidth(),
-                                contentScale = ContentScale.Fit
-                            )
+                        cameraBitmap.value = null
+                        cameraStatus.value = if (sendInput("camera.snapshot.request", JSONObject())) "درخواست دریافت یک عکس ارسال شد" else "ارسال درخواست عکس ناموفق بود"
+                    }) { Text("دریافت یک عکس") }
+                    androidx.compose.material3.Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant) {
+                        Text(cameraStatus.value, modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    cameraBitmap.value?.let { bitmap ->
+                        Card(modifier = Modifier.fillMaxWidth().animateContentSize(), shape = RoundedCornerShape(22.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                            Column(Modifier.fillMaxWidth().padding(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("PHOTO RECEIVED", modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.ExtraBold)
+                                Image(bitmap = bitmap.asImageBitmap(), contentDescription = "Owner-approved single camera photo",
+                                    modifier = Modifier.fillMaxWidth(), contentScale = ContentScale.Fit)
+                            }
                         }
                     }
-                }
                 }
                 if (feature == SecureFeatureSection.SCREEN) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1996,6 +1980,51 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     }
                 }
                 if (feature == SecureFeatureSection.CALL_LOGS) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { callSectionTab.value = "calls" }) { Text(if (callSectionTab.value == "calls") "● تماس‌ها" else "تماس‌ها") }
+                        OutlinedButton(onClick = { callSectionTab.value = "contacts" }) { Text(if (callSectionTab.value == "contacts") "● مخاطبین" else "مخاطبین") }
+                    }
+                    if (callSectionTab.value == "contacts") {
+                        Card(modifier = Modifier.fillMaxWidth().animateContentSize(), shape = RoundedCornerShape(22.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text("CONTACTS  /  ADDRESS BOOK", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.ExtraBold)
+                                Text("دفترچه مخاطبین", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+                                Text(contactsStatus.value, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                OutlinedTextField(value = contactsSearch.value, onValueChange = { contactsSearch.value = it.take(80) }, modifier = Modifier.fillMaxWidth(), label = { Text("جست‌وجوی نام یا شماره") }, singleLine = true)
+                                if (role.value == CloudflareSignalingClient.Role.CONTROLLER) {
+                                    OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
+                                        contactsStatus.value = if (sendInput("contacts.sync.request", JSONObject())) "درخواست مخاطبین به دستگاه مقصد ارسال شد" else "ارسال درخواست ناموفق بود"
+                                    }) { Text("دریافت مخاطبین دستگاه مقصد") }
+                                } else {
+                                    Text(if (SecureContactsSync.hasContactsPermission(context)) "فهرست فقط با فشردن دکمه زیر و پس از مجوز اندروید خوانده می‌شود." else "برای نمایش مخاطبین، مجوز مخاطبین را در بخش مجوزهای اندروید فعال کن.", style = MaterialTheme.typography.bodySmall)
+                                    OutlinedButton(enabled = SecureContactsSync.hasContactsPermission(context), onClick = {
+                                        runCatching { SecureContactsSync.readLatest(context) }.onSuccess { result ->
+                                            contactsItems.value = buildList { for (index in 0 until result.records.length()) result.records.optJSONObject(index)?.let { add(JSONObject(it.toString())) } }
+                                            contactsStatus.value = "${result.records.length()} مخاطب از ${result.totalAvailable} مخاطب"
+                                        }.onFailure { contactsStatus.value = it.message ?: "خواندن مخاطبین ناموفق بود" }
+                                    }) { Text("نمایش مخاطبین همین گوشی") }
+                                }
+                                val filteredContacts = contactsItems.value.filter { item ->
+                                    val query = contactsSearch.value.trim()
+                                    query.isBlank() || item.optString("name").contains(query, true) || item.optString("number").contains(query, true)
+                                }
+                                if (filteredContacts.isEmpty()) Text("مخاطبی برای نمایش وجود ندارد.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                filteredContacts.forEach { item ->
+                                    Row(modifier = Modifier.fillMaxWidth().animateContentSize().background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(16.dp)).padding(12.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                        Box(modifier = Modifier.background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(50.dp)).padding(12.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                                            Text(item.optString("name").firstOrNull()?.uppercase() ?: "؟", color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.ExtraBold)
+                                        }
+                                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                            Text(item.optString("name", "بدون نام"), fontWeight = FontWeight.Bold)
+                                            Text(item.optString("number"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
                     if (role.value == CloudflareSignalingClient.Role.CONTROLLER) {
                         OutlinedButton(
                             enabled = session.value != null && secureRelayConnected.value,
@@ -2065,6 +2094,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
                     }
                 }
                 if (feature == SecureFeatureSection.LOCATION) {
