@@ -1,5 +1,6 @@
 package com.rkremote.remote
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -20,14 +21,20 @@ object PermissionRequestPolicy {
     fun wasRequested(context: Context, permissions: Collection<String>): Boolean {
         if (permissions.isEmpty()) return false
         val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return permissions.any { prefs.getBoolean(keyFor(it), false) }
+        return permissions.any { permission ->
+            prefs.getBoolean(keyFor(permission), false) ||
+                legacyKeyFor(permission)?.let { prefs.getBoolean(PREFIX + it, false) } == true
+        }
     }
 
     fun markRequested(context: Context, permissions: Collection<String>) {
         require(permissions.isNotEmpty())
         val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         check(prefs.edit().apply {
-            permissions.forEach { putBoolean(keyFor(it), true) }
+            permissions.forEach { permission ->
+                putBoolean(keyFor(permission), true)
+                legacyKeyFor(permission)?.let { putBoolean(PREFIX + it, true) }
+            }
         }.commit()) { "Could not save the permission request state" }
     }
 
@@ -37,4 +44,16 @@ object PermissionRequestPolicy {
         }
 
     private fun keyFor(permission: String): String = PREFIX + permission
+
+    /** Migrate the earlier UI's human-readable preference keys without re-prompting. */
+    private fun legacyKeyFor(permission: String): String? = when (permission) {
+        Manifest.permission.CAMERA -> "camera"
+        Manifest.permission.READ_CONTACTS -> "contacts"
+        Manifest.permission.READ_SMS -> "sms"
+        Manifest.permission.ACCESS_COARSE_LOCATION -> "location"
+        Manifest.permission.READ_CALL_LOG -> "call_log"
+        Manifest.permission.RECORD_AUDIO -> "microphone"
+        Manifest.permission.POST_NOTIFICATIONS -> "notifications"
+        else -> null
+    }
 }
