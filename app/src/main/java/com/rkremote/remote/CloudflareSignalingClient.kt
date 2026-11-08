@@ -75,17 +75,9 @@ class CloudflareSignalingClient(
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
-                if (text.toByteArray(Charsets.UTF_8).size > MAX_CONTROL_BYTES) {
-                    webSocket.close(1009, "Control message too large")
-                    listener.onFailure(IllegalArgumentException("Room control message too large"))
-                    return
-                }
                 runCatching {
-                    val message = JSONObject(text)
-                    require(message.optInt("v") == 1) { "Unsupported room-control version" }
-                    val type = message.optString("type")
-                    require(type in ROOM_EVENTS) { "Unexpected text message from signaling server" }
-                    listener.onRoomEvent(type, message.optJSONObject("payload") ?: JSONObject())
+                    val message = CloudflareRoomControlMessage.parse(text)
+                    listener.onRoomEvent(message.type, message.payload)
                 }.onFailure { failure ->
                     webSocket.close(1003, "Invalid room control message")
                     listener.onFailure(failure)
@@ -118,8 +110,6 @@ class CloudflareSignalingClient(
 
     companion object {
         private const val MAX_FRAME_BYTES = 12 * 1024
-        private const val MAX_CONTROL_BYTES = 1024
-        private val ROOM_EVENTS = setOf("peer-joined", "peer-left", "peer-not-ready")
 
         /** Generate a private, unguessable room identifier. Share it only with the intended peer. */
         fun newRoomId(): String = ByteArray(32).also(SecureRandom()::nextBytes)
