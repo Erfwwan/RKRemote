@@ -51,7 +51,7 @@ class RemoteVideoPlayer(
         connection.keepAlive = true
         connection.connect(InetSocketAddress(ip, LanAgentServer.DEFAULT_PORT), 5_000)
         connection.soTimeout = 15_000
-        val request = "GET /screen/video HTTP/1.1\\r\\nHost: $ip\\r\\nAuthorization: Bearer $token\\r\\nConnection: close\\r\\n\\r\\n"
+        val request = "GET /screen/video HTTP/1.1\r\nHost: $ip\r\nAuthorization: Bearer $token\r\nConnection: close\r\n\r\n"
         connection.getOutputStream().write(request.toByteArray(Charsets.US_ASCII))
         connection.getOutputStream().flush()
         val input = DataInputStream(BufferedInputStream(connection.getInputStream()))
