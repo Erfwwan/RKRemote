@@ -1775,14 +1775,32 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                         cameraStatus.value = "Live camera stream stopped"
                     }) { Text("Stop camera stream") }
                 }
-                Text(cameraStatus.value, style = MaterialTheme.typography.bodySmall)
+                androidx.compose.material3.Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant
+                ) {
+                    Text(cameraStatus.value, modifier = Modifier.padding(12.dp),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 cameraBitmap.value?.let { bitmap ->
-                    Image(
-                        bitmap = bitmap.asImageBitmap(),
-                        contentDescription = "Secure owner-approved live camera frame",
-                        modifier = Modifier.fillMaxWidth(),
-                        contentScale = ContentScale.Fit
-                    )
+                    Card(
+                        modifier = Modifier.fillMaxWidth().animateContentSize(),
+                        shape = RoundedCornerShape(22.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("LIVE CAMERA PREVIEW", modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.ExtraBold)
+                            Image(
+                                bitmap = bitmap.asImageBitmap(),
+                                contentDescription = "Secure owner-approved live camera frame",
+                                modifier = Modifier.fillMaxWidth(),
+                                contentScale = ContentScale.Fit
+                            )
+                        }
+                    }
                 }
                 }
                 if (feature == SecureFeatureSection.SCREEN) {
@@ -1813,7 +1831,8 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 }
                 if (feature == SecureFeatureSection.AUDIO) {
                 Card(
-                    modifier = Modifier.fillMaxWidth().pointerInput(session.value, secureRelayConnected.value, role.value) {
+                    modifier = Modifier.fillMaxWidth().animateContentSize()
+                        .pointerInput(session.value, secureRelayConnected.value, role.value) {
                         detectTapGestures(onPress = {
                             if (role.value == CloudflareSignalingClient.Role.CONTROLLER && secureRelayConnected.value) {
                                 if (!MicrophoneChunkStore.isCapturing()) {
@@ -1860,13 +1879,27 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                         })
                     }
                 ) {
-                    Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                    Column(
+                        Modifier.fillMaxWidth()
+                            .background(
+                                Brush.linearGradient(listOf(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.surfaceVariant)),
+                                RoundedCornerShape(20.dp)
+                            )
+                            .padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
+                    ) {
                         Text(
-                            if (pttRelayActive.get()) "HOLDING · TRANSMITTING" else "HOLD TO TALK",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold
+                            if (pttRelayActive.get()) "●  TRANSMITTING" else "HOLD TO TALK",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.primary
                         )
-                        Text(pttStatus.value, style = MaterialTheme.typography.bodySmall)
+                        Text(pttStatus.value, style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Text("برای ارسال صدا لمس کن و تا پایان صحبت نگه دار",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
