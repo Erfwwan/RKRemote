@@ -26,7 +26,7 @@ The room ID is a bearer rendezvous secret. Anyone who obtains it may attempt to 
 
 ## NAT and relay behavior
 
-STUN attempts a direct ICE path. Direct connectivity is not guaranteed: symmetric NAT, carrier-grade NAT, enterprise firewalls, or UDP restrictions may prevent it. If a TURN server is supplied in `SecureWebRtcPeer.TurnServer`, ICE can select a relay candidate when direct candidates fail. TURN relays encrypted DTLS packets; the relay does not decrypt the DataChannel. No TURN service or credentials are bundled with this repository. Cloudflare Workers/Durable Objects are signaling only and are not a media relay.
+STUN attempts a direct ICE path. The configured public STUN provider can observe the device's public IP and request metadata. Cloudflare can observe the rendezvous room ID, source IPs, connection timing and encrypted traffic volume, but not the Noise-protected SDP/ICE contents. Direct connectivity is not guaranteed: symmetric NAT, carrier-grade NAT, enterprise firewalls, or UDP restrictions may prevent it. If a TURN server is supplied in `SecureWebRtcPeer.TurnServer`, ICE can select a relay candidate when direct candidates fail. TURN relays encrypted DTLS packets; the relay operator can observe participating IP addresses, timing and traffic volume but does not decrypt the DataChannel. No TURN service or credentials are bundled with this repository. Cloudflare Workers/Durable Objects are signaling only and are not a media relay.
 
 For reliable use across restrictive networks, provision a separately operated TURN service (for example, coturn on infrastructure you control), protect its credentials, and provide short-lived credentials to the app. Do not put permanent TURN secrets in source control or the Worker.
 
