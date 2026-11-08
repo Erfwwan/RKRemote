@@ -66,7 +66,7 @@ A GitHub Actions workflow now runs a debug APK compilation on pushes, pull reque
 
 The current development branch is [PR #1](https://github.com/Erfwwan/RKRemote/pull/1). It adds the LAN agent/controller prototype, security foundations, a visible session notification with a stop action, and JVM tests.
 
-See [implementation status](docs/IMPLEMENTATION_STATUS.md) for the exact boundary between implemented code and unfinished features. The LAN prototype is intended only for a trusted private Wi-Fi network. Folder browsing remains read-only; a single tap command is available only after the target owner manually enables Accessibility. Do not expose it to the internet. Full remote-control features and real-device validation are still required.
+See [implementation status](docs/IMPLEMENTATION_STATUS.md) for the exact boundary between implemented code and unfinished features. The LAN prototype is intended only for a trusted private Wi-Fi network. Folder access is limited to the owner-selected SAF folder; direct-child upload/download is supported. Remote touch control is available only after the target owner manually enables Accessibility. Do not expose it to the internet. Full remote-control features, encrypted transport, and real-device validation are still required.
 
 ## Part 1 quick start (trusted Wi-Fi only)
 
