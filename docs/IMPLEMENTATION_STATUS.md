@@ -326,3 +326,15 @@ This section supersedes older milestone notes above where they describe Internet
 ## Latest transport hardening
 
 At commit `34cc4a6`, WebRTC DataChannel sends serialize concurrent writers and preflight the byte size of every fragment in a logical RKD1 message against the 2 MiB outbound-buffer ceiling. Congested sends are rejected before the first fragment, avoiding partial messages caused by a known-full buffer. An unexpected mid-send channel close/rejection tears down the peer. This is fail-fast backpressure; no background queue or automatic retransmission is claimed. CI verification for this commit is pending.
+
+## Secure Internet session lifecycle hardening · 2026-11-08
+
+- The Cloudflare signaling client now has a terminal, idempotent close state. Closing cancels the WebSocket, cancels pending OkHttp calls, shuts down its dedicated dispatcher executor, and evicts its connection pool. Reusing the same client after close is rejected; a fresh secure session creates a fresh client.
+- WebRTC teardown now releases the DataChannel and PeerConnection independently with best-effort cleanup, clears pending ICE/framing state, and removes the transient-disconnect timer. One native disposal failure no longer prevents attempting to release the other resource.
+- SecureInternetPeer teardown now revokes the command router, clears authenticated peer identity, and closes the Noise/signaling session even if WebRTC disposal throws.
+- Noise/signaling teardown uses nested `finally` cleanup so the WebSocket is closed even if handshake cleanup fails. Room lifecycle callbacks are serialized with close; late WebRTC frames, candidates, and SDP failures are ignored after teardown.
+- The Secure Internet UI uses an atomic active-peer reference to reject queued callbacks from superseded sessions. Disconnect/failure cleanup is performed on the UI thread only if that peer still owns the active session, preventing an old callback from aborting transfers or closing resources belonging to a new session.
+- A failed partial connection startup closes the partially created secure session. Panel disposal revokes grants and closes active session resources.
+- Added a JVM regression test proving Cloudflare client close is idempotent, terminal, and rejects later connect/send attempts.
+- GitHub Actions has completed earlier CI runs successfully through commit `d5fc249`; the lifecycle hardening commits after that point are undergoing fresh unit-test and debug-APK CI. Do not treat the latest branch tip as build-verified until the run for the exact tip completes.
+- No physical two-device, process-death, network-switch, ICE-loss, or TURN test has been performed. The Internet session remains UI-owned rather than a persistent background service; closing the panel or process ends the session. The legacy LAN TCP path remains plaintext and LAN-only.
