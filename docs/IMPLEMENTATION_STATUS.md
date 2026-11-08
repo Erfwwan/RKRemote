@@ -227,9 +227,9 @@ Validation for this pass: source and JVM tests were committed, but no Gradle bui
 
 ## Secure Internet file browsing and downloads
 
-- The target exposes folder listing and read-only downloads over the authenticated WebRTC DataChannel only; Cloudflare remains signaling-only.
+- The target exposes folder listing, downloads and uploads over the authenticated WebRTC DataChannel only; Cloudflare remains signaling-only.
 - Every document ID is checked against the exact owner-selected Storage Access Framework tree. No raw storage paths or broader storage permissions are used.
-- Folder listings are capped at 100 entries per response. A single file transfer is limited to 50 MiB and uses ordered 24 KiB chunks with bounded DataChannel buffering.
-- The controller writes to a temporary app-private file, checks sequential offsets and the final SHA-256 digest, then publishes the verified result to `Download/RKRemote/Received` on Android 10+ (app-specific Downloads on older Android).
-- Existing files are not overwritten. Remote deletion, rename, move, and arbitrary path access are not implemented.
-- The target owner must explicitly grant the FILES capability for each secure session. Only one transfer runs at a time. This source integration still requires CI and two-device Android validation; SAF provider behavior and real-world transfer reliability are not yet certified.
+- Folder listings are capped at 40 entries per response. A single file transfer is limited to 50 MiB and uses ordered 24 KiB chunks with bounded DataChannel buffering.
+- The controller writes downloads to a temporary app-private file, checks sequential offsets and the final SHA-256 digest, then publishes the verified result to `Download/RKRemote/Received` on Android 10+ (app-specific Downloads on older Android). Uploads use the Android document picker on the controller and write only inside the selected target SAF tree. Both directions use ordered chunks and SHA-256 validation.
+- Existing files are not overwritten. Uploads require a writable SAF grant; incomplete uploads are removed on disconnect or invalid chunks. Remote deletion, rename, move, and arbitrary path access are not implemented.
+- The target owner must explicitly grant the FILES capability for each secure session. Only one transfer runs at a time. The source integration has passed the unit-test and debug-APK CI run at commit `242ad46` before the final SAF validation fixes. The newest commits are undergoing CI again. Two-device Android validation, SAF provider behavior and real-world transfer reliability are not yet certified.
