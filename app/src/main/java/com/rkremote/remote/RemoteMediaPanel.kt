@@ -8,7 +8,6 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.AudioAttributes
-import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.media.AudioFormat
@@ -242,7 +241,7 @@ fun RemoteMediaPanel(
             Text("Hold to talk from the controller to the target. The target microphone can be listened to separately; both directions are owner-enabled and use short PCM chunks.", style = MaterialTheme.typography.bodySmall)
             Text("CONTROLLER PHONE · LIVE PUSH TO TALK", fontWeight = FontWeight.SemiBold)
             Card(
-                modifier = Modifier.fillMaxWidth().pointerInput(pttPermissionGranted, targetIp, targetToken, pttActive) {
+                modifier = Modifier.fillMaxWidth().pointerInput(pttPermissionGranted, targetIp, targetToken) {
                     detectTapGestures(onPress = {
                         if (!pttPermissionGranted) {
                             onStatus("Grant microphone permission before using push-to-talk.")
@@ -327,7 +326,7 @@ fun RemoteMediaPanel(
                         val track = AudioTrack.Builder()
                             .setAudioAttributes(
                                 AudioAttributes.Builder()
-                                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                                    .setUsage(AudioAttributes.USAGE_MEDIA)
                                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                                     .build()
                             )
@@ -341,13 +340,7 @@ fun RemoteMediaPanel(
                             .setBufferSizeInBytes(minBuffer)
                             .setTransferMode(AudioTrack.MODE_STREAM)
                             .build()
-                        val audioManager = context.getSystemService(AudioManager::class.java)
-                        val previousMode = audioManager.mode
-                        val previousSpeakerphone = audioManager.isSpeakerphoneOn
                         try {
-                            audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-                            // Prefer the earpiece while receiving live voice to reduce acoustic feedback.
-                            audioManager.isSpeakerphoneOn = false
                             track.play()
                             while (isActive) {
                                 val chunk = LanControllerClient.requestBytes(ip, token, "/audio/chunk")
@@ -361,8 +354,6 @@ fun RemoteMediaPanel(
                         } finally {
                             runCatching { track.stop() }
                             track.release()
-                            runCatching { audioManager.isSpeakerphoneOn = previousSpeakerphone }
-                            runCatching { audioManager.mode = previousMode }
                             withContext(Dispatchers.Main) {
                                 audioListening = false
                                 audioJob = null
