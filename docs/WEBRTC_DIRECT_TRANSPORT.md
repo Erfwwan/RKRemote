@@ -120,3 +120,7 @@ The owner-approved `FILES` capability includes an explicit `file.transfer.cancel
 ## DataChannel congestion handling
 
 Fragmented application messages now reserve capacity for the complete logical message before the first RKD1 fragment is sent. Concurrent sends are serialized so two callers cannot both pass the same buffered-amount check and overfill the channel. If the full message does not fit under the configured 2 MiB outbound buffer ceiling, the send is rejected without emitting any fragment. If the DataChannel unexpectedly closes or rejects a fragment after transmission begins, the secure WebRTC peer closes rather than leaving a knowingly incomplete fragmented message active. This is bounded fail-fast backpressure, not a retransmission queue; callers may retry at the application layer when appropriate.
+
+## Strict RKD1 fragment sizing
+
+The reassembler now validates each fragment's exact expected payload length from its index and the declared logical-message size: every non-final fragment must fill the negotiated frame payload capacity, and the final fragment must contain exactly the remaining bytes. This rejects short middle fragments and oversized or undersized final fragments before they can be assembled. JVM regression tests cover both malformed cases. The change is source-integrated; the current commit's CI result is pending.
