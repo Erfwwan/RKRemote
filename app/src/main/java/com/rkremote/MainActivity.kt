@@ -13,6 +13,15 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.graphics.Brush
+import com.rkremote.ui.theme.RKRemoteTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -75,9 +84,22 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         applyPairInvite(intent?.data)
         setContent {
-            MaterialTheme {
+            var darkMode by remember {
+                mutableStateOf(
+                    getSharedPreferences("rkremote_ui", Context.MODE_PRIVATE)
+                        .getBoolean("dark_mode", true)
+                )
+            }
+            RKRemoteTheme(darkTheme = darkMode) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    LocalSetupScreen()
+                    LocalSetupScreen(
+                        darkMode = darkMode,
+                        onToggleTheme = {
+                            darkMode = !darkMode
+                            getSharedPreferences("rkremote_ui", Context.MODE_PRIVATE)
+                                .edit().putBoolean("dark_mode", darkMode).apply()
+                        }
+                    )
                 }
             }
         }
@@ -118,7 +140,7 @@ private data class PermissionItem(
 )
 
 @Composable
-private fun LocalSetupScreen() {
+private fun LocalSetupScreen(darkMode: Boolean, onToggleTheme: () -> Unit) {
     val context = LocalContext.current
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -201,18 +223,27 @@ private fun LocalSetupScreen() {
         drawerState = drawerState,
         drawerContent = {
             ModalDrawerSheet {
-                Text(
-                    "RKRemote",
-                    modifier = Modifier.padding(start = 22.dp, top = 24.dp, bottom = 8.dp),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    "بخش موردنظر را انتخاب کن",
-                    modifier = Modifier.padding(start = 22.dp, bottom = 16.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(14.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer
+                ) {
+                    Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("RK", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Black)
+                        Text("RKRemote", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Text("SECURE DEVICE CONTROL", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(if (darkMode) "حالت شب" else "حالت روز", style = MaterialTheme.typography.labelLarge)
+                    OutlinedButton(onClick = onToggleTheme) { Text(if (darkMode) "☀  حالت روز" else "☾  حالت شب") }
+                }
+                Text("ناوبری", modifier = Modifier.padding(start = 22.dp, top = 8.dp, bottom = 10.dp),
+                    style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                 AppPage.entries.forEach { page ->
                     NavigationDrawerItem(
                         label = { Text(page.title) },
@@ -235,18 +266,20 @@ private fun LocalSetupScreen() {
         }
     ) {
         Column(Modifier.fillMaxSize()) {
-            Surface(shadowElevation = 2.dp, color = MaterialTheme.colorScheme.surface) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    OutlinedButton(onClick = { scope.launch { drawerState.open() } }) {
-                        Text("☰")
+            Surface(shadowElevation = 0.dp, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                        Text("☰", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
                     }
-                    Column(Modifier.padding(start = 12.dp)) {
-                        Text("RKRemote", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
-                        Text(currentPage.title, style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Column(Modifier.weight(1f).padding(start = 8.dp)) {
+                        Text("RKRemote", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleLarge)
+                        AnimatedContent(targetState = currentPage.title, label = "page-title") { title ->
+                            Text(title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    IconButton(onClick = onToggleTheme) {
+                        Text(if (darkMode) "☀" else "☾", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
                     }
                 }
             }
@@ -254,40 +287,65 @@ private fun LocalSetupScreen() {
             // Keep the connection hub composed while visiting other pages.
             // This preserves an active secure session when the drawer is used.
             Box(Modifier.fillMaxSize()) {
-                Box(Modifier.fillMaxSize().offset(x = if (currentPage == AppPage.HOME) 0.dp else 2000.dp)) {
+                Box(Modifier.fillMaxSize().offset(x = animatedPageOffset(currentPage == AppPage.HOME))) {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize().padding(18.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         item {
-                            Card {
-                                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Text("مدیریت دستگاه", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                                    Text("تمام روش‌های اتصال در گزینه «اتصال و روش‌ها» در منوی سه‌خط جمع شده‌اند.")
+                            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(30.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+                                Box(Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(
+                                    MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.surfaceVariant
+                                ))).padding(22.dp)) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                        Text("RKREMOTE  /  SECURE LINK", style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                        Text("کنترل هوشمند،\nاتصال امن.", style = MaterialTheme.typography.headlineMedium,
+                                            fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                        Text("مدیریت دستگاه‌های متصل با ارتباط رمزنگاری‌شده و کنترل دسترسی شفاف.",
+                                            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                        Button(onClick = { currentPage = AppPage.CONNECTIONS }) { Text("ورود به بخش اتصال  ↗") }
+                                    }
+                                }
+                            }
+                        }
+                        item { Text("نمای کلی", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
+                        item {
+                            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+                                Row(Modifier.fillMaxWidth().padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Surface(shape = RoundedCornerShape(14.dp),
+                                        color = if (notificationAccess) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant) {
+                                        Text(if (notificationAccess) "✓" else "!", Modifier.padding(12.dp),
+                                            color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                    }
+                                    Column(Modifier.weight(1f).padding(start = 14.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                        Text("وضعیت دسترسی اعلان", fontWeight = FontWeight.Bold)
+                                        Text(if (notificationAccess) "فعال · $notificationCount رویداد ذخیره‌شده" else "برای همگام‌سازی، دسترسی لازم است",
+                                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
                                 }
                             }
                         }
                         item {
-                            Card {
-                                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Text("وضعیت اعلان‌ها", fontWeight = FontWeight.SemiBold)
-                                    Text(
-                                        if (notificationAccess) "دسترسی اعلان فعال است · $notificationCount رویداد ذخیره شده"
-                                        else "دسترسی اعلان هنوز فعال نشده است",
-                                        style = MaterialTheme.typography.bodySmall
-                                    )
+                            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+                                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text("حریم خصوصی در اولویت", fontWeight = FontWeight.Bold)
+                                    Text("قابلیت‌های حساس فقط با تأیید صاحب دستگاه فعال می‌شوند.",
+                                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
                         }
                     }
                 }
 
-                Box(Modifier.fillMaxSize().offset(
-                    x = if (currentPage in setOf(
-                        AppPage.CONNECTIONS, AppPage.SCREEN, AppPage.CAMERA, AppPage.AUDIO,
-                        AppPage.REMOTE_FILES, AppPage.REMOTE_NOTIFICATIONS, AppPage.CALL_HISTORY, AppPage.SMS_HISTORY, AppPage.LOCATION, AppPage.SESSION_PERMISSIONS
-                    )) 0.dp else 2000.dp
-                )) {
+                Box(Modifier.fillMaxSize().offset(x = animatedPageOffset(currentPage in setOf(
+                    AppPage.CONNECTIONS, AppPage.SCREEN, AppPage.CAMERA, AppPage.AUDIO,
+                    AppPage.REMOTE_FILES, AppPage.REMOTE_NOTIFICATIONS, AppPage.CALL_HISTORY,
+                    AppPage.SMS_HISTORY, AppPage.LOCATION, AppPage.SESSION_PERMISSIONS
+                )))) {
                     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         item {
                             ConnectionHubPanel(
@@ -308,7 +366,7 @@ private fun LocalSetupScreen() {
                     }
                 }
 
-                Box(Modifier.fillMaxSize().offset(x = if (currentPage == AppPage.PERMISSIONS) 0.dp else 2000.dp)) {
+                Box(Modifier.fillMaxSize().offset(x = animatedPageOffset(currentPage == AppPage.PERMISSIONS))) {
                     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         item { Text("مجوزهای اندروید", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
                         items(permissionItems) { item ->
@@ -348,7 +406,7 @@ private fun LocalSetupScreen() {
                     }
                 }
 
-                Box(Modifier.fillMaxSize().offset(x = if (currentPage == AppPage.NOTIFICATIONS) 0.dp else 2000.dp)) {
+                Box(Modifier.fillMaxSize().offset(x = animatedPageOffset(currentPage == AppPage.NOTIFICATIONS))) {
                     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         item {
                             Card {
@@ -378,7 +436,7 @@ private fun LocalSetupScreen() {
                     }
                 }
 
-                Box(Modifier.fillMaxSize().offset(x = if (currentPage == AppPage.FILES) 0.dp else 2000.dp)) {
+                Box(Modifier.fillMaxSize().offset(x = animatedPageOffset(currentPage == AppPage.FILES))) {
                     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         item {
                             Card {
@@ -415,4 +473,15 @@ private fun hasNotificationAccess(context: Context): Boolean {
     ) ?: return false
     val component = ComponentName(context, NotificationCaptureService::class.java)
     return enabled.split(':').any { it.equals(component.flattenToString(), ignoreCase = true) }
+}
+
+
+@Composable
+private fun animatedPageOffset(active: Boolean): androidx.compose.ui.unit.Dp {
+    val offset by animateDpAsState(
+        targetValue = if (active) 0.dp else 2000.dp,
+        animationSpec = spring(dampingRatio = 0.88f, stiffness = 520f),
+        label = "page-slide"
+    )
+    return offset
 }
