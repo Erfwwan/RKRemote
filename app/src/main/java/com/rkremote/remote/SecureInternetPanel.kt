@@ -2764,22 +2764,11 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
-                        enabled = session.value != null && secureRelayConnected.value &&
-                            (outgoingUploadIds.isNotEmpty() || activeTransferId.get() != null),
+                        enabled = session.value != null && secureRelayConnected.value && activeTransferId.get() != null,
                         onClick = {
-                            outgoingUploadIds.toList().forEach { transferId ->
-                                sendInput(
-                                    "file.transfer.cancel",
-                                    JSONObject().put("transferId", transferId)
-                                )
-                                outgoingUploadIds.remove(transferId)
-                            }
                             val downloadId = activeTransferId.get()
                             if (downloadId != null) {
-                                sendInput(
-                                    "file.transfer.cancel",
-                                    JSONObject().put("transferId", downloadId)
-                                )
+                                sendInput("file.transfer.cancel", JSONObject().put("transferId", downloadId))
                                 transferActive.set(false)
                                 activeTransferId.compareAndSet(downloadId, null)
                                 downloadReceiver.abort()
@@ -2787,12 +2776,10 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                 pendingDownloadId.value = null
                                 pendingDownloadDocumentId.value = null
                             }
-                            fileDownloadStatus.value = "Active or pending download cancelled"
-                            fileUploadStatus.value = "Outgoing uploads cancelled"
+                            fileDownloadStatus.value = "دانلود فعال یا در انتظار لغو شد"
                         }
-                    ) { Text("Cancel transfers") }
+                    ) { Text("لغو دانلود") }
                 }
-                Text(fileUploadStatus.value, style = MaterialTheme.typography.bodySmall)
                 }
                 if (feature == SecureFeatureSection.SCREEN) {
             val screenModifier = Modifier.fillMaxWidth().height(240.dp)
