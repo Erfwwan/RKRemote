@@ -1,78 +1,50 @@
-# Cloudflare manual Worker setup for RKRemote
+# RKRemote Cloudflare setup (GitHub Actions)
 
-Each RKRemote user deploys a separate Worker into their own Cloudflare account. There is no shared Cloudflare account, shared token, OAuth Client ID, or app-wide credential.
+This is the recommended deployment path. **You do not connect or link your GitHub account inside Cloudflare.** GitHub Actions reads the Worker source already stored in this repository and publishes it to the Cloudflare account whose credentials you provide as repository secrets.
 
-## 1. Deploy your own Worker without connecting GitHub
+## One-time setup
 
-The old **Deploy to Cloudflare** button imported this repository through Cloudflare's GitHub integration. Do not use that button if you do not want to link GitHub. RKRemote does not need GitHub access at runtime.
+1. Open your Cloudflare dashboard and create an API Token for deploying Workers. Use the narrowest permissions Cloudflare offers for editing Workers scripts and reading the account settings needed by Wrangler. Do not use your Global API Key.
+2. Copy your Cloudflare **Account ID** from the account overview.
+3. Open the RKRemote GitHub repository and go to **Settings → Secrets and variables → Actions**.
+4. Add these two **Repository secrets** (not Variables):
+   - `CLOUDFLARE_API_TOKEN` — the token created in step 1.
+   - `CLOUDFLARE_ACCOUNT_ID` — your Cloudflare Account ID.
+5. Open **Actions → Deploy Cloudflare Worker → Run workflow** and run it on `feature/remote-agent-foundation`.
 
-Use Wrangler CLI instead. It authenticates directly to your Cloudflare account and deploys the Worker source from your device/computer.
+The first successful deployment creates or updates the Worker and its Durable Object binding/migration from the checked-in `cloudflare/worker/wrangler.toml` configuration. Review and approve any migration prompt if Cloudflare requests one.
 
-### Android (Termux)
+## After setup
 
-1. Download the public [RKRemote source ZIP](https://github.com/Erfwwan/RKRemote/archive/refs/heads/feature/remote-agent-foundation.zip). Downloading a public ZIP does **not** connect or authorize a GitHub account.
-2. In Termux, install the required tools:
+- The workflow runs automatically whenever files under `cloudflare/worker/` change on `feature/remote-agent-foundation`.
+- You can also run it manually from the Actions tab whenever you want to redeploy.
+- The workflow summary shows the deployed Worker address when Wrangler reports it. Use the WebSocket form in RKRemote: `wss://<worker-name>.<your-workers-subdomain>.workers.dev`.
+- You do not need to upload source files manually, install Wrangler, use Termux, or connect GitHub to Cloudflare.
+- The Cloudflare token remains in GitHub Secrets and is never added to the APK, source files, workflow logs, or the paired phone.
+
+## If deployment fails
+
+- **Missing secret:** check the exact secret names above. GitHub does not expose secret values after saving.
+- **Authentication/permission error:** create a new Cloudflare API Token with the required Workers deployment permissions and replace the repository secret.
+- **Wrong account:** verify that `CLOUDFLARE_ACCOUNT_ID` belongs to the Cloudflare account where you want the Worker.
+- **Durable Object migration error:** inspect the Wrangler error and the migration history in `cloudflare/worker/wrangler.toml`; do not delete or rename the existing Durable Object class casually, because existing rooms/sessions may be interrupted.
+
+## Alternative manual deployment
+
+If you do not want to use GitHub Actions, download the public source ZIP, extract it, open a terminal in `cloudflare/worker`, and run:
 
 ```sh
-pkg update -y
-pkg install nodejs-lts unzip -y
-termux-setup-storage
-mkdir -p ~/rkremote-src
-unzip -o ~/storage/downloads/feature-remote-agent-foundation.zip -d ~/rkremote-src
-cd "$(find ~/rkremote-src -type d -path '*/cloudflare/worker' -print -quit)"
 npm install
 npx wrangler login
 npx wrangler deploy
 ```
 
-If the downloaded ZIP has a different filename, replace `feature-remote-agent-foundation.zip` with its actual name. When the browser opens, sign in to **Cloudflare only** and approve Wrangler.
+This authenticates directly with Cloudflare and still does not link a GitHub account.
 
-### Computer
+## Security and service behavior
 
-1. Download and extract the same public source ZIP.
-2. Open a terminal in `cloudflare/worker`.
-3. Run:
-
-```sh
-npm install
-npx wrangler login
-npx wrangler deploy
-```
-
-4. Wrangler displays the deployed Worker hostname. Copy it into RKRemote in this format:
-
-```
-wss://rkremote-signaling.<your-workers-subdomain>.workers.dev
-```
-
-5. If Wrangler asks to create the `SignalRoom` Durable Object binding/migration, review and approve it.
-
-## 2. Normal connection does not need an API Token
-
-After the Worker is deployed and its WSS address is entered, both phones can use the relay. **Do not create or enter an API Token just to connect.**
-
-The optional token field is only for updating the code of an already-deployed `rkremote-signaling` Worker from inside the app.
-
-## 3. Optional: create a narrowly scoped API Token
-
-Only if you want in-app Worker updates:
-
-1. Open [Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens).
-2. Create a new custom token for RKRemote. Do not use the Global API Key.
-3. Grant **Workers Editor** access, scoped to the existing `rkremote-signaling` Worker only. Do not grant account-wide Admin or unrelated permissions.
-4. Copy the token once and enter it in RKRemote.
-5. Find the Account ID on your Cloudflare account's Overview page and enter it in RKRemote.
-6. Tap **Save token securely**, then **Update Worker with API Token**.
-
-The app first checks that the named Worker already exists, then uploads the app's current Worker module to that script. It does not enumerate your accounts, create a new Worker, or change your account-level `workers.dev` subdomain.
-
-The token is stored locally using AES-GCM encryption with an Android Keystore key. It is not sent to the paired phone. Clearing the token in RKRemote removes the local copy only; to invalidate it, also revoke it in Cloudflare.
-
-## Security and operational notes
-
-- Never share your API Token, Global API Key, or Cloudflare password with anyone.
-- Keep the API Token scoped to the one existing Worker and revoke it when you no longer need in-app updates.
-- Normal relay operation uses only the Worker WSS address; the token is not part of peer pairing or encrypted relay traffic.
-- Cloudflare can observe IP addresses, room IDs, timing, frame sizes and traffic volume, but cannot read the Noise-encrypted app payloads.
-- All app traffic passes through Cloudflare and is subject to its Workers/Durable Objects limits and pricing.
-- The deployment and token-update paths have not yet been tested against a real Cloudflare account in this source milestone.
+- Each operator deploys their own Worker to their own Cloudflare account. There is no shared account-wide token in RKRemote.
+- The Worker forwards opaque encrypted binary frames. Noise XX and ChaCha20-Poly1305 protect application payloads end-to-end.
+- Cloudflare can still observe connection metadata such as IP addresses, room IDs, timing, frame sizes and traffic volume.
+- All application traffic is relayed through Cloudflare; bandwidth, Durable Objects and plan limits/pricing still apply.
+- The deployment workflow has not been verified against a real Cloudflare account in this repository milestone. A successful GitHub workflow and a real two-device connection test are still required before calling the setup complete.
