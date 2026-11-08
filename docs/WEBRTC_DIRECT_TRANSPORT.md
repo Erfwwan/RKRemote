@@ -102,3 +102,10 @@ The target routes only the gesture and text actions through its existing Accessi
 The target can register `file.list.request`, `file.download.request`, `file.upload.begin`, `file.transfer.chunk` and `file.transfer.complete` handlers after a local owner grant of the `FILES` capability. Listing and file reads are performed through the Android Storage Access Framework URI explicitly selected on the target. The bridge verifies every document ID is within that selected tree, limits a listing to 40 entries and each download to 50 MiB, and streams bounded chunks through the DTLS DataChannel. Uploads are written only to a writable owner-selected SAF folder, reject duplicate names, and are removed if the transfer fails. The controller verifies chunk ordering and final SHA-256 before publishing the file under `Download/RKRemote/Received` on Android 10+, or app-specific Downloads on older versions. Existing files are not overwritten. No remote delete, rename, or arbitrary filesystem access is exposed.
 
 This path is implemented in source and awaits CI completion plus physical two-device validation. It is not a security certification.
+
+
+## Secure microphone and push-to-talk paths
+
+The target owner may locally start the microphone capture service and then grant `MICROPHONE` for this session. The controller can request a live 16 kHz mono PCM monitor stream; the target only relays chunks already published by the local capture service and never starts the microphone remotely. Playback uses a bounded queue and drops old chunks under congestion.
+
+For half-duplex push-to-talk, the target owner must locally enable the PTT speaker service and grant `PUSH_TO_TALK`. The controller must have locally started microphone capture and holds the PTT control to transmit short PCM chunks. Releasing the control sends `ptt.stop`; the target queue is cleared. These features are source-integrated but not yet validated on physical devices. Camera frames are still not migrated to this secure Internet path.
