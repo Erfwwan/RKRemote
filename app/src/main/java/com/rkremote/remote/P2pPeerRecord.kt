@@ -2,6 +2,8 @@ package com.rkremote.remote
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.io.DataOutputStream
 import java.security.KeyFactory
 import java.security.KeyPair
 import java.security.MessageDigest
@@ -64,16 +66,20 @@ data class P2pPeerRecord(
 
     internal fun signingBytes(): ByteArray = canonicalBytes()
 
-    private fun canonicalBytes(): ByteArray = JSONObject()
-        .put("recordVersion", RECORD_VERSION)
-        .put("peerId", peerId)
-        .put("publicKey", publicKeyBase64)
-        .put("sequence", sequence)
-        .put("issuedAt", issuedAtMillis)
-        .put("expiresAt", expiresAtMillis)
-        .put("addresses", JSONArray(addresses))
-        .toString()
-        .toByteArray(Charsets.UTF_8)
+    private fun canonicalBytes(): ByteArray {
+        val bytes = ByteArrayOutputStream()
+        DataOutputStream(bytes).use { output ->
+            output.writeInt(RECORD_VERSION)
+            output.writeUTF(peerId)
+            output.writeUTF(publicKeyBase64)
+            output.writeLong(sequence)
+            output.writeLong(issuedAtMillis)
+            output.writeLong(expiresAtMillis)
+            output.writeInt(addresses.size)
+            addresses.forEach(output::writeUTF)
+        }
+        return bytes.toByteArray()
+    }
 
     companion object {
         const val RECORD_VERSION = 1
