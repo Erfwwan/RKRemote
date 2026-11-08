@@ -1,6 +1,10 @@
 package com.rkremote.remote
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
+import android.provider.Settings
 import android.provider.CallLog
 import android.provider.Telephony
 import android.graphics.Bitmap
@@ -39,6 +43,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -53,7 +58,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 enum class SecureFeatureSection {
-    CONNECTION, SCREEN, CAMERA, AUDIO, FILES, NOTIFICATIONS, CALL_LOGS, SMS_MESSAGES, SESSION_PERMISSIONS
+    CONNECTION, SCREEN, CAMERA, AUDIO, FILES, NOTIFICATIONS, CALL_LOGS, SMS_MESSAGES, LOCATION, SESSION_PERMISSIONS
 }
 
 @Composable
@@ -106,6 +111,8 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
     val callLogStatus = remember { mutableStateOf("هنوز گزارشی بارگذاری نشده است") }
     val smsItems = remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     val smsStatus = remember { mutableStateOf("هنوز گزارشی بارگذاری نشده است") }
+    val locationHistory = remember { mutableStateOf<List<LocationSnapshot>>(emptyList()) }
+    val locationStatus = remember { mutableStateOf("هنوز موقعیتی دریافت نشده است") }
     val fileItems = remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     val fileStatus = remember { mutableStateOf("No folder loaded") }
     val fileParentId = remember { mutableStateOf("") }
@@ -133,6 +140,11 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
     val audioPlayback = remember(context) { SecureAudioPlayback() }
     val audioStatus = remember { mutableStateOf("Microphone stream idle") }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { result ->
+        locationStatus.value = if (result.values.any { it }) "مجوز موقعیت بررسی شد؛ برای ردیابی پس‌زمینه، دسترسی جداگانه را در تنظیمات فعال کن." else "مجوز موقعیت داده نشد"
+    }
 
     fun refreshRememberedReportGrants() {
         rememberedReportGrants.value = persistentReportConsent.allGrants()
@@ -148,6 +160,14 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
             }
             RemoteCapability.CONTACTS -> check(SecureSmsSync.hasSmsPermission(context)) {
                 "Enable Android SMS permission locally first"
+            }
+            RemoteCapability.LOCATION -> {
+                val hasLocation = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                check(hasLocation) { "Enable Android location permission locally first" }
+                if (Build.VERSION.SDK_INT >= 29) check(
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
+                ) { "Enable Allow all the time location access in Android app settings first" }
             }
             else -> error("This permission cannot be remembered")
         }
@@ -803,6 +823,16 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                         }
                                         "sms.sync.result"
                                     }
+                                    register("location.sync.request", RemoteCapability.LOCATION) { message ->
+                                        val response = SecureLocationSync.buildLatestResponse(
+                                            context,
+                                            message.payload.getString("requestId")
+                                        )
+                                        check(activePeer?.sendMessage("location.sync.result", response) == true) {
+                                            "Could not send encrypted location history"
+                                        }
+                                        "location.sync.result"
+                                    }
                                     register("calllog.sync.request", RemoteCapability.CALL_LOG) { message ->
                                         val response = SecureCallLogSync.buildLatestResponse(
                                             context,
@@ -866,6 +896,13 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                         if (RemoteCapability.CONTACTS in saved &&
                                                             SecureSmsSync.hasSmsPermission(context)) {
                                                             add(RemoteCapability.CONTACTS)
+                                                        }
+                                                        val hasLocation = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                                                            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                                                        val hasBackgroundLocation = Build.VERSION.SDK_INT < 29 ||
+                                                            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
+                                                        if (RemoteCapability.LOCATION in saved && hasLocation && hasBackgroundLocation) {
+                                                            add(RemoteCapability.LOCATION)
                                                         }
                                                     }
                                                 }.onSuccess { restored ->
@@ -1182,6 +1219,27 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                     smsStatus.value = if (message.payload.optBoolean("truncated"))
                                                         "$returned پیامک از $available پیامک (گزارش محدود شده)"
                                                     else "$returned پیامک دریافت شد"
+                                                }
+                                            }
+                                            "location.sync.result" -> {
+                                                val records = message.payload.optJSONArray("records")
+                                                val entries = buildList {
+                                                    for (index in 0 until (records?.length() ?: 0)) {
+                                                        records?.optJSONObject(index)?.let { add(JSONObject(it.toString())) }
+                                                    }
+                                                }
+                                                val single = if (message.payload.has("recordedAt"))
+                                                    runCatching { LocationSnapshot.fromJson(message.payload) }.getOrNull() else null
+                                                mainHandler.post {
+                                                    if (activePeerRef.get() !== activePeer) return@post
+                                                    locationHistory.value = if (entries.isNotEmpty()) entries.mapNotNull { runCatching { LocationSnapshot.fromJson(it) }.getOrNull() } else if (single != null) (locationHistory.value + single).takeLast(LocationHistoryStore.MAX_RECORDS) else locationHistory.value
+                                                    val latest = single ?: locationHistory.value.lastOrNull()
+                                                    locationStatus.value = when {
+                                                        latest == null -> "گزارش موقعیت خالی است"
+                                                        !latest.locationEnabled -> "موقعیت خاموش است · آخرین مختصات معتبر حفظ شده"
+                                                        !latest.freshFix -> "موقعیت روشن است، اما موقعیت تازه دریافت نشد"
+                                                        else -> "آخرین موقعیت تازه دریافت شد"
+                                                    }
                                                 }
                                             }
                                             "calllog.sync.result" -> {
@@ -1774,6 +1832,83 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                }
+                if (feature == SecureFeatureSection.LOCATION) {
+                    val fineGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                    val coarseGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                    val backgroundGranted = Build.VERSION.SDK_INT < 29 || ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
+                    val latest = locationHistory.value.lastOrNull()
+                    if (role.value == CloudflareSignalingClient.Role.CONTROLLER) {
+                        OutlinedButton(
+                            enabled = session.value != null && dataChannelConnected.value,
+                            onClick = {
+                                locationStatus.value = if (sendInput("location.sync.request", JSONObject())) "درخواست تاریخچه موقعیت به دستگاه مقصد ارسال شد" else "ارسال درخواست ناموفق بود"
+                            }
+                        ) { Text("دریافت تاریخچه موقعیت دستگاه مقصد") }
+                    } else {
+                        Text("ردیابی فقط پس از فعال‌سازی توسط صاحب همین گوشی انجام می‌شود. داده‌ها در برنامه رمزنگاری و ذخیره می‌شوند.")
+                        if (!fineGranted && !coarseGranted) {
+                            OutlinedButton(onClick = { locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)) }) { Text("درخواست مجوز موقعیت") }
+                        }
+                        if (!backgroundGranted) {
+                            Text("برای ثبت دوره‌ای در پس‌زمینه، Android دسترسی «همیشه مجاز» را جداگانه می‌خواهد.")
+                            OutlinedButton(onClick = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))) }) { Text("تنظیم دسترسی پس‌زمینه") }
+                        }
+                        if (!runCatching { (context.getSystemService(android.content.Context.LOCATION_SERVICE) as android.location.LocationManager).isLocationEnabled }.getOrDefault(false)) {
+                            OutlinedButton(onClick = { context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)) }) { Text("روشن کردن موقعیت مکانی") }
+                        }
+                        OutlinedButton(
+                            enabled = (fineGranted || coarseGranted) && backgroundGranted,
+                            onClick = {
+                                runCatching { LocationCaptureScheduler.start(context) }
+                                    .onSuccess { locationStatus.value = "ثبت دوره‌ای فعال شد؛ فاصله زمانی هدف ۱۵ دقیقه است." }
+                                    .onFailure { locationStatus.value = it.message ?: "فعال‌سازی ثبت موقعیت ناموفق بود" }
+                            }
+                        ) { Text("شروع ذخیره و ارسال هر ۱۵ دقیقه") }
+                        OutlinedButton(onClick = { LocationCaptureScheduler.stop(context); locationStatus.value = "ثبت دوره‌ای متوقف شد" }) { Text("توقف ثبت موقعیت") }
+                        OutlinedButton(onClick = {
+                            locationHistory.value = LocationHistoryStore(context).readAll()
+                            locationStatus.value = "تاریخچه محلی به‌روزرسانی شد"
+                        }) { Text("نمایش تاریخچه ذخیره‌شده") }
+                        OutlinedButton(
+                            enabled = session.value != null && dataChannelConnected.value && fineGranted || session.value != null && dataChannelConnected.value && coarseGranted,
+                            onClick = {
+                                runCatching { grantRememberedReportCapability(RemoteCapability.LOCATION); LocationCaptureScheduler.start(context) }
+                                    .onSuccess { locationStatus.value = "ارسال موقعیت برای همین دستگاه جفت‌شده مجاز شد" }
+                                    .onFailure { locationStatus.value = it.message ?: "اعطای دسترسی ناموفق بود" }
+                            }
+                        ) { Text("اجازه دائمی ارسال موقعیت به این دستگاه جفت‌شده") }
+                    }
+                    Text(locationStatus.value, style = MaterialTheme.typography.bodySmall)
+                    if (latest != null) {
+                        Card(modifier = Modifier.fillMaxWidth()) {
+                            Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(if (latest.locationEnabled) "وضعیت موقعیت: روشن" else "وضعیت موقعیت: خاموش", fontWeight = FontWeight.SemiBold)
+                                Text("زمان ثبت وضعیت: " + DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(latest.recordedAtMillis)), style = MaterialTheme.typography.bodySmall)
+                                latest.fixTimeMillis?.let { Text("زمان آخرین مختصات معتبر: " + DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it)), style = MaterialTheme.typography.bodySmall) }
+                                if (latest.latitude != null && latest.longitude != null) {
+                                    Text("مختصات: %.6f, %.6f".format(latest.latitude, latest.longitude))
+                                    latest.accuracyMeters?.let { Text("دقت ثبت‌شده: %.1f متر".format(it), style = MaterialTheme.typography.bodySmall) }
+                                    Text(if (latest.freshFix) "مختصات تازه" else "مختصات آخرین ثبت معتبر (نه موقعیت فعلی)", style = MaterialTheme.typography.bodySmall)
+                                    OutlinedButton(onClick = {
+                                        val mapUri = Uri.parse("https://www.google.com/maps/search/?api=1&query=${latest.latitude},${latest.longitude}")
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, mapUri))
+                                    }) { Text("نمایش در Google Maps") }
+                                } else Text("هنوز مختصات معتبری ذخیره نشده است")
+                            }
+                        }
+                    }
+                    locationHistory.value.takeLast(30).asReversed().forEach { item ->
+                        Text(
+                            DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(item.recordedAtMillis)) +
+                                " · " + (if (item.locationEnabled) "روشن" else "خاموش") +
+                                (if (item.freshFix) " · موقعیت تازه" else " · آخرین داده معتبر"),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    if (role.value == CloudflareSignalingClient.Role.CONTROLLER) {
+                        Text("گزارش‌ها فقط از دستگاه جفت‌شده و پس از اجازه صریح مالک آن دریافت می‌شوند. اگر موقعیت خاموش باشد، فقط آخرین مختصات معتبر همراه زمان اصلی آن نشان داده می‌شود.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 if (feature == SecureFeatureSection.FILES) {
