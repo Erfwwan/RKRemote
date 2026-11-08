@@ -192,18 +192,31 @@ object LocationSessionBridge {
         activePeer.compareAndSet(peer, null)
     }
 
-    fun sendIfOwnerApproved(context: Context, snapshot: LocationSnapshot): Boolean {
-        val peer = activePeer.get() ?: return false
-        val peerId = peer.authenticatedPeerId() ?: return false
+    private fun authorizedPeer(context: Context): SecureInternetPeer? {
+        val peer = activePeer.get() ?: return null
+        val peerId = peer.authenticatedPeerId() ?: return null
         val remembered = runCatching {
             PersistentPeerReportConsent(context).capabilitiesFor(peerId)
         }.getOrDefault(emptySet())
         if (RemoteCapability.LOCATION !in remembered ||
             !peer.hasOwnerApprovedCapability(RemoteCapability.LOCATION)
-        ) return false
+        ) return null
+        return peer
+    }
+
+    fun sendIfOwnerApproved(context: Context, snapshot: LocationSnapshot): Boolean {
+        val peer = authorizedPeer(context) ?: return false
         return peer.sendMessage(
             "location.sync.result",
             snapshot.toJson().put("requestId", "periodic-${snapshot.recordedAtMillis}")
+        )
+    }
+
+    fun sendHistoryIfOwnerApproved(context: Context): Boolean {
+        val peer = authorizedPeer(context) ?: return false
+        return peer.sendMessage(
+            "location.sync.result",
+            SecureLocationSync.buildLatestResponse(context, "reconnect-${System.currentTimeMillis()}")
         )
     }
 }
