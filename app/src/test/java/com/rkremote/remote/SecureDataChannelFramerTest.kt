@@ -12,7 +12,7 @@ class SecureDataChannelFramerTest {
     fun reassemblesLargePayloadEvenWhenFragmentsArriveOutOfOrder() {
         val sender = SecureDataChannelFramer()
         val receiver = SecureDataChannelFramer()
-        val payload = ByteArray(700_123) { (it * 31).toByte() }
+        val payload = ByteArray(60_123) { (it * 31).toByte() }
         val frames = sender.fragment(payload)
         assertTrue(frames.size > 1)
 
@@ -34,7 +34,7 @@ class SecureDataChannelFramerTest {
             receiver.accept(frames.first())
         }
         assertThrows(IllegalArgumentException::class.java) {
-            sender.fragment(ByteArray(4 * 1024 * 1024 + 1))
+            sender.fragment(ByteArray(RemoteMessage.MAX_MESSAGE_BYTES + 1))
         }
     }
 
