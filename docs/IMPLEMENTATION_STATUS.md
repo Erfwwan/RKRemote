@@ -201,3 +201,13 @@ Validation for this pass: source and JVM tests were committed, but no Gradle bui
 - Automated CI for the earlier UI integration commit `a03d88e` completed unit tests successfully and proceeded to APK assembly. The later lifecycle, command-result and codec-validation commits are still awaiting their own final CI results.
 - No two-device Internet/NAT test or physical Samsung test has been performed. Video quality, latency, codec compatibility and behavior under congestion remain unverified on hardware.
 - Remote screen input, files, notification sync, camera, microphone and PTT are still not migrated to the secure Internet channel.
+
+
+## Secure remote screen input · integration pass
+
+- Added incremental capability grants to `SessionCommandGate` and `SecureRemoteCommandRouter`. Granting `SCREEN_INPUT` no longer replaces the existing `SCREEN_VIEW` grant or resets replay sequence state.
+- Added target-side `screen.input` command handling for normalized tap/swipe gestures and bounded text insertion into the currently focused editable field, using the existing Android Accessibility bridge.
+- The target owner must manually enable RKRemote in Android Accessibility settings and separately grant `SCREEN_INPUT` in the secure Internet panel. The controller can tap or drag directly on the received video surface and submit text to the focused field.
+- Accessibility dispatch is rejected when the service is not active, the action type is unknown, coordinates/duration are invalid, or text exceeds the existing 4096-character limit. Android remains responsible for the actual gesture/text action.
+- Added a unit test proving incremental capability grants preserve monotonic sequence protection.
+- CI for the latest input integration is still running; no physical device validation has been done.
