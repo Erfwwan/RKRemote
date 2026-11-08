@@ -73,7 +73,7 @@ class SessionForegroundService : Service() {
             return START_NOT_STICKY
         }
 
-        stopInternetPeer()
+        stopInternetPeer(clearPhoto = internetPeer != null)
         internetPeer = incoming
         return START_NOT_STICKY
     }
@@ -89,12 +89,12 @@ class SessionForegroundService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun stopInternetPeer() {
+    private fun stopInternetPeer(clearPhoto: Boolean = true) {
         val active = internetPeer
         internetPeer = null
         runCatching { active?.let(LocationSessionBridge::detach) }
         runCatching { active?.stopFromOwnerAction() }
-        stopLocalMediaServices()
+        stopLocalMediaServices(clearPhoto)
     }
 
     /**
@@ -102,12 +102,12 @@ class SessionForegroundService : Service() {
      * Closing the relay must not leave a microphone, speaker, screen capture,
      * or an unsent camera photo running/retained locally.
      */
-    private fun stopLocalMediaServices() {
+    private fun stopLocalMediaServices(clearPhoto: Boolean) {
         runCatching { stopService(Intent(this, CameraCaptureService::class.java)) }
         runCatching { stopService(Intent(this, ScreenCaptureService::class.java)) }
         runCatching { stopService(Intent(this, MicrophoneCaptureService::class.java)) }
         runCatching { stopService(Intent(this, PttPlaybackService::class.java)) }
-        runCatching { CameraFrameStore.clear() }
+        if (clearPhoto) runCatching { CameraFrameStore.clear() }
         runCatching { ScreenVideoStore.clear() }
         runCatching { MicrophoneChunkStore.clear() }
         runCatching { PttAudioQueue.clear() }
