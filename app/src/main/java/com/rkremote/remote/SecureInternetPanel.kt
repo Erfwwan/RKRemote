@@ -2256,7 +2256,6 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     }
                 }
                 }
-                if (feature == SecureFeatureSection.NOTIFICATIONS)                }
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
