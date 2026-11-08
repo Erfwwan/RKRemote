@@ -253,6 +253,40 @@ fun LanRemotePanel() {
                     }
                 }) { Text("List selected folder") }
             }
+            Text("FILE TRANSFER · SELECTED TARGET FOLDER", fontWeight = FontWeight.SemiBold)
+            Text("Transfers use only the folder explicitly selected on the target phone. Maximum file size is 8 MiB. Existing files are never overwritten.", style = MaterialTheme.typography.bodySmall)
+            OutlinedButton(enabled = !busy, onClick = { uploadPicker.launch(arrayOf("*/*")) }) {
+                Text("Choose file to upload to target")
+            }
+            if (remoteFileItems.isNotEmpty()) {
+                remoteFileItems.forEach { item ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(if (item.directory) "Folder: " + item.name else item.name, fontWeight = FontWeight.Medium)
+                            Text(
+                                if (item.directory) "Subfolder navigation is not available yet"
+                                else if (item.size >= 0) item.size.toString() + " bytes" else "File size unknown",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        if (!item.directory) {
+                            OutlinedButton(
+                                enabled = !busy && item.id.isNotBlank() && item.size in 0L..MAX_UI_TRANSFER_BYTES.toLong(),
+                                onClick = {
+                                    pendingDownloadId = item.id
+                                    pendingDownloadName = item.name
+                                    downloadPicker.launch(item.name)
+                                }
+                            ) { Text("Download") }
+                        }
+                    }
+                }
+            } else {
+                Text("No file list loaded. Tap List selected folder after connecting.", style = MaterialTheme.typography.bodySmall)
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(enabled = !busy && !previewRunning, onClick = {
                     previewRunning = true
@@ -442,7 +476,7 @@ fun LanRemotePanel() {
             Text("Result", fontWeight = FontWeight.SemiBold)
             Text(output, style = MaterialTheme.typography.bodySmall)
             Text(
-                "Prototype boundary: local trusted Wi-Fi only; read-only folder listing and status. No internet relay, camera, microphone or file download. Screen sharing uses owner-approved JPEG snapshots; live preview polls snapshots about once per second. Remote taps require the target owner to enable the RKRemote Accessibility service manually.",
+                "Prototype boundary: local trusted Wi-Fi only; owner-selected folder file transfer (8 MiB limit). No internet relay, camera or microphone. Screen sharing uses owner-approved JPEG snapshots; live preview polls snapshots about once per second. Remote taps require the target owner to enable the RKRemote Accessibility service manually.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
