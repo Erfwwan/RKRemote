@@ -204,7 +204,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
     val pttStatus = remember { mutableStateOf("Push-to-talk idle") }
     val audioExecutor = remember { Executors.newSingleThreadExecutor() }
     val audioPlayback = remember(context) { SecureAudioPlayback() }
-    val audioStatus = remember { mutableStateOf("Microphone stream idle") }
+    val audioStatus = remember { mutableStateOf("آماده دریافت صدای واکی‌تاکی") }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     fun launchLocalCameraCapture(facing: Int) {
         runCatching {
@@ -1108,7 +1108,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                             }.onSuccess {
                                                                 mainHandler.post {
                                                     if (activePeerRef.get() !== activePeer) return@post
-                                                    audioStatus.value = "Receiving secure microphone audio"
+                                                    audioStatus.value = "در حال دریافت صدای واکی‌تاکی از دستگاه مقصد"
                                                     }
                                                             }
                                                         }
@@ -2257,6 +2257,20 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 }
                 }
                 if (feature == SecureFeatureSection.NOTIFICATIONS)                }
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+                ) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text("صدای دریافتی از دستگاه مقصد", fontWeight = FontWeight.Bold)
+                        Text(
+                            audioStatus.value.ifBlank { "آماده دریافت صدای واکی‌تاکی" },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
                 if (feature == SecureFeatureSection.NOTIFICATIONS) {
                 OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
                     notificationSummary.value = if (sendInput("notifications.sync.request", JSONObject()))
