@@ -76,8 +76,12 @@ object LanControllerClient {
         ) { "Unsupported request" }
 
         val socket = Socket()
-        socket.connect(InetSocketAddress(ip, LanAgentServer.DEFAULT_PORT), 5000)
-        socket.soTimeout = if (endpoint.startsWith("/file/")) 30_000 else 7000
+        socket.connect(InetSocketAddress(ip, LanAgentServer.DEFAULT_PORT), if (endpoint == "/audio/ptt") 1500 else 5000)
+        socket.soTimeout = when {
+            endpoint.startsWith("/file/") -> 30_000
+            endpoint == "/audio/ptt" -> 1500
+            else -> 7000
+        }
         socket.use { s ->
             val headers = StringBuilder()
                 .append("$method $endpoint HTTP/1.1\r\n")
