@@ -173,7 +173,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
     }
     val autoConnectPending = remember { mutableStateOf(setupPrefs.getBoolean("auto_connect", false)) }
     val status = remember { mutableStateOf("Not connected") }
-    val dataChannelConnected = remember { mutableStateOf(false) }
+    val secureRelayConnected = remember { mutableStateOf(false) }
     val peerId = remember { mutableStateOf<String?>(null) }
     val sas = remember { mutableStateOf<String?>(null) }
     val error = remember { mutableStateOf<String?>(null) }
@@ -856,9 +856,9 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                         commandRouter = targetRouter,
                                         listener = object : SecureInternetPeer.Listener {
                                             override fun onRelayConnected() {
-                                                if (role.value == CloudflareSignalingClient.Role.TARGET) {
-                                                    mainHandler.post {
-                                                        if (activePeerRef.get() !== activePeer) return@post
+                                                mainHandler.post {
+                                                    if (activePeerRef.get() !== activePeer) return@post
+                                                    if (role.value == CloudflareSignalingClient.Role.TARGET) {
                                                         val invite = "rkremote://pair?worker=${Uri.encode(url.value)}&room=${room.value}"
                                                         val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                                             type = "text/plain"
@@ -866,6 +866,8 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                         }
                                                         context.startActivity(Intent.createChooser(shareIntent, "دعوت گوشی دوم به RKRemote"))
                                                         status.value = "اتصال مقصد به Worker برقرار شد · لینک دعوت آماده است"
+                                                    } else {
+                                                        status.value = "به رله وصل شدی؛ منتظر گوشی مقصد..."
                                                     }
                                                 }
                                             }
@@ -922,13 +924,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                     }
                                                     }
                                             }
-                                            override fun onWebRtcConnecting() {
-                                                mainHandler.post {
-                                                    if (activePeerRef.get() !== activePeer) return@post
-                                                    status.value = "در حال اتصال به رله امن Cloudflare"
-                                                    }
-                                            }
-                                            override fun onWebRtcConnected() {
+                                            override fun onRelayReady() {
                                                 mainHandler.post {
                                                     if (activePeerRef.get() !== activePeer) return@post
                                                     dataChannelConnected.value = true
