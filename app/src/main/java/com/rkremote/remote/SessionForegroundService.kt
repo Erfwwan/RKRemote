@@ -159,6 +159,19 @@ class SessionForegroundService : Service() {
         runCatching { active?.close() }
     }
 
+    private fun stopInternetSessionAndUpdate() {
+        stopInternetPeer()
+        if (lanServer == null) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        } else {
+            getSystemService(NotificationManager::class.java).notify(
+                NOTIFICATION_ID,
+                buildNotification("LAN remote session remains active")
+            )
+        }
+    }
+
     private fun createChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
@@ -233,16 +246,7 @@ class SessionForegroundService : Service() {
                 )
                 return
             }
-            running.stopInternetPeer()
-            if (running.lanServer == null) {
-                running.stopForeground(STOP_FOREGROUND_REMOVE)
-                running.stopSelf()
-            } else {
-                running.getSystemService(NotificationManager::class.java).notify(
-                    NOTIFICATION_ID,
-                    running.buildNotification("LAN remote session remains active")
-                )
-            }
+            running.stopInternetSessionAndUpdate()
         }
     }
 }
