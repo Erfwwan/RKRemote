@@ -35,6 +35,14 @@ class SessionCommandGate {
     }
 
     @Synchronized
+    fun revokeCapabilities(capabilities: Set<RemoteCapability>) {
+        if (!sessionActive || capabilities.isEmpty()) return
+        val peerId = approvedPeerId ?: return
+        val remaining = (grants[peerId] ?: emptySet()) - capabilities
+        if (remaining.isEmpty()) grants.remove(peerId) else grants[peerId] = remaining
+    }
+
+    @Synchronized
     fun endSession() {
         sessionActive = false
         approvedPeerId?.let {
