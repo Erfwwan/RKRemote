@@ -11,14 +11,15 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.rkremote.MainActivity
-import com.rkremote.R
 
 /**
- * Visible foreground indicator for an active, user-approved remote session.
- * The persistent notification provides a local stop action.
+ * Visible foreground indicator for an owner-approved LAN session.
+ * The system may recreate this service after process death; Stop clears the
+ * encrypted session credential and disables further restoration.
  */
 class SessionForegroundService : Service() {
     private var lanServer: LanAgentServer? = null
+
     override fun onCreate() {
         super.onCreate()
         createChannel()
@@ -26,11 +27,32 @@ class SessionForegroundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
+            SessionCredentialStore.clearActiveSession(this)
             lanServer?.stop()
             lanServer = null
             stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            stopSelf(startId)
             return START_NOT_STICKY
+        }
+
+        val token = when (intent?.action) {
+            ACTION_START_LAN -> intent.getStringExtra(EXTRA_TOKEN)
+            null -> SessionCredentialStore.activeToken(this)
+            else -> null
+        }?.takeIf { it.length >= 24 }
+
+        if (token == null) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
+
+        if (intent?.action == ACTION_START_LAN) {
+            runCatching { SessionCredentialStore.saveActiveSession(this, token) }
+                .onFailure {
+                    stopSelf(startId)
+                    return START_NOT_STICKY
+                }
         }
 
         val notification = buildNotification()
@@ -43,21 +65,18 @@ class SessionForegroundService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
-        if (intent?.action == ACTION_START_LAN) {
-            val token = intent.getStringExtra(EXTRA_TOKEN)
-            if (token.isNullOrBlank() || token.length < 24) {
-                stopSelf()
-                return START_NOT_STICKY
-            }
-            lanServer?.stop()
-            lanServer = LanAgentServer(applicationContext, token) { reason ->
-                getSystemService(NotificationManager::class.java).notify(
-                    NOTIFICATION_ID,
-                    buildNotification("LAN agent stopped · " + reason.take(100))
-                )
-            }.also { it.start() }
-        }
-        return START_NOT_STICKY
+
+        lanServer?.stop()
+        lanServer = LanAgentServer(applicationContext, token) { reason ->
+            getSystemService(NotificationManager::class.java).notify(
+                NOTIFICATION_ID,
+                buildNotification("LAN agent stopped · " + reason.take(100))
+            )
+        }.also { it.start() }
+
+        // Android can redeliver the explicit start intent after reclaiming this process.
+        // A null-intent sticky recreation can also recover the encrypted active token.
+        return START_REDELIVER_INTENT
     }
 
     override fun onDestroy() {
