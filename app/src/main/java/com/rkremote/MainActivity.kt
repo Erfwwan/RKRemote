@@ -285,7 +285,11 @@ private fun LocalSetupScreen(darkMode: Boolean, onToggleTheme: () -> Unit) {
                     Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("RK", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Black)
                         Text("RKRemote", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                        Text("SECURE DEVICE CONTROL", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Text(
+                            if (selectedRole == "controller") "CONTROLLER  ·  DEVICE MANAGER" else "TARGET  ·  DEVICE AGENT",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
                     }
                 }
                 Row(
@@ -327,7 +331,15 @@ private fun LocalSetupScreen(darkMode: Boolean, onToggleTheme: () -> Unit) {
                         Text("☰", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
                     }
                     Column(Modifier.weight(1f).padding(start = 8.dp)) {
-                        Text("RKRemote", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleLarge)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("RKRemote", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleLarge)
+                            Text(
+                                if (selectedRole == "controller") "کنترل‌کننده" else "کنترل‌شونده",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                         AnimatedContent(targetState = currentPage.title, label = "page-title") { title ->
                             Text(title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
