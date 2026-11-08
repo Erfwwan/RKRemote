@@ -30,6 +30,7 @@ class SecureInternetPeer(
 ) : AutoCloseable {
 
     interface Listener {
+        fun onRelayConnected() {}
         fun onPeerVerificationRequired(peerId: String, shortAuthenticationString: String)
         fun onSecureSignalingReady(peerId: String)
         fun onWebRtcConnecting()
@@ -58,6 +59,8 @@ class SecureInternetPeer(
         secureSession = SecureLinkCloudflareSession.create(
             baseWssUrl, roomId, role, handshake,
             object : SecureLinkCloudflareSession.Listener {
+                override fun onRelayConnected() = listener.onRelayConnected()
+
                 override fun onPeerVerificationRequired(peerId: String, shortAuthenticationString: String) {
                     listener.onPeerVerificationRequired(peerId, shortAuthenticationString)
                 }
