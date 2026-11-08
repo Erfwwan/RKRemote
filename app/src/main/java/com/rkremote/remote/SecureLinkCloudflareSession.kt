@@ -96,8 +96,11 @@ class SecureLinkCloudflareSession internal constructor(
                 synchronized(this@SecureLinkCloudflareSession) {
                     if (closed) return
                     if (type == "peer-left") {
-                        listener.onDisconnected("The paired device left the signaling room")
-                        close()
+                        try {
+                            listener.onDisconnected("The paired device left the signaling room")
+                        } finally {
+                            close()
+                        }
                     } else {
                         // Serialize room events with close() so a late WebSocket callback
                         // cannot update a disposed screen or a replacement session.
@@ -109,8 +112,11 @@ class SecureLinkCloudflareSession internal constructor(
             override fun onDisconnected(reason: String) {
                 synchronized(this@SecureLinkCloudflareSession) {
                     if (!closed) {
-                        listener.onDisconnected(reason)
-                        close()
+                        try {
+                            listener.onDisconnected(reason)
+                        } finally {
+                            close()
+                        }
                     }
                 }
             }
