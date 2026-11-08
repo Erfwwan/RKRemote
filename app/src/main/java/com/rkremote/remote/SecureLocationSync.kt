@@ -276,7 +276,9 @@ class LocationCaptureWorker(
         val hasCoarse = ContextCompat.checkSelfPermission(
             applicationContext, Manifest.permission.ACCESS_COARSE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
-        if (!hasFine && !hasCoarse) return Result.failure()
+        // Keep the periodic schedule alive after a temporary permission revocation.
+        // A later user re-grant can resume capture without rebuilding the WorkManager job.
+        if (!hasFine && !hasCoarse) return Result.success()
 
         // Periodic background collection requires the separate Android background grant.
         if (Build.VERSION.SDK_INT >= 29 &&
