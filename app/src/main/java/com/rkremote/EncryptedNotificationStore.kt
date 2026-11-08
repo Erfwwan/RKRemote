@@ -23,6 +23,7 @@ internal object EncryptedNotificationStore {
     private const val TAG = "RKRemoteEventStore"
     private const val PREFS = "rkremote_notification_events"
     private const val DATA_KEY = "encrypted_events"
+    private const val LAST_EVENT_ID_KEY = "last_event_id"
     private const val KEY_ALIAS = "rkremote_notification_aes_v1"
     private const val MAX_EVENTS = 500
     private const val GCM_TAG_BITS = 128
@@ -31,8 +32,11 @@ internal object EncryptedNotificationStore {
     fun append(context: Context, event: JSONObject) {
         try {
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val previousId = prefs.getLong(LAST_EVENT_ID_KEY, 0L)
+            val nextId = if (previousId == Long.MAX_VALUE) 1L else previousId + 1L
+            val storedEvent = JSONObject(event.toString()).put("eventId", nextId)
             val events = readEvents(prefs.getString(DATA_KEY, null)).apply {
-                put(event)
+                put(storedEvent)
             }
             val bounded = JSONArray()
             val first = (events.length() - MAX_EVENTS).coerceAtLeast(0)
@@ -43,7 +47,10 @@ internal object EncryptedNotificationStore {
             val encrypted = encrypt(bounded.toString().toByteArray(Charsets.UTF_8))
             val packed = encrypted.first + encrypted.second
             val encoded = Base64.encodeToString(packed, Base64.NO_WRAP)
-            check(prefs.edit().putString(DATA_KEY, encoded).commit()) {
+            check(prefs.edit()
+                .putString(DATA_KEY, encoded)
+                .putLong(LAST_EVENT_ID_KEY, nextId)
+                .commit()) {
                 "Could not persist notification event store"
             }
         } catch (error: Exception) {
