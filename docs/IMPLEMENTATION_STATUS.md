@@ -25,6 +25,7 @@ This branch is a development foundation for the next major RKRemote iteration.
 - One-time, five-minute pairing challenge generator with single-attempt verification and PBKDF2-HMAC-SHA256 derivation.
 - TLS-only WebSocket transport requiring a caller-supplied SHA-256 certificate pin.
 - Central Android runtime-permission and notification-listener checks.
+- Owner-approved, read-only address-book report using Android `READ_CONTACTS`, isolated from SMS and call-log capabilities. The target owner can grant contacts for one session or remember consent per authenticated peer; controller results are bounded to 48 KiB and displayed in a searchable contacts tab inside the call-history page.
 - Visible foreground-session notification with a local stop action.
 - Pairing-code UI prototype that explicitly reports that no peer has connected.
 - AES-256-GCM payload envelope with random nonces, authenticated associated data, strict size limits, and tamper detection (requires a separately authenticated session key).
