@@ -54,6 +54,10 @@ class SecureRemoteCommandRouter(
     fun hasActiveSession(): Boolean = gate.isSessionActive()
 
     @Synchronized
+    fun hasCapability(peerId: String, capability: RemoteCapability): Boolean =
+        gate.hasCapability(peerId, capability)
+
+    @Synchronized
     fun grantCapabilities(capabilities: Set<RemoteCapability>) {
         require(capabilities.isNotEmpty())
         gate.grantCapabilities(capabilities)
