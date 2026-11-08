@@ -28,6 +28,8 @@ class CloudflareRoomControlMessageTest {
         val invalid = listOf(
             "{",
             """{"v":2,"type":"peer-left","payload":{}}""",
+            """{"v":"1","type":"peer-left","payload":{}}""",
+            """{"v":1,"type":7,"payload":{}}""",
             """{"v":1,"type":"unknown-event","payload":{}}""",
             """{"v":1,"type":"peer-left","payload":[]}"""
         )
