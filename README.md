@@ -100,3 +100,10 @@ On the controller phone, enter the target IP and temporary token, then select **
 On the controller, enter the target IP and current temporary token, then select **Auto reconnect**. The app checks the read-only health endpoint every 5 seconds while connected and uses bounded 1/2/4/8/15-second backoff after failures. **Check now** performs a single probe. The screen preview also retries after temporary network loss. The health response includes agent uptime and client queue counts. The target's persistent session notification reports a fatal LAN listener error. Retry is limited to safe health and screen-read operations; uploads, downloads and remote input are not replayed automatically.
 
 If Android kills the target agent process, remote access stays off. Reopen RKRemote on the target, start a new visible session and share the newly generated token. This intentional behavior prevents silent remote-session restoration. No automatic battery-optimization exemption is requested; device-specific power management can still affect long sessions. The LAN protocol remains plaintext and must only be used on trusted private Wi-Fi.
+
+
+## Secure Internet P2P transport (prototype)
+
+The app now includes a manual owner-approved Noise XX + WebRTC DataChannel connection panel. Deploy the Cloudflare Worker first, then follow [the direct transport guide](docs/WEBRTC_DIRECT_TRANSPORT.md). The Cloudflare Worker is a signaling rendezvous only; it does not relay media or application data. STUN is configured by default; a separately provisioned TURN server is required for networks where direct ICE cannot connect.
+
+This prototype does not yet migrate the existing screen, input, files, notifications, camera, microphone or push-to-talk paths. It is not production-verified. See [implementation status](docs/IMPLEMENTATION_STATUS.md) and [SecureLink protocol notes](docs/RK_SECURELINK_V1.md).
