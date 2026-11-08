@@ -93,8 +93,24 @@ class SessionForegroundService : Service() {
         val active = internetPeer
         internetPeer = null
         runCatching { active?.let(LocationSessionBridge::detach) }
-        runCatching { active?.revokeOwnerApprovedCommands() }
-        runCatching { active?.close() }
+        runCatching { active?.stopFromOwnerAction() }
+        stopLocalMediaServices()
+    }
+
+    /**
+     * The session notification is also an emergency stop for media services.
+     * Closing the relay must not leave a microphone, speaker, screen capture,
+     * or an unsent camera photo running/retained locally.
+     */
+    private fun stopLocalMediaServices() {
+        runCatching { stopService(Intent(this, CameraCaptureService::class.java)) }
+        runCatching { stopService(Intent(this, ScreenCaptureService::class.java)) }
+        runCatching { stopService(Intent(this, MicrophoneCaptureService::class.java)) }
+        runCatching { stopService(Intent(this, PttPlaybackService::class.java)) }
+        runCatching { CameraFrameStore.clear() }
+        runCatching { ScreenVideoStore.clear() }
+        runCatching { MicrophoneChunkStore.clear() }
+        runCatching { PttAudioQueue.clear() }
     }
 
     private fun stopInternetSessionAndUpdate() {
