@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -56,6 +57,7 @@ fun SecureInternetPanel() {
     val turnUrls = remember { mutableStateOf("") }
     val turnUsername = remember { mutableStateOf("") }
     val turnCredential = remember { mutableStateOf("") }
+    val forceTurnRelay = remember { mutableStateOf(false) }
     val status = remember { mutableStateOf("Not connected") }
     val dataChannelConnected = remember { mutableStateOf(false) }
     val peerId = remember { mutableStateOf<String?>(null) }
@@ -316,6 +318,13 @@ fun SecureInternetPanel() {
             OutlinedTextField(value = turnUsername.value, onValueChange = { turnUsername.value = it }, modifier = Modifier.fillMaxWidth(), label = { Text("TURN username") }, singleLine = true)
             OutlinedTextField(value = turnCredential.value, onValueChange = { turnCredential.value = it }, modifier = Modifier.fillMaxWidth(), label = { Text("TURN credential") }, singleLine = true)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Checkbox(checked = forceTurnRelay.value, onCheckedChange = { forceTurnRelay.value = it }, enabled = session.value == null)
+                Column {
+                    Text("Force TURN relay (diagnostic)", style = MaterialTheme.typography.bodyMedium)
+                    Text("Requires working TURN URLs and temporary credentials; direct ICE paths are disabled.", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(enabled = session.value == null, onClick = { role.value = CloudflareSignalingClient.Role.TARGET }) {
                     Text(if (role.value == CloudflareSignalingClient.Role.TARGET) "✓ Target" else "Target")
                 }
@@ -348,9 +357,12 @@ fun SecureInternetPanel() {
                                 }
                                 listOf(SecureWebRtcPeer.TurnServer(
                                     turnUrls.value.split(',').map { it.trim() }.filter { it.isNotEmpty() },
-                                    turnUsername.value,
+                                    turnUsername.value.trim(),
                                     turnCredential.value
                                 ))
+                            }
+                            require(!forceTurnRelay.value || configuredTurnServers.isNotEmpty()) {
+                                "Force TURN relay requires TURN URLs, username and credential"
                             }
                             var activePeer: SecureInternetPeer? = null
                             val targetRouter = if (role.value == CloudflareSignalingClient.Role.TARGET) {
@@ -681,6 +693,7 @@ fun SecureInternetPanel() {
                                 handshake = handshake,
                                 identityStore = identityStore,
                                 turnServers = configuredTurnServers,
+                                forceTurnRelay = forceTurnRelay.value,
                                 commandRouter = targetRouter,
                                 listener = object : SecureInternetPeer.Listener {
                                     override fun onPeerVerificationRequired(id: String, code: String) {
