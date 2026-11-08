@@ -1,4 +1,14 @@
-# Implementation status
+# Current implementation status
+
+**Current branch state:** owner-approved secure Internet P2P now includes live H.264 screen viewing, remote touch/text, notification snapshot sync, SAF file listing/download/upload, camera snapshot transfer, microphone monitoring, and half-duplex push-to-talk. These paths use the authenticated WebRTC DTLS DataChannel after Noise XX peer verification and explicit per-session target-owner capability grants.
+
+**Important limits:** the Internet session is still owned by the visible UI and is not yet a persistent background service. DHT discovery is not implemented; rendezvous uses a shared room ID and the Cloudflare Worker only forwards opaque Noise signaling. A user-provisioned TURN server may be required for difficult NATs. The legacy LAN port 18765 remains plaintext and must not be exposed publicly. No independent security audit or physical two-device/Samsung validation has been performed.
+
+**Current validation:** earlier CI for commit `bf1285a` passed unit tests and debug APK assembly. The PTT and half-duplex integration has passed unit tests at the latest tested commit; the newest debug APK assembly is still running. Check GitHub Actions for the current branch tip before installing.
+
+The detailed milestone notes below include historical snapshots from earlier commits. Where they conflict with this current summary, this summary describes the newer branch state.
+
+---
 
 This branch is a development foundation for the next major RKRemote iteration.
 
