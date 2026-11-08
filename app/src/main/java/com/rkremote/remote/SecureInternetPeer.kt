@@ -3,30 +3,28 @@ package com.rkremote.remote
 import android.content.Context
 import androidx.annotation.RequiresApi
 import org.json.JSONObject
-import java.util.ArrayDeque
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicLong
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 /**
- * End-to-end internet connection coordinator:
- * Cloudflare rendezvous -> Noise XX + mutual owner approval -> WebRTC ICE/DTLS DataChannel.
+ * End-to-end encrypted Cloudflare relay:
+ * WSS -> Noise XX + mutual owner approval -> compressed, fragmented Noise application frames.
  *
- * Cloudflare carries only Noise ciphertext. SDP and ICE are encrypted Noise application
- * messages. Once WebRTC is connected, application bytes use the WebRTC DataChannel,
- * protected by DTLS. This coordinator does not silently fall back to plaintext/LAN.
+ * Cloudflare forwards opaque Noise ciphertext only. There is no WebRTC, STUN,
+ * TURN, SDP, ICE, or plaintext fallback in this transport.
  */
 @RequiresApi(33)
 class SecureInternetPeer(
-    context: Context,
+    @Suppress("UNUSED_PARAMETER") context: Context,
     baseWssUrl: String,
     roomId: String,
     private val role: CloudflareSignalingClient.Role,
     handshake: SecureLinkHandshake,
     identityStore: P2pIdentityStore,
-    turnServers: List<SecureWebRtcPeer.TurnServer> = emptyList(),
-    private val forceTurnRelay: Boolean = false,
+    @Suppress("UNUSED_PARAMETER") turnServers: List<SecureWebRtcPeer.TurnServer> = emptyList(),
+    @Suppress("UNUSED_PARAMETER") forceTurnRelay: Boolean = false,
     private val commandRouter: SecureRemoteCommandRouter? = null,
     private val listener: Listener
 ) : AutoCloseable {
@@ -44,19 +42,15 @@ class SecureInternetPeer(
         fun onFailure(error: Throwable)
     }
 
-    private val appContext = context.applicationContext
     private val localPeerId = identityStore.getOrCreateIdentity().peerId
-    private val turnConfig = turnServers.toList()
     private val closed = AtomicBoolean(false)
     private val outboundSequence = AtomicLong(0)
     private val sessionId = MessageDigest.getInstance("SHA-256")
         .digest(roomId.toByteArray(Charsets.UTF_8))
         .take(16).joinToString("") { "%02x".format(it) }
     private val messageGuard = SecureMessageGuard(sessionId)
-    private val pendingSignals = ArrayDeque<ByteArray>()
-    private val lock = Any()
     private val outboundLock = Any()
-    private var webRtc: SecureWebRtcPeer? = null
+    private val relayCodec = SecureRelayFrameCodec()
     @Volatile private var authenticatedPeerId: String? = null
     private lateinit var secureSession: SecureLinkCloudflareSession
 
@@ -73,87 +67,10 @@ class SecureInternetPeer(
                         require(peerId != localPeerId) { "A device cannot connect to itself" }
                         authenticatedPeerId = peerId
                         listener.onSecureSignalingReady(peerId)
-                        val rtc = SecureWebRtcPeer(
-                            appContext,
-                            secureSession,
-                            localPeerId,
-                            peerId,
-                            if (role == CloudflareSignalingClient.Role.CONTROLLER)
-                                SecureWebRtcPeer.Role.CONTROLLER else SecureWebRtcPeer.Role.TARGET,
-                            turnConfig,
-                            forceTurnRelay,
-                            object : SecureWebRtcPeer.Listener {
-                                override fun onConnecting() = listener.onWebRtcConnecting()
-                                override fun onConnected() = listener.onWebRtcConnected()
-                                override fun onData(payload: ByteArray) {
-                                    try {
-                                        require(payload.size <= RemoteMessage.MAX_MESSAGE_BYTES) { "Secure application message exceeds protocol limit" }
-                                        val message = RemoteMessage.parse(payload.toString(Charsets.UTF_8))
-                                        messageGuard.accept(message, System.currentTimeMillis())
-                                        listener.onData(payload)
-                                        if (role == CloudflareSignalingClient.Role.TARGET &&
-                                            SecureRemoteCommandRouter.isCommandType(message.type)) {
-                                            val peerId = authenticatedPeerId
-                                                ?: error("Authenticated peer identity is not ready")
-                                            val result = commandRouter?.dispatch(peerId, message)
-                                                ?: SecureRemoteCommandRouter.Result(
-                                                    false,
-                                                    "Target command router is not configured"
-                                                )
-                                            listener.onCommandResult(message, result)
-                                            if (message.type != "file.transfer.chunk" || !result.accepted) sendMessage(
-                                                "command.result",
-                                                JSONObject()
-                                                    .put("requestId", message.payload.optString("requestId"))
-                                                    .put(
-                                                        "transferId",
-                                                        message.payload.optString(
-                                                            "transferId",
-                                                            message.payload.optString("requestId")
-                                                        )
-                                                    )
-                                                    .put("commandType", message.type)
-                                                    .put("accepted", result.accepted)
-                                                    .put("reason", result.reason)
-                                                    .put("responseType", result.responseType ?: JSONObject.NULL)
-                                            )
-                                        }
-                                        listener.onRemoteMessage(message)
-                                    } catch (error: Throwable) {
-                                        listener.onFailure(error)
-                                        close()
-                                    }
-                                }
-                                // There is no automatic ICE restart in this version. Close the
-                                // entire secure session on transport loss so command grants and
-                                // authenticated peer state cannot survive a dead DataChannel.
-                                override fun onDisconnected(reason: String) {
-                                    try {
-                                        listener.onDisconnected(reason)
-                                    } finally {
-                                        close()
-                                    }
-                                }
-                                override fun onFailure(error: Throwable) {
-                                    try {
-                                        listener.onFailure(error)
-                                    } finally {
-                                        close()
-                                    }
-                                }
-                            }
-                        )
-                        synchronized(lock) {
-                            if (closed.get()) {
-                                rtc.close()
-                                return
-                            }
-                            webRtc = rtc
-                            while (pendingSignals.isNotEmpty()) {
-                                rtc.acceptSecureSignal(pendingSignals.removeFirst())
-                            }
-                        }
-                        rtc.start()
+                        listener.onWebRtcConnecting()
+                        // This callback name is retained for UI compatibility; it now means
+                        // the authenticated Cloudflare encrypted relay is ready, not WebRTC.
+                        listener.onWebRtcConnected()
                     } catch (error: Throwable) {
                         listener.onFailure(error)
                         close()
@@ -161,24 +78,53 @@ class SecureInternetPeer(
                 }
 
                 override fun onApplicationFrame(payload: ByteArray) {
-                    synchronized(lock) {
-                        if (closed.get()) return
-                        val rtc = webRtc
-                        if (rtc != null) {
-                            rtc.acceptSecureSignal(payload)
-                        } else {
-                            if (pendingSignals.size >= MAX_PENDING_SIGNALS) {
-                                listener.onFailure(IllegalStateException("Too many early encrypted WebRTC signals"))
-                                close()
-                            } else {
-                                pendingSignals.addLast(payload.copyOf())
+                    try {
+                        val messageBytes = relayCodec.accept(payload) ?: return
+                        require(messageBytes.size <= RemoteMessage.MAX_MESSAGE_BYTES) {
+                            "Secure application message exceeds protocol limit"
+                        }
+                        val message = RemoteMessage.parse(messageBytes.toString(Charsets.UTF_8))
+                        messageGuard.accept(message, System.currentTimeMillis())
+                        listener.onData(messageBytes)
+                        if (role == CloudflareSignalingClient.Role.TARGET &&
+                            SecureRemoteCommandRouter.isCommandType(message.type)) {
+                            val peerId = authenticatedPeerId
+                                ?: error("Authenticated peer identity is not ready")
+                            val result = commandRouter?.dispatch(peerId, message)
+                                ?: SecureRemoteCommandRouter.Result(
+                                    false,
+                                    "Target command router is not configured"
+                                )
+                            listener.onCommandResult(message, result)
+                            if (message.type != "file.transfer.chunk" || !result.accepted) {
+                                sendMessage(
+                                    "command.result",
+                                    JSONObject()
+                                        .put("requestId", message.payload.optString("requestId"))
+                                        .put(
+                                            "transferId",
+                                            message.payload.optString(
+                                                "transferId",
+                                                message.payload.optString("requestId")
+                                            )
+                                        )
+                                        .put("commandType", message.type)
+                                        .put("accepted", result.accepted)
+                                        .put("reason", result.reason)
+                                        .put("responseType", result.responseType ?: JSONObject.NULL)
+                                )
                             }
                         }
+                        listener.onRemoteMessage(message)
+                    } catch (error: Throwable) {
+                        listener.onFailure(error)
+                        close()
                     }
                 }
 
-                override fun onRoomEvent(type: String, payload: JSONObject) =
+                override fun onRoomEvent(type: String, payload: JSONObject) {
                     listener.onRoomEvent(type, payload)
+                }
 
                 override fun onDisconnected(reason: String) {
                     try {
@@ -204,15 +150,8 @@ class SecureInternetPeer(
         secureSession.connect()
     }
 
-    /**
-     * Ask the authenticated WebRTC link to refresh ICE candidates after a
-     * network handoff. The controller creates the restart offer; the target
-     * sends the request over the already-approved Noise channel.
-     */
-    fun requestNetworkRecovery(): Boolean {
-        if (closed.get()) return false
-        return webRtc?.requestIceRestart() ?: false
-    }
+    /** WebSocket reconnect is not silently attempted; a fresh authenticated session is required. */
+    fun requestNetworkRecovery(): Boolean = false
 
     /** Call only after the owner compares the SAS and peer ID on both devices. */
     fun approvePeer(shortAuthenticationString: String, expectedPeerId: String) {
@@ -220,10 +159,6 @@ class SecureInternetPeer(
         secureSession.approvePeer(shortAuthenticationString, expectedPeerId)
     }
 
-    /**
-     * Explicitly activate the target-side command allow-list after local owner
-     * approval. Completing the Noise handshake alone grants no commands.
-     */
     fun activateOwnerApprovedCommands(capabilities: Set<RemoteCapability>) {
         check(!closed.get()) { "Secure internet session is closed" }
         check(role == CloudflareSignalingClient.Role.TARGET) {
@@ -235,7 +170,6 @@ class SecureInternetPeer(
         router.beginOwnerApprovedSession(peerId, capabilities)
     }
 
-    /** Add explicit owner-approved capabilities without resetting replay state. */
     fun grantOwnerApprovedCapabilities(capabilities: Set<RemoteCapability>) {
         check(!closed.get()) { "Secure internet session is closed" }
         check(role == CloudflareSignalingClient.Role.TARGET) {
@@ -248,7 +182,6 @@ class SecureInternetPeer(
         else router.beginOwnerApprovedSession(peerId, capabilities)
     }
 
-    /** Revoke selected owner-approved capabilities without closing the encrypted link. */
     fun revokeOwnerApprovedCapabilities(capabilities: Set<RemoteCapability>) {
         check(!closed.get()) { "Secure internet session is closed" }
         check(role == CloudflareSignalingClient.Role.TARGET) {
@@ -257,21 +190,18 @@ class SecureInternetPeer(
         commandRouter?.revokeCapabilities(capabilities)
     }
 
-    /** Stable identity authenticated by the signed Noise XX handshake. */
     fun authenticatedPeerId(): String? = authenticatedPeerId
 
-    /** True only while this authenticated peer still holds the live owner-approved grant. */
     fun hasOwnerApprovedCapability(capability: RemoteCapability): Boolean {
         val peerId = authenticatedPeerId ?: return false
         return commandRouter?.hasCapability(peerId, capability) == true
     }
 
-    /** Revoke every remote command grant without closing the encrypted link. */
     fun revokeOwnerApprovedCommands() {
         commandRouter?.endSession()
     }
 
-    /** Send a bounded, versioned application message over the DTLS DataChannel. */
+    /** Create a bounded application message and send it as encrypted relay fragments. */
     fun sendMessage(type: String, payload: JSONObject = JSONObject()): Boolean =
         synchronized(outboundLock) {
             if (closed.get()) return@synchronized false
@@ -287,7 +217,9 @@ class SecureInternetPeer(
                     payload = payload
                 )
                 val bytes = message.toJson().toString().toByteArray(Charsets.UTF_8)
-                require(bytes.size <= RemoteMessage.MAX_MESSAGE_BYTES) { "Application message exceeds protocol limit" }
+                require(bytes.size <= RemoteMessage.MAX_MESSAGE_BYTES) {
+                    "Application message exceeds protocol limit"
+                }
                 RemoteMessage.parse(bytes.toString(Charsets.UTF_8))
                 send(bytes)
             }.getOrElse {
@@ -296,33 +228,29 @@ class SecureInternetPeer(
             }
         }
 
-    /** Application data is sent only over the DTLS-protected WebRTC DataChannel. */
-    fun send(payload: ByteArray): Boolean {
-        if (closed.get()) return false
-        return webRtc?.send(payload) ?: false
+    /** All app payloads are compressed when useful, fragmented, and Noise-encrypted before WSS. */
+    fun send(payload: ByteArray): Boolean = synchronized(outboundLock) {
+        if (closed.get() || payload.isEmpty()) return@synchronized false
+        runCatching {
+            relayCodec.encode(payload).all { fragment ->
+                secureSession.sendApplication(fragment).also { accepted ->
+                    check(accepted) { "Cloudflare encrypted relay rejected an application frame" }
+                }
+            }
+        }.getOrElse {
+            listener.onFailure(it)
+            false
+        }
     }
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
-        val rtc = synchronized(lock) {
-            pendingSignals.clear()
-            webRtc.also { webRtc = null }
-        }
-        // A native WebRTC disposal problem must never preserve command grants,
-        // authenticated identity state, or the Noise signaling socket.
         try {
-            rtc?.close()
+            relayCodec.clear()
+            commandRouter?.endSession()
         } finally {
-            try {
-                commandRouter?.endSession()
-            } finally {
-                authenticatedPeerId = null
-                secureSession.close()
-            }
+            authenticatedPeerId = null
+            secureSession.close()
         }
-    }
-
-    companion object {
-        private const val MAX_PENDING_SIGNALS = 32
     }
 }
