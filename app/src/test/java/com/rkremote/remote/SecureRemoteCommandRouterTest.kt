@@ -40,6 +40,22 @@ class SecureRemoteCommandRouterTest {
     }
 
     @Test
+    fun independentMicrophoneCommandsRequireTheirOwnOwnerGrant() {
+        val router = SecureRemoteCommandRouter()
+        var started = false
+        router.register("microphone.stream.start", RemoteCapability.MICROPHONE) {
+            started = true
+            null
+        }
+        router.beginOwnerApprovedSession("paired-peer", setOf(RemoteCapability.PUSH_TO_TALK))
+        assertFalse(router.dispatch("paired-peer", message("microphone.stream.start", 0, "mic-denied")).accepted)
+        assertFalse(started)
+        router.grantCapabilities(setOf(RemoteCapability.MICROPHONE))
+        assertTrue(router.dispatch("paired-peer", message("microphone.stream.start", 1, "mic-allowed")).accepted)
+        assertTrue(started)
+    }
+
+    @Test
     fun firstCapabilityGrantCanInitializeOwnerApprovedSession() {
         val router = SecureRemoteCommandRouter()
         assertFalse(router.hasActiveSession())
