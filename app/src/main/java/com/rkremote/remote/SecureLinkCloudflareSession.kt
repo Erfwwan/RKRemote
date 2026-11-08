@@ -14,7 +14,7 @@ import java.util.ArrayDeque
  * All callbacks are invoked on the OkHttp callback thread; UI callers must dispatch to main.
  */
 @RequiresApi(33)
-class SecureLinkCloudflareSession private constructor(
+class SecureLinkCloudflareSession internal constructor(
     private val handshake: SecureLinkHandshake,
     private val initiator: Boolean,
     private val channel: FrameChannel,
