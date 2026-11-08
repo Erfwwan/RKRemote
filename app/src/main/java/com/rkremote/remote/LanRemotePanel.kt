@@ -61,8 +61,6 @@ import org.json.JSONArray
 import java.security.SecureRandom
 import java.util.Base64
 
-private const val MAX_UI_TRANSFER_BYTES = 8 * 1024 * 1024
-
 private data class RemoteFileItem(val id: String, val name: String, val size: Long, val directory: Boolean, val mimeType: String)
 
 @Composable
@@ -89,8 +87,8 @@ fun LanRemotePanel() {
     var remoteFileItems by remember { mutableStateOf(emptyList<RemoteFileItem>()) }
     var notificationItems by remember { mutableStateOf(emptyList<JSONObject>()) }
     var notificationResult by remember { mutableStateOf("No notification history requested yet.") }
-    var pendingDownloadId by remember { mutableStateOf("") }
-    var pendingDownloadName by remember { mutableStateOf("download.bin") }
+    var currentFolderId by remember { mutableStateOf("") }
+    var folderHistory by remember { mutableStateOf(emptyList<String>()) }
     DisposableEffect(Unit) { onDispose { videoPlayer?.stop(); reconnectJob?.cancel() } }
     DisposableEffect(previewRunning, videoSurfaceReady, targetIp, targetToken, videoSurfaceView) {
         val view = videoSurfaceView
@@ -139,20 +137,9 @@ fun LanRemotePanel() {
                             ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
                             ?.takeIf { it.isNotBlank() } ?: "upload.bin"
                         val mime = resolver.getType(uri) ?: "application/octet-stream"
-                        val bytes = resolver.openInputStream(uri)?.use { input ->
-                            val result = java.io.ByteArrayOutputStream()
-                            val buffer = ByteArray(8192)
-                            var total = 0
-                            while (true) {
-                                val count = input.read(buffer)
-                                if (count < 0) break
-                                total += count
-                                require(total <= MAX_UI_TRANSFER_BYTES) { "File exceeds 8 MiB transfer limit" }
-                                result.write(buffer, 0, count)
-                            }
-                            result.toByteArray()
-                        } ?: error("Unable to read selected file")
-                        LanControllerClient.uploadFile(targetIp.trim(), targetToken.trim(), fileName, mime, bytes)
+                        LanControllerClient.uploadFile(
+                            context, targetIp.trim(), targetToken.trim(), uri, fileName, mime, currentFolderId
+                        )
                     }
                 }.fold(
                     onSuccess = { "Upload complete: " + it },
@@ -162,30 +149,6 @@ fun LanRemotePanel() {
             }
         }
     }
-    val downloadPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/octet-stream")
-    ) { destination: Uri? ->
-        val documentId = pendingDownloadId
-        if (destination != null && documentId.isNotBlank()) {
-            busy = true
-            scope.launch {
-                output = runCatching {
-                    withContext(Dispatchers.IO) {
-                        val bytes = LanControllerClient.downloadFile(targetIp.trim(), targetToken.trim(), documentId)
-                        require(bytes.size <= MAX_UI_TRANSFER_BYTES) { "Downloaded file exceeds 8 MiB limit" }
-                        context.contentResolver.openOutputStream(destination, "w")?.use { it.write(bytes) }
-                            ?: error("Unable to write destination file")
-                        "Downloaded " + pendingDownloadName + " (" + bytes.size + " bytes)."
-                    }
-                }.fold(
-                    onSuccess = { it },
-                    onFailure = { "Download failed: " + it.message }
-                )
-                busy = false
-            }
-        }
-    }
-
     var localIp by remember { mutableStateOf(LanControllerClient.localIpv4() ?: "Wi-Fi address unavailable") }
     val notificationsAllowed = Build.VERSION.SDK_INT < 33 ||
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
@@ -331,12 +294,14 @@ fun LanRemotePanel() {
                     scope.launch {
                         val result = runCatching {
                             withContext(Dispatchers.IO) {
-                                LanControllerClient.request(targetIp.trim(), targetToken.trim(), "/files")
+                                JSONObject(LanControllerClient.request(targetIp.trim(), targetToken.trim(), "/files"))
                             }
                         }
                         result.onSuccess { response ->
-                            output = response
-                            val items = JSONObject(response).optJSONArray("items") ?: JSONArray()
+                            output = response.toString(2)
+                            currentFolderId = response.optString("parentId", "")
+                            folderHistory = emptyList()
+                            val items = response.optJSONArray("items") ?: JSONArray()
                             remoteFileItems = (0 until items.length()).mapNotNull { index ->
                                 val item = items.optJSONObject(index) ?: return@mapNotNull null
                                 RemoteFileItem(
@@ -353,11 +318,45 @@ fun LanRemotePanel() {
                     }
                 }) { Text("List selected folder") }
             }
-            Text("FILE TRANSFER · SELECTED TARGET FOLDER", fontWeight = FontWeight.SemiBold)
-            Text("Transfers use only the folder explicitly selected on the target phone. Maximum file size is 8 MiB. Existing files are never overwritten.", style = MaterialTheme.typography.bodySmall)
-            OutlinedButton(enabled = !busy, onClick = { uploadPicker.launch(arrayOf("*/*")) }) {
-                Text("Choose file to upload to target")
+            Text("FILE TRANSFER · TARGET STORAGE", fontWeight = FontWeight.SemiBold)
+            Text(
+                "Browse all files and subfolders available under the folder selected by the owner on the target phone. Transfers are streamed; no app-imposed file-size cap. Existing files are never overwritten.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(enabled = !busy, onClick = { uploadPicker.launch(arrayOf("*/*")) }) {
+                    Text("Upload file to target")
+                }
+                OutlinedButton(
+                    enabled = !busy && folderHistory.isNotEmpty(),
+                    onClick = {
+                        val parent = folderHistory.last()
+                        busy = true
+                        scope.launch {
+                            val result = runCatching {
+                                withContext(Dispatchers.IO) {
+                                    val encoded = java.net.URLEncoder.encode(parent, "UTF-8")
+                                    JSONObject(LanControllerClient.request(targetIp.trim(), targetToken.trim(), "/files?parent=$encoded"))
+                                }
+                            }
+                            result.onSuccess { response ->
+                                currentFolderId = response.optString("parentId", "")
+                                folderHistory = folderHistory.dropLast(1)
+                                val items = response.optJSONArray("items") ?: JSONArray()
+                                remoteFileItems = (0 until items.length()).mapNotNull { index ->
+                                    val item = items.optJSONObject(index) ?: return@mapNotNull null
+                                    RemoteFileItem(item.optString("id"), item.optString("name", "unnamed"),
+                                        item.optLong("size", -1L), item.optBoolean("directory"),
+                                        item.optString("mimeType", "application/octet-stream"))
+                                }
+                            }.onFailure { output = "Folder navigation failed: " + it.message }
+                            busy = false
+                        }
+                    }
+                ) { Text("Back") }
             }
+            Text("Current folder: " + if (folderHistory.isEmpty()) "selected root" else "nested folder",
+                style = MaterialTheme.typography.bodySmall)
             if (remoteFileItems.isNotEmpty()) {
                 remoteFileItems.forEach { item ->
                     Row(
@@ -367,18 +366,52 @@ fun LanRemotePanel() {
                         Column(Modifier.weight(1f)) {
                             Text(if (item.directory) "Folder: " + item.name else item.name, fontWeight = FontWeight.Medium)
                             Text(
-                                if (item.directory) "Subfolder navigation is not available yet"
-                                else if (item.size >= 0) item.size.toString() + " bytes" else "File size unknown",
+                                if (item.size >= 0) item.size.toString() + " bytes" else if (item.directory) "Folder" else "Size not reported",
                                 style = MaterialTheme.typography.bodySmall
                             )
                         }
-                        if (!item.directory) {
+                        if (item.directory) {
+                            OutlinedButton(enabled = !busy && item.id.isNotBlank(), onClick = {
+                                val previous = currentFolderId
+                                busy = true
+                                scope.launch {
+                                    val result = runCatching {
+                                        withContext(Dispatchers.IO) {
+                                            val encoded = java.net.URLEncoder.encode(item.id, "UTF-8")
+                                            JSONObject(LanControllerClient.request(targetIp.trim(), targetToken.trim(), "/files?parent=$encoded"))
+                                        }
+                                    }
+                                    result.onSuccess { response ->
+                                        folderHistory = folderHistory + previous
+                                        currentFolderId = response.optString("parentId", item.id)
+                                        val items = response.optJSONArray("items") ?: JSONArray()
+                                        remoteFileItems = (0 until items.length()).mapNotNull { index ->
+                                            val child = items.optJSONObject(index) ?: return@mapNotNull null
+                                            RemoteFileItem(child.optString("id"), child.optString("name", "unnamed"),
+                                                child.optLong("size", -1L), child.optBoolean("directory"),
+                                                child.optString("mimeType", "application/octet-stream"))
+                                        }
+                                    }.onFailure { output = "Folder navigation failed: " + it.message }
+                                    busy = false
+                                }
+                            }) { Text("Open") }
+                        } else {
                             OutlinedButton(
-                                enabled = !busy && item.id.isNotBlank() && item.size in 0L..MAX_UI_TRANSFER_BYTES.toLong(),
+                                enabled = !busy && item.id.isNotBlank(),
                                 onClick = {
-                                    pendingDownloadId = item.id
-                                    pendingDownloadName = item.name
-                                    downloadPicker.launch(item.name)
+                                    busy = true
+                                    scope.launch {
+                                        output = runCatching {
+                                            withContext(Dispatchers.IO) {
+                                                val saved = LanControllerClient.downloadFileToReceivedFolder(
+                                                    context, targetIp.trim(), targetToken.trim(), item.id,
+                                                    item.name, item.mimeType
+                                                )
+                                                "Downloaded to Download/RKRemote/Received/: $saved"
+                                            }
+                                        }.fold({ it }, { "Download failed: " + it.message })
+                                        busy = false
+                                    }
                                 }
                             ) { Text("Download") }
                         }
@@ -645,7 +678,7 @@ fun LanRemotePanel() {
             Text("Result", fontWeight = FontWeight.SemiBold)
             Text(output, style = MaterialTheme.typography.bodySmall)
             Text(
-                "Prototype boundary: local trusted Wi-Fi only; owner-selected folder file transfer (8 MiB limit). No internet relay, camera or microphone. Screen sharing uses owner-approved continuous H.264 video capped at 480 px. The current LAN stream uses the existing temporary-token HTTP transport and must only be used on a trusted network until Section 1 encryption is implemented. Remote taps require the target owner to enable the RKRemote Accessibility service manually.",
+                "Prototype boundary: local trusted Wi-Fi only; file access is limited to the subtree the target owner selected through Android Storage Access Framework. File transfers are streamed without an app-imposed size cap. The temporary-token HTTP transport is plaintext and must only be used on trusted private Wi-Fi until Section 1 encryption is implemented. Remote taps require the target owner to enable RKRemote Accessibility manually.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
