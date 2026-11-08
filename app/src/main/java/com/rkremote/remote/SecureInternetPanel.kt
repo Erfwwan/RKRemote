@@ -608,11 +608,15 @@ fun SecureInternetPanel() {
                                     }
                                     override fun onSecureSignalingReady(id: String) {
                                         mainHandler.post {
-                                            if (session.value !== activePeer) return@post status.value = "Owners approved · negotiating WebRTC" }
+                                            if (session.value !== activePeer) return@post
+                                            status.value = "Owners approved · negotiating WebRTC"
+                                            }
                                     }
                                     override fun onWebRtcConnecting() {
                                         mainHandler.post {
-                                            if (session.value !== activePeer) return@post status.value = "Establishing direct P2P connection" }
+                                            if (session.value !== activePeer) return@post
+                                            status.value = "Establishing direct P2P connection"
+                                            }
                                     }
                                     override fun onWebRtcConnected() {
                                         mainHandler.post {
@@ -628,18 +632,24 @@ fun SecureInternetPanel() {
                                                 imageAssembler.begin(message.payload)
                                             }.onSuccess {
                                                 mainHandler.post {
-                                            if (session.value !== activePeer) return@post cameraStatus.value = "Receiving secure camera snapshot" }
+                                            if (session.value !== activePeer) return@post
+                                            cameraStatus.value = "Receiving secure camera snapshot"
+                                            }
                                             }.onFailure {
                                                 imageAssembler.abort()
                                                 mainHandler.post {
-                                            if (session.value !== activePeer) return@post cameraStatus.value = it.message ?: "Invalid camera frame header" }
+                                            if (session.value !== activePeer) return@post
+                                            cameraStatus.value = it.message ?: "Invalid camera frame header"
+                                            }
                                             }
                                             "camera.frame.chunk" -> runCatching {
                                                 imageAssembler.append(message.payload)
                                             }.onFailure {
                                                 imageAssembler.abort()
                                                 mainHandler.post {
-                                            if (session.value !== activePeer) return@post cameraStatus.value = it.message ?: "Invalid camera frame chunk" }
+                                            if (session.value !== activePeer) return@post
+                                            cameraStatus.value = it.message ?: "Invalid camera frame chunk"
+                                            }
                                             }
                                             "camera.frame.complete" -> runCatching {
                                                 imageAssembler.finish(message.payload)
@@ -654,7 +664,9 @@ fun SecureInternetPanel() {
                                             }.onFailure {
                                                 imageAssembler.abort()
                                                 mainHandler.post {
-                                            if (session.value !== activePeer) return@post cameraStatus.value = it.message ?: "Camera snapshot verification failed" }
+                                            if (session.value !== activePeer) return@post
+                                            cameraStatus.value = it.message ?: "Camera snapshot verification failed"
+                                            }
                                             }
                                             "ptt.audio.chunk" -> {
                                                 if (role.value == CloudflareSignalingClient.Role.TARGET && pttRelayActive.get()) {
@@ -668,7 +680,9 @@ fun SecureInternetPanel() {
                                                         pttRelayActive.set(false)
                                                         PttAudioQueue.clear()
                                                         mainHandler.post {
-                                            if (session.value !== activePeer) return@post pttStatus.value = failure.message ?: "PTT audio rejected" }
+                                            if (session.value !== activePeer) return@post
+                                            pttStatus.value = failure.message ?: "PTT audio rejected"
+                                            }
                                                     }
                                                 }
                                             }
@@ -681,10 +695,14 @@ fun SecureInternetPanel() {
                                                         check(audioPlayback.offer(bytes)) { "Secure audio playback queue is unavailable" }
                                                     }.onFailure { failure ->
                                                         mainHandler.post {
-                                            if (session.value !== activePeer) return@post audioStatus.value = failure.message ?: "Audio chunk rejected" }
+                                            if (session.value !== activePeer) return@post
+                                            audioStatus.value = failure.message ?: "Audio chunk rejected"
+                                            }
                                                     }.onSuccess {
                                                         mainHandler.post {
-                                            if (session.value !== activePeer) return@post audioStatus.value = "Receiving secure microphone audio" }
+                                            if (session.value !== activePeer) return@post
+                                            audioStatus.value = "Receiving secure microphone audio"
+                                            }
                                                     }
                                                 }
                                             }
@@ -749,14 +767,18 @@ fun SecureInternetPanel() {
                                                     transferActive.set(false)
                                                 }
                                                 mainHandler.post {
-                                            if (session.value !== activePeer) return@post fileDownloadStatus.value = it.message ?: "Could not start download" }
+                                            if (session.value !== activePeer) return@post
+                                            fileDownloadStatus.value = it.message ?: "Could not start download"
+                                            }
                                             }
                                             "file.download.chunk" -> runCatching {
                                                 downloadReceiver.chunk(message.payload)
                                             }.onFailure {
                                                 downloadReceiver.abort()
                                                 mainHandler.post {
-                                            if (session.value !== activePeer) return@post fileDownloadStatus.value = it.message ?: "Download chunk rejected" }
+                                            if (session.value !== activePeer) return@post
+                                            fileDownloadStatus.value = it.message ?: "Download chunk rejected"
+                                            }
                                             }
                                             "file.download.complete" -> runCatching {
                                                 downloadReceiver.complete(message.payload)
@@ -767,7 +789,9 @@ fun SecureInternetPanel() {
                                                     transferActive.set(false)
                                                 }
                                                 mainHandler.post {
-                                            if (session.value !== activePeer) return@post fileDownloadStatus.value = "Saved: $saved" }
+                                            if (session.value !== activePeer) return@post
+                                            fileDownloadStatus.value = "Saved: $saved"
+                                            }
                                             }.onFailure {
                                                 downloadReceiver.abort()
                                                 val transferId = message.payload.optString("transferId")
@@ -776,7 +800,9 @@ fun SecureInternetPanel() {
                                                     transferActive.set(false)
                                                 }
                                                 mainHandler.post {
-                                            if (session.value !== activePeer) return@post fileDownloadStatus.value = it.message ?: "Download verification failed" }
+                                            if (session.value !== activePeer) return@post
+                                            fileDownloadStatus.value = it.message ?: "Download verification failed"
+                                            }
                                             }
                                             "file.download.error" -> {
                                                 downloadReceiver.fail(message.payload)
@@ -830,11 +856,15 @@ fun SecureInternetPanel() {
                                         result: SecureRemoteCommandRouter.Result
                                     ) {
                                         mainHandler.post {
-                                            if (session.value !== activePeer) return@post status.value = "Command ${message.type}: ${result.reason}" }
+                                            if (session.value !== activePeer) return@post
+                                            status.value = "Command ${message.type}: ${result.reason}"
+                                            }
                                     }
                                     override fun onRoomEvent(type: String, payload: JSONObject) {
                                         mainHandler.post {
-                                            if (session.value !== activePeer) return@post status.value = "Signaling room: $type" }
+                                            if (session.value !== activePeer) return@post
+                                            status.value = "Signaling room: $type"
+                                            }
                                     }
                                     override fun onDisconnected(reason: String) {
                                         transferActive.set(false)
