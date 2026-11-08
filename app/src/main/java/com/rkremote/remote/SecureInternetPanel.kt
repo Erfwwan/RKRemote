@@ -424,6 +424,9 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 val hasLocation = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
                     ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
                 check(hasLocation) { "Enable Android location permission locally first" }
+                if (Build.VERSION.SDK_INT >= 29) check(
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
+                ) { "Enable Android background location permission for on-demand requests while RKRemote is not visible" }
             }
             else -> error("This permission cannot be remembered")
         }
@@ -911,6 +914,10 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                 "sms.sync.result"
                                             }
                                             register("location.sync.request", RemoteCapability.LOCATION) { message ->
+                                                check(Build.VERSION.SDK_INT < 29 ||
+                                                    ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                                                    "Android background location permission is required for an on-demand request while RKRemote is not visible"
+                                                }
                                                 val requestId = message.payload.getString("requestId")
                                                 SecureLocationSync.requestCurrentResponse(context, requestId) { response ->
                                                     check(activePeer?.sendMessage("location.sync.result", response) == true) {
@@ -1045,7 +1052,9 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                                 }
                                                                 val hasLocation = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
                                                                     ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-                                                                if (RemoteCapability.LOCATION in saved && hasLocation) {
+                                                                val hasBackgroundLocation = Build.VERSION.SDK_INT < 29 ||
+                                                                    ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
+                                                                if (RemoteCapability.LOCATION in saved && hasLocation && hasBackgroundLocation) {
                                                                     add(RemoteCapability.LOCATION)
                                                                 }
                                                                 if (RemoteCapability.MICROPHONE in saved && ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
@@ -1929,8 +1938,11 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 val sessionLocationGranted =
                     ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
                         ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                val sessionBackgroundLocationGranted = Build.VERSION.SDK_INT < 29 ||
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
                 OutlinedButton(
-                    enabled = session.value != null && secureRelayConnected.value && sessionLocationGranted,
+                    enabled = session.value != null && secureRelayConnected.value &&
+                        sessionLocationGranted && sessionBackgroundLocationGranted,
                     onClick = {
                         runCatching {
                             grantRememberedReportCapability(RemoteCapability.LOCATION)
@@ -1941,8 +1953,8 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                         }
                     }
                 ) { Text("اجازه گزارش موقعیت برای این کنترل‌کننده") }
-                if (!sessionLocationGranted) {
-                    Text("برای درخواست موقعیت فعلی، مجوز موقعیت را در بخش مجوزهای اندروید فعال کن. دسترسی پس‌زمینه فقط برای ثبت دوره‌ای اختیاری لازم است.",
+                if (!sessionLocationGranted || !sessionBackgroundLocationGranted) {
+                    Text("برای پاسخ به درخواست موقعیت در زمانی که برنامه مقصد باز نیست، مجوز موقعیت و دسترسی پس‌زمینه اندروید لازم است.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
@@ -2696,7 +2708,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                             locationStatus.value = "تاریخچه محلی به‌روزرسانی شد"
                         }) { Text("نمایش تاریخچه ذخیره‌شده") }
                         OutlinedButton(
-                            enabled = session.value != null && secureRelayConnected.value && (fineGranted || coarseGranted),
+                            enabled = session.value != null && secureRelayConnected.value && backgroundGranted && (fineGranted || coarseGranted),
                             onClick = {
                                 runCatching { grantRememberedReportCapability(RemoteCapability.LOCATION) }
                                     .onSuccess { locationStatus.value = "درخواست موقعیت فعلی برای همین دستگاه جفت‌شده مجاز شد؛ ثبت دوره‌ای جداگانه و اختیاری است." }
