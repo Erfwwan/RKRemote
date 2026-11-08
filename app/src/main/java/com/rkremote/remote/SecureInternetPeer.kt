@@ -202,7 +202,8 @@ class SecureInternetPeer(
         }
         require(capabilities.isNotEmpty())
         val router = commandRouter ?: error("No target command router is configured")
-        router.grantCapabilities(capabilities)
+        if (router.hasActiveSession()) router.grantCapabilities(capabilities)
+        else router.beginOwnerApprovedSession(peerId, capabilities)
     }
 
     /** Revoke every remote command grant without closing the encrypted link. */
