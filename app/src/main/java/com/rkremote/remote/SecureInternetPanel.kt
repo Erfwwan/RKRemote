@@ -907,7 +907,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                         mainHandler.post {
                                                     if (activePeerRef.get() !== activePeer) return@post
                                                             cameraBitmap.value = bitmap
-                                                            cameraStatus.value = "Secure live camera frame received"
+                                                            cameraStatus.value = "عکس ثابت با موفقیت دریافت شد"
                                                         }
                                                     }.onFailure {
                                                         imageAssembler.abort()
