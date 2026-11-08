@@ -15,6 +15,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -40,6 +41,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.viewinterop.AndroidView
+import android.view.SurfaceHolder
+import android.view.SurfaceView
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -70,8 +76,10 @@ fun LanRemotePanel() {
     var busy by remember { mutableStateOf(false) }
     var connectionStatus by remember { mutableStateOf("Not connected") }
     var reconnectJob by remember { mutableStateOf<Job?>(null) }
-    var screenBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var previewJob by remember { mutableStateOf<Job?>(null) }
+    var videoSurfaceView by remember { mutableStateOf<SurfaceView?>(null) }
+    var videoSurfaceReady by remember { mutableStateOf(false) }
+    var videoPlayer by remember { mutableStateOf<RemoteVideoPlayer?>(null) }
+    var videoAspectRatio by remember { mutableStateOf(9f / 16f) }
     var previewRunning by remember { mutableStateOf(false) }
     var tapX by remember { mutableStateOf("0.5") }
     var tapY by remember { mutableStateOf("0.5") }
@@ -83,7 +91,30 @@ fun LanRemotePanel() {
     var notificationResult by remember { mutableStateOf("No notification history requested yet.") }
     var pendingDownloadId by remember { mutableStateOf("") }
     var pendingDownloadName by remember { mutableStateOf("download.bin") }
-    DisposableEffect(Unit) { onDispose { previewJob?.cancel(); reconnectJob?.cancel() } }
+    DisposableEffect(Unit) { onDispose { videoPlayer?.stop(); reconnectJob?.cancel() } }
+    DisposableEffect(previewRunning, videoSurfaceReady, targetIp, targetToken, videoSurfaceView) {
+        val view = videoSurfaceView
+        var player: RemoteVideoPlayer? = null
+        if (previewRunning && videoSurfaceReady && view != null &&
+            targetIp.isNotBlank() && targetToken.isNotBlank()) {
+            player = RemoteVideoPlayer(
+                targetIp.trim(), targetToken.trim(), view.holder.surface,
+                onStatus = { message -> context.mainExecutor.execute { output = message } },
+                onVideoSize = { width, height ->
+                    context.mainExecutor.execute { videoAspectRatio = width.toFloat() / height.toFloat() }
+                }
+            ).also { it.start() }
+            videoPlayer = player
+            output = "Connecting to live H.264 video…"
+        } else {
+            videoPlayer?.stop()
+            videoPlayer = null
+        }
+        onDispose {
+            player?.stop()
+            if (videoPlayer === player) videoPlayer = null
+        }
+    }
     val projectionManager = remember { context.getSystemService(MediaProjectionManager::class.java) }
     val screenConsentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val data = result.data
@@ -414,67 +445,40 @@ fun LanRemotePanel() {
             RemoteMediaPanel(targetIp = targetIp, targetToken = targetToken) { message ->
                 output = message
             }
+            Text("CONTROLLER PHONE · LIVE SCREEN VIDEO", fontWeight = FontWeight.SemiBold)
+            Text(
+                "Continuous H.264 video · maximum 480 px on the longest side · hardware codec when available. Video reconnects after a link interruption.",
+                style = MaterialTheme.typography.bodySmall
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(enabled = !busy && !previewRunning, onClick = {
-                    previewRunning = true
-                    val ip = targetIp.trim()
-                    val auth = targetToken.trim()
-                    previewJob = scope.launch {
-                        var failures = 0
-                        try {
-                            while (isActive) {
-                                val bitmap = try {
-                                    withContext(Dispatchers.IO) {
-                                        val bytes = LanControllerClient.requestBytes(ip, auth, "/screen.jpg")
-                                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: error("Invalid screen image")
-                                    }
-                                } catch (cancelled: CancellationException) {
-                                    throw cancelled
-                                } catch (error: Exception) {
-                                    failures++
-                                    output = "Preview connection lost · retry $failures: ${error.message}"
-                                    delay(ReconnectPolicy.delayMillis(failures))
-                                    continue
-                                }
-                                failures = 0
-                                screenBitmap = bitmap
-                                output = "Preview running · JPEG snapshots about once per second."
-                                delay(1000)
-                            }
-                        } finally {
-                            previewRunning = false
-                            previewJob = null
-                        }
-                    }
-                }) { Text("Start live preview") }
-                OutlinedButton(enabled = previewRunning, onClick = {
-                    previewJob?.cancel()
-                    output = "Stopping live preview…"
-                }) { Text("Stop preview") }
+                OutlinedButton(
+                    enabled = !previewRunning && targetIp.isNotBlank() && targetToken.isNotBlank(),
+                    onClick = { previewRunning = true }
+                ) { Text("Start live video") }
+                OutlinedButton(
+                    enabled = previewRunning,
+                    onClick = { previewRunning = false; videoPlayer?.stop(); videoPlayer = null }
+                ) { Text("Stop video") }
             }
-            OutlinedButton(enabled = !busy, onClick = {
-                busy = true
-                scope.launch {
-                    val result = runCatching {
-                        withContext(Dispatchers.IO) {
-                            val bytes = LanControllerClient.requestBytes(targetIp.trim(), targetToken.trim(), "/screen.jpg")
-                            BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: error("Invalid screen image")
-                        }
+            AndroidView(
+                factory = { viewContext ->
+                    SurfaceView(viewContext).also { surfaceView ->
+                        videoSurfaceView = surfaceView
+                        surfaceView.holder.addCallback(object : SurfaceHolder.Callback {
+                            override fun surfaceCreated(holder: SurfaceHolder) { videoSurfaceReady = true }
+                            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+                                videoSurfaceReady = true
+                            }
+                            override fun surfaceDestroyed(holder: SurfaceHolder) { videoSurfaceReady = false }
+                        })
                     }
-                    result.onSuccess { screenBitmap = it; output = "Screen snapshot received." }
-                    result.onFailure { output = "Screen request failed: ${it.message}" }
-                    busy = false
-                }
-            }) { Text("Get one snapshot") }
-            screenBitmap?.let { bitmap ->
-                Image(
-                    bitmap = bitmap.asImageBitmap(),
-                    contentDescription = "Remote phone screen. Tap to control; long press for a long press gesture.",
-                    modifier = Modifier.fillMaxWidth().pointerInput(bitmap, targetIp, targetToken) {
+                },
+                modifier = Modifier.fillMaxWidth().aspectRatio(videoAspectRatio)
+                    .pointerInput(targetIp, targetToken, previewRunning) {
                         detectTapGestures(
-                            onTap = { offset ->
-                                val x = (offset.x / size.width).coerceIn(0f, 1f)
-                                val y = (offset.y / size.height).coerceIn(0f, 1f)
+                            onTap = { point ->
+                                val x = (point.x / size.width).coerceIn(0f, 1f)
+                                val y = (point.y / size.height).coerceIn(0f, 1f)
                                 scope.launch {
                                     output = runCatching {
                                         withContext(Dispatchers.IO) {
@@ -484,12 +488,12 @@ fun LanRemotePanel() {
                                                     .put("endX", x).put("endY", y).put("durationMs", 80)
                                             )
                                         }
-                                    }.getOrElse { "Remote tap failed: ${it.message}" }
+                                    }.fold({ "Remote tap accepted." }, { "Remote tap failed: ${it.message}" })
                                 }
                             },
-                            onLongPress = { offset ->
-                                val x = (offset.x / size.width).coerceIn(0f, 1f)
-                                val y = (offset.y / size.height).coerceIn(0f, 1f)
+                            onLongPress = { point ->
+                                val x = (point.x / size.width).coerceIn(0f, 1f)
+                                val y = (point.y / size.height).coerceIn(0f, 1f)
                                 scope.launch {
                                     output = runCatching {
                                         withContext(Dispatchers.IO) {
@@ -499,15 +503,49 @@ fun LanRemotePanel() {
                                                     .put("endX", x).put("endY", y).put("durationMs", 650)
                                             )
                                         }
-                                    }.getOrElse { "Long press failed: ${it.message}" }
+                                    }.fold({ "Long press accepted." }, { "Long press failed: ${it.message}" })
                                 }
                             }
                         )
-                    },
-                    contentScale = ContentScale.Fit
-                )
-                Text("Tap directly on the image to tap the target phone. Press and hold on the image for a long press.", style = MaterialTheme.typography.bodySmall)
-            }
+                    }
+                    .pointerInput(targetIp, targetToken, previewRunning) {
+                        var dragStart = Offset.Zero
+                        var dragEnd = Offset.Zero
+                        var dragDistance = 0f
+                        detectDragGestures(
+                            onDragStart = { point -> dragStart = point; dragEnd = point; dragDistance = 0f },
+                            onDrag = { change, amount ->
+                                dragEnd = change.position
+                                dragDistance += kotlin.math.abs(amount.x) + kotlin.math.abs(amount.y)
+                                change.consume()
+                            },
+                            onDragEnd = {
+                                if (dragDistance > 8f) {
+                                    val x1 = (dragStart.x / size.width).coerceIn(0f, 1f)
+                                    val y1 = (dragStart.y / size.height).coerceIn(0f, 1f)
+                                    val x2 = (dragEnd.x / size.width).coerceIn(0f, 1f)
+                                    val y2 = (dragEnd.y / size.height).coerceIn(0f, 1f)
+                                    scope.launch {
+                                        output = runCatching {
+                                            withContext(Dispatchers.IO) {
+                                                LanControllerClient.postJson(
+                                                    targetIp.trim(), targetToken.trim(), "/input/gesture",
+                                                    JSONObject().put("startX", x1).put("startY", y1)
+                                                        .put("endX", x2).put("endY", y2).put("durationMs", 350)
+                                                )
+                                            }
+                                        }.fold({ "Remote gesture accepted." }, { "Remote gesture failed: ${it.message}" })
+                                    }
+                                }
+                            }
+                        )
+                    }
+            )
+            Text(
+                if (previewRunning) "Live video is connecting or playing. Tap, hold, or drag directly on the video."
+                else "Video is stopped. Start live video to control the target screen.",
+                style = MaterialTheme.typography.bodySmall
+            )
             Spacer(Modifier.height(4.dp))
             Text("REMOTE TOUCH · TARGET PHONE", fontWeight = FontWeight.SemiBold)
             Text(
@@ -607,7 +645,7 @@ fun LanRemotePanel() {
             Text("Result", fontWeight = FontWeight.SemiBold)
             Text(output, style = MaterialTheme.typography.bodySmall)
             Text(
-                "Prototype boundary: local trusted Wi-Fi only; owner-selected folder file transfer (8 MiB limit). No internet relay, camera or microphone. Screen sharing uses owner-approved JPEG snapshots; live preview polls snapshots about once per second. Remote taps require the target owner to enable the RKRemote Accessibility service manually.",
+                "Prototype boundary: local trusted Wi-Fi only; owner-selected folder file transfer (8 MiB limit). No internet relay, camera or microphone. Screen sharing uses owner-approved continuous H.264 video capped at 480 px. The current LAN stream uses the existing temporary-token HTTP transport and must only be used on a trusted network until Section 1 encryption is implemented. Remote taps require the target owner to enable the RKRemote Accessibility service manually.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
