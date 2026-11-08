@@ -1,7 +1,7 @@
 name: Android build
 
 on:
-  # Final compile verification: role-based screens, request-result states and bidirectional PTT.
+  # Final UI and protocol verification: role split, request-only reports, and explicit two-way PTT buttons.
   push:
     branches:
       - feature/remote-agent-foundation
