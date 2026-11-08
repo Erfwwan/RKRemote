@@ -250,3 +250,11 @@ Validation for this pass: source and JVM tests were committed, but no Gradle bui
 - The controller must start its microphone capture locally with Android permission before holding the push-to-talk surface. While held, short mono 16 kHz PCM chunks are sent over the authenticated DTLS DataChannel; release sends the stop command and clears queued target audio.
 - The target never starts its speaker or microphone from a remote command. If the target speaker is not locally enabled, PTT requests are rejected. Queue depth remains bounded and old chunks are dropped under congestion.
 - This source integration requires CI and physical two-device testing for latency, audio route and feedback. It is half-duplex and not a phone-call/full-duplex path.
+
+
+## Secure camera snapshots
+
+- The target owner must start the front or rear camera locally with Android CAMERA permission and its persistent foreground notification. The owner separately grants `CAMERA` for the secure session.
+- The controller can request a snapshot of the latest in-memory JPEG frame. The target does not remotely activate the camera. The image is transferred in ordered bounded chunks and the controller verifies SHA-256 before decoding it.
+- Frames are limited to 2 MiB. The owner can stop an in-progress transfer, revoke all capabilities, or stop the camera locally. This is snapshot transfer, not continuous camera video.
+- Source integration awaits CI and physical two-device camera testing. Sensor behavior, image quality and device-specific camera availability are not yet validated.
