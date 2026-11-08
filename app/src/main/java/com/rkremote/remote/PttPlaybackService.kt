@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Incoming audio is bounded, short-lived PCM data; no audio is stored.
  */
 object PttAudioQueue {
-    private const val MAX_QUEUED_CHUNKS = 24
+    private const val MAX_QUEUED_CHUNKS = 8
     private val queue = ArrayBlockingQueue<ByteArray>(MAX_QUEUED_CHUNKS)
     private val enabled = AtomicBoolean(false)
 
@@ -33,7 +33,7 @@ object PttAudioQueue {
     }
 
     fun offer(chunk: ByteArray): Boolean {
-        if (!enabled.get() || chunk.isEmpty() || chunk.size > MAX_CHUNK_BYTES) return false
+        if (!enabled.get() || chunk.isEmpty() || chunk.size > MAX_CHUNK_BYTES || chunk.size % 2 != 0) return false
         // Keep latency bounded: discard the oldest chunk when the queue is full.
         if (!queue.offer(chunk.copyOf())) {
             queue.poll()
@@ -46,6 +46,7 @@ object PttAudioQueue {
     fun clear() = queue.clear()
 
     const val MAX_CHUNK_BYTES = 4096
+    const val MAX_QUEUED_CHUNKS_FOR_STATUS = 8
 }
 
 /** Visible owner-enabled playback service with a persistent stop action. */
