@@ -1,10 +1,14 @@
 package com.rkremote.remote
 
 import android.os.Build
+import android.net.Uri
+import android.provider.OpenableColumns
 import android.os.Handler
 import android.os.Looper
 import android.view.SurfaceView
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -33,6 +37,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import org.json.JSONObject
 import java.util.Base64
 import java.util.UUID
+import java.security.MessageDigest
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -61,11 +66,101 @@ fun SecureInternetPanel() {
     val fileParentId = remember { mutableStateOf("") }
     val fileRootId = remember { mutableStateOf("") }
     val fileDownloadStatus = remember { mutableStateOf("No download active") }
+    val fileUploadStatus = remember { mutableStateOf("No upload active") }
     val downloadReceiver = remember(context) { SecureDownloadReceiver(context) }
     val safBridge = remember(context) { SecureSafTransferBridge(context) }
     val transferExecutor = remember { Executors.newSingleThreadExecutor() }
     val transferActive = remember { AtomicBoolean(false) }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
+
+    val uploadPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) {
+            val peer = session.value
+            if (peer == null || !transferActive.compareAndSet(false, true)) {
+                fileUploadStatus.value = "A secure transfer is already active or disconnected"
+            } else {
+                val destinationParent = fileParentId.value.ifBlank { fileRootId.value }
+                transferExecutor.execute {
+                    try {
+                        var displayName = "upload.bin"
+                        var sizeBytes = -1L
+                        context.contentResolver.query(
+                            uri,
+                            arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
+                            null,
+                            null,
+                            null
+                        )?.use { cursor ->
+                            if (cursor.moveToFirst()) {
+                                displayName = cursor.getString(0) ?: displayName
+                                sizeBytes = if (cursor.isNull(1)) -1L else cursor.getLong(1)
+                            }
+                        }
+                        require(sizeBytes in 0L..SecureSafTransferBridge.MAX_FILE_BYTES) {
+                            "File size is unknown or exceeds 50 MiB"
+                        }
+                        val mime = context.contentResolver.getType(uri) ?: "application/octet-stream"
+                        val transferId = UUID.randomUUID().toString()
+                        fun sendWithRetry(type: String, payload: JSONObject): Boolean {
+                            var attempt = 0
+                            while (transferActive.get() && attempt < 300) {
+                                if (peer.sendMessage(type, payload)) return true
+                                attempt++
+                                Thread.sleep(100)
+                            }
+                            return false
+                        }
+                        check(sendWithRetry(
+                            "file.upload.begin",
+                            JSONObject()
+                                .put("requestId", UUID.randomUUID().toString())
+                                .put("transferId", transferId)
+                                .put("name", displayName)
+                                .put("mimeType", mime)
+                                .put("totalBytes", sizeBytes)
+                                .put("parentId", destinationParent)
+                        )) { "Could not start secure upload" }
+                        val digest = MessageDigest.getInstance("SHA-256")
+                        var total = 0L
+                        context.contentResolver.openInputStream(uri)?.use { input ->
+                            val buffer = ByteArray(SecureSafTransferBridge.MAX_CHUNK_BYTES)
+                            while (true) {
+                                val count = input.read(buffer)
+                                if (count < 0) break
+                                total += count
+                                require(total <= SecureSafTransferBridge.MAX_FILE_BYTES) {
+                                    "File grew beyond the 50 MiB transfer limit"
+                                }
+                                digest.update(buffer, 0, count)
+                                val bytes = buffer.copyOf(count)
+                                check(sendWithRetry(
+                                    "file.transfer.chunk",
+                                    JSONObject()
+                                        .put("requestId", UUID.randomUUID().toString())
+                                        .put("transferId", transferId)
+                                        .put("offset", total - count)
+                                        .put("data", Base64.getEncoder().encodeToString(bytes))
+                                )) { "Secure upload stopped or connection was lost" }
+                            }
+                        } ?: error("Could not open the selected file")
+                        check(total == sizeBytes) { "File size changed during upload" }
+                        check(sendWithRetry(
+                            "file.transfer.complete",
+                            JSONObject()
+                                .put("requestId", UUID.randomUUID().toString())
+                                .put("transferId", transferId)
+                                .put("sha256", digest.digest().joinToString("") { "%02x".format(it) })
+                        )) { "Could not finalize secure upload" }
+                        mainHandler.post { fileUploadStatus.value = "Upload sent · waiting for target confirmation" }
+                    } catch (failure: Throwable) {
+                        mainHandler.post { fileUploadStatus.value = failure.message ?: "Upload failed" }
+                    } finally {
+                        transferActive.set(false)
+                    }
+                }
+            }
+        }
+    }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -341,6 +436,17 @@ fun SecureInternetPanel() {
                                                     else "${entries.size} entries"
                                                 }
                                             }
+                                            "command.result" -> {
+                                                if (message.payload.optString("commandType").startsWith("file.")) {
+                                                    val accepted = message.payload.optBoolean("accepted")
+                                                    mainHandler.post {
+                                                        if (!accepted) fileUploadStatus.value =
+                                                            message.payload.optString("reason", "Target rejected file upload")
+                                                        else if (message.payload.optString("commandType") == "file.transfer.complete")
+                                                            fileUploadStatus.value = "Target verified and saved uploaded file"
+                                                    }
+                                                }
+                                            }
                                             "file.download.begin" -> runCatching {
                                                 downloadReceiver.begin(message.payload)
                                             }.onSuccess {
@@ -590,6 +696,11 @@ fun SecureInternetPanel() {
                     }
                 }
                 Text(fileDownloadStatus.value, style = MaterialTheme.typography.bodySmall)
+                OutlinedButton(
+                    enabled = session.value != null && dataChannelConnected.value && !transferActive.get(),
+                    onClick = { uploadPicker.launch(arrayOf("*/*")) }
+                ) { Text("Upload a file to target") }
+                Text(fileUploadStatus.value, style = MaterialTheme.typography.bodySmall)
             }
 
             val screenModifier = Modifier.fillMaxWidth().height(240.dp)
