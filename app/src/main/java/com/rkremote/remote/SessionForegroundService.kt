@@ -17,7 +17,7 @@ import com.rkremote.R
  * Visible foreground indicator for an active, user-approved remote session.
  * The persistent notification provides a local stop action.
  */
-class SessionForegroundService : Service() {
+class SessionForegroundService : Service() {\n    private var lanServer: LanAgentServer? = null
     override fun onCreate() {
         super.onCreate()
         createChannel()
@@ -25,6 +25,8 @@ class SessionForegroundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
+            lanServer?.stop()
+            lanServer = null
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
@@ -40,7 +42,22 @@ class SessionForegroundService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
+        if (intent?.action == ACTION_START_LAN) {
+            val token = intent.getStringExtra(EXTRA_TOKEN)
+            if (token.isNullOrBlank() || token.length < 24) {
+                stopSelf()
+                return START_NOT_STICKY
+            }
+            lanServer?.stop()
+            lanServer = LanAgentServer(applicationContext, token).also { it.start() }
+        }
         return START_NOT_STICKY
+    }
+
+    override fun onDestroy() {
+        lanServer?.stop()
+        lanServer = null
+        super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -83,6 +100,8 @@ class SessionForegroundService : Service() {
 
     companion object {
         const val ACTION_STOP = "com.rkremote.action.STOP_SESSION"
+        const val ACTION_START_LAN = "com.rkremote.action.START_LAN"
+        const val EXTRA_TOKEN = "session_token"
         private const val CHANNEL_ID = "rkremote_active_session"
         private const val NOTIFICATION_ID = 4201
     }
