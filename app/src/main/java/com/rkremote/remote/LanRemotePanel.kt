@@ -287,6 +287,9 @@ fun LanRemotePanel() {
             } else {
                 Text("No file list loaded. Tap List selected folder after connecting.", style = MaterialTheme.typography.bodySmall)
             }
+            RemoteMediaPanel(targetIp = targetIp, targetToken = targetToken) { message ->
+                output = message
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(enabled = !busy && !previewRunning, onClick = {
                     previewRunning = true
