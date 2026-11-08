@@ -248,6 +248,18 @@ class SecureInternetPeer(
         else router.beginOwnerApprovedSession(peerId, capabilities)
     }
 
+    /** Revoke selected owner-approved capabilities without closing the encrypted link. */
+    fun revokeOwnerApprovedCapabilities(capabilities: Set<RemoteCapability>) {
+        check(!closed.get()) { "Secure internet session is closed" }
+        check(role == CloudflareSignalingClient.Role.TARGET) {
+            "Only the target device can revoke remote command capabilities"
+        }
+        commandRouter?.revokeCapabilities(capabilities)
+    }
+
+    /** Stable identity authenticated by the signed Noise XX handshake. */
+    fun authenticatedPeerId(): String? = authenticatedPeerId
+
     /** Revoke every remote command grant without closing the encrypted link. */
     fun revokeOwnerApprovedCommands() {
         commandRouter?.endSession()
