@@ -1780,6 +1780,12 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     "SMS و تاریخچه تماس پس از تأیید مالک برای هویت امن همین دستگاه ذخیره می‌شوند و در اتصال‌های بعدی، پس از تأیید دوباره هویت، خودکار فعال می‌شوند. سایر دسترسی‌ها فقط برای همان نشست هستند.",
                     style = MaterialTheme.typography.bodySmall
                 )
+                Text("دوربین · آماده‌سازی محلی", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                OutlinedButton(
+                    enabled = !cameraCapturePending.value && CameraFrameStore.latestFrame == null,
+                    onClick = { requestLocalCameraCapture(CameraCharacteristics.LENS_FACING_BACK) }
+                ) { Text("ثبت عکس روی همین گوشی") }
+                Text(cameraStatus.value, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
                     runCatching {
                         check(CameraFrameStore.latestFrame != null) {
@@ -1789,6 +1795,23 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     }.onSuccess { status.value = "Camera snapshots allowed for this session" }
                         .onFailure { error.value = it.message ?: "Could not grant camera access" }
                 }) { Text("Allow camera snapshots") }
+                Text("نمایش صفحه · آماده‌سازی محلی", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                OutlinedButton(
+                    enabled = !screenCapturePending.value && !ScreenVideoStore.hasConfig(),
+                    onClick = { requestLocalScreenCapture() }
+                ) { Text("شروع اشتراک صفحه روی همین گوشی") }
+                OutlinedButton(
+                    enabled = ScreenVideoStore.hasConfig() || screenCapturePending.value,
+                    onClick = {
+                        context.startService(
+                            Intent(context, ScreenCaptureService::class.java)
+                                .setAction(ScreenCaptureService.ACTION_STOP)
+                        )
+                        screenCapturePending.value = false
+                        localScreenStatus.value = "اشتراک صفحه متوقف شد."
+                    }
+                ) { Text("توقف اشتراک صفحه") }
+                Text(localScreenStatus.value, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
                     runCatching {
                         check(ScreenVideoStore.hasConfig()) { "Start screen sharing locally on the target first" }
