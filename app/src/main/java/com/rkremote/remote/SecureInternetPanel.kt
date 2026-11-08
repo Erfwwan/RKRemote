@@ -35,6 +35,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.platform.LocalContext
 import org.json.JSONObject
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 import java.io.OutputStream
 import java.security.MessageDigest
 import java.util.Base64
@@ -59,6 +61,15 @@ fun SecureInternetPanel() {
     val streamSenderState = remember { mutableStateOf<SecureScreenStreamSender?>(null) }
     val remoteText = remember { mutableStateOf("") }
     val notificationSummary = remember { mutableStateOf("No notification sync requested") }
+    val fileItems = remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+    val fileStatus = remember { mutableStateOf("No folder loaded") }
+    val fileParentId = remember { mutableStateOf("") }
+    val fileRootId = remember { mutableStateOf("") }
+    val fileDownloadStatus = remember { mutableStateOf("No download active") }
+    val downloadReceiver = remember(context) { SecureDownloadReceiver(context) }
+    val safBridge = remember(context) { SecureSafTransferBridge(context) }
+    val transferExecutor = remember { Executors.newSingleThreadExecutor() }
+    val transferActive = remember { AtomicBoolean(false) }
     val fileEntries = remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     val fileParentId = remember { mutableStateOf("") }
     val selectedFileId = remember { mutableStateOf<String?>(null) }
@@ -73,6 +84,9 @@ fun SecureInternetPanel() {
             session.value = null
             renderer.value?.close()
             renderer.value = null
+            transferActive.set(false)
+            transferExecutor.shutdownNow()
+            downloadReceiver.close()
         }
     }
 
@@ -142,6 +156,68 @@ fun SecureInternetPanel() {
                             var downloadExpectedBytes = -1L
                             val targetRouter = if (role.value == CloudflareSignalingClient.Role.TARGET) {
                                 SecureRemoteCommandRouter().apply {
+                                    register("file.list.request", RemoteCapability.FILES) { message ->
+                                        val requestId = message.payload.getString("requestId")
+                                        val result = safBridge.list(message.payload.optString("parentId").takeIf { it.isNotBlank() })
+                                        check(activePeer?.sendMessage(
+                                            "file.list.result",
+                                            JSONObject().put("requestId", requestId).put("result", result)
+                                        ) == true) { "Could not send encrypted folder listing" }
+                                        "file.list.result"
+                                    }
+                                    register("file.download.request", RemoteCapability.FILES) { message ->
+                                        val requestId = message.payload.getString("requestId")
+                                        val documentId = message.payload.getString("documentId")
+                                        check(transferActive.compareAndSet(false, true)) { "Another file transfer is already active" }
+                                        transferExecutor.execute {
+                                            try {
+                                                safBridge.streamFile(
+                                                    documentId = documentId,
+                                                    onStart = { metadata ->
+                                                        activePeer?.sendMessage(
+                                                            "file.download.begin",
+                                                            JSONObject().put("transferId", requestId)
+                                                                .put("name", metadata.name)
+                                                                .put("mimeType", metadata.mimeType)
+                                                                .put("totalBytes", metadata.sizeBytes)
+                                                        ) == true
+                                                    },
+                                                    onChunk = { offset, bytes ->
+                                                        var sent = false
+                                                        var attempts = 0
+                                                        while (!sent && attempts < 300 && transferActive.get()) {
+                                                            sent = activePeer?.sendMessage(
+                                                                "file.download.chunk",
+                                                                JSONObject().put("transferId", requestId)
+                                                                    .put("offset", offset)
+                                                                    .put("data", java.util.Base64.getEncoder().encodeToString(bytes))
+                                                            ) == true
+                                                            if (!sent) {
+                                                                attempts++
+                                                                Thread.sleep(100)
+                                                            }
+                                                        }
+                                                        sent && transferActive.get()
+                                                    },
+                                                    onComplete = { hash ->
+                                                        if (transferActive.get()) activePeer?.sendMessage(
+                                                            "file.download.complete",
+                                                            JSONObject().put("transferId", requestId).put("sha256", hash)
+                                                        )
+                                                    }
+                                                )
+                                            } catch (failure: Throwable) {
+                                                activePeer?.sendMessage(
+                                                    "file.download.error",
+                                                    JSONObject().put("transferId", requestId)
+                                                        .put("reason", failure.message ?: "File transfer failed")
+                                                )
+                                            } finally {
+                                                transferActive.set(false)
+                                            }
+                                        }
+                                        "file.download.begin"
+                                    }
                                     val safBridge = SecureSafTransferBridge(context)
                                     register("file.list.request", RemoteCapability.FILES) { message ->
                                         val response = safBridge.list(message.payload.optString("parentId").takeIf { it.isNotBlank() })
@@ -306,6 +382,51 @@ fun SecureInternetPanel() {
                                                 val name = message.payload.optString("name").take(255).ifBlank { "download.bin" }
                                                 val mime = message.payload.optString("mimeType").take(160)
                                                     .takeIf { it.matches(Regex("[A-Za-z0-9!#                                    override fun onRemoteMessage(message: RemoteMessage) {
+                                        when (message.type) {
+                                            "file.list.result" -> {
+                                                val result = message.payload.optJSONObject("result")
+                                                val items = result?.optJSONArray("items")
+                                                val parsed = buildList {
+                                                    for (index in 0 until (items?.length() ?: 0)) {
+                                                        items?.optJSONObject(index)?.let { add(it) }
+                                                    }
+                                                }
+                                                mainHandler.post {
+                                                    fileItems.value = parsed
+                                                    fileParentId.value = result?.optString("parentId", "") ?: ""
+                                                    fileRootId.value = result?.optString("rootId", "") ?: ""
+                                                    fileStatus.value = if (result?.optBoolean("truncated") == true)
+                                                        "Showing first ${parsed.size} entries (folder has more)"
+                                                    else "${parsed.size} entries"
+                                                }
+                                            }
+                                            "file.download.begin" -> runCatching {
+                                                downloadReceiver.begin(message.payload)
+                                            }.onSuccess {
+                                                mainHandler.post { fileDownloadStatus.value = "Receiving ${message.payload.optString("name")}" }
+                                            }.onFailure {
+                                                downloadReceiver.abort()
+                                                mainHandler.post { fileDownloadStatus.value = it.message ?: "Could not start download" }
+                                            }
+                                            "file.download.chunk" -> runCatching {
+                                                downloadReceiver.chunk(message.payload)
+                                            }.onFailure {
+                                                downloadReceiver.abort()
+                                                mainHandler.post { fileDownloadStatus.value = it.message ?: "Download chunk rejected" }
+                                            }
+                                            "file.download.complete" -> runCatching {
+                                                downloadReceiver.complete(message.payload)
+                                            }.onSuccess { saved ->
+                                                mainHandler.post { fileDownloadStatus.value = "Saved: $saved" }
+                                            }.onFailure {
+                                                downloadReceiver.abort()
+                                                mainHandler.post { fileDownloadStatus.value = it.message ?: "Download verification failed" }
+                                            }
+                                            "file.download.error" -> {
+                                                downloadReceiver.fail(message.payload)
+                                                mainHandler.post { fileDownloadStatus.value = message.payload.optString("reason", "Remote file transfer failed") }
+                                            }
+                                        }
                                         if (message.type == "notifications.sync.result") {^_.+-]+/[A-Za-z0-9!#                                    override fun onRemoteMessage(message: RemoteMessage) {
                                         if (message.type == "notifications.sync.result") {^_.+-]+")) }
                                                     ?: "application/octet-stream"
@@ -499,6 +620,15 @@ fun SecureInternetPanel() {
                     enabled = session.value != null && dataChannelConnected.value,
                     onClick = {
                         runCatching {
+                            session.value?.grantOwnerApprovedCapabilities(setOf(RemoteCapability.FILES))
+                        }.onSuccess { status.value = "Secure file access approved for this session" }
+                            .onFailure { error.value = it.message ?: "Could not grant file access" }
+                    }
+                ) { Text("Allow secure file browsing and downloads") }
+                OutlinedButton(
+                    enabled = session.value != null && dataChannelConnected.value,
+                    onClick = {
+                        runCatching {
                             check(RemoteAccessibilityService.isActive()) {
                                 "Enable RKRemote in Android Accessibility settings on the target first"
                             }
@@ -635,6 +765,65 @@ fun SecureInternetPanel() {
                     }
                 }
                 Text(fileStatus.value, style = MaterialTheme.typography.bodySmall)
+                OutlinedButton(
+                    enabled = session.value != null && dataChannelConnected.value,
+                    onClick = {
+                        val sent = session.value?.sendMessage(
+                            "file.list.request",
+                            JSONObject().put("requestId", java.util.UUID.randomUUID().toString())
+                        ) == true
+                        fileStatus.value = if (sent) "Folder listing requested" else "Could not request folder listing"
+                    }
+                ) { Text("Browse target folder") }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        enabled = session.value != null && dataChannelConnected.value && fileParentId.value != fileRootId.value,
+                        onClick = {
+                            val sent = session.value?.sendMessage(
+                                "file.list.request",
+                                JSONObject().put("requestId", java.util.UUID.randomUUID().toString())
+                                    .put("parentId", fileRootId.value)
+                            ) == true
+                            if (sent) fileStatus.value = "Returned to selected root folder"
+                        }
+                    ) { Text("Selected root") }
+                }
+                Text(fileStatus.value, style = MaterialTheme.typography.bodySmall)
+                fileItems.value.take(40).forEach { item ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            (if (item.optBoolean("directory")) "📁 " else "📄 ") + item.optString("name"),
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        if (item.optBoolean("directory")) {
+                            OutlinedButton(onClick = {
+                                val sent = session.value?.sendMessage(
+                                    "file.list.request",
+                                    JSONObject().put("requestId", java.util.UUID.randomUUID().toString())
+                                        .put("parentId", item.optString("id"))
+                                ) == true
+                                if (sent) fileStatus.value = "Opening ${item.optString("name")}"
+                            }) { Text("Open") }
+                        } else {
+                            OutlinedButton(
+                                enabled = !transferActive.get(),
+                                onClick = {
+                                    val sent = session.value?.sendMessage(
+                                        "file.download.request",
+                                        JSONObject().put("requestId", java.util.UUID.randomUUID().toString())
+                                            .put("documentId", item.optString("id"))
+                                    ) == true
+                                    fileDownloadStatus.value = if (sent) "Download requested: ${item.optString("name")}" else "Could not request download"
+                                }
+                            ) { Text("Download") }
+                        }
+                    }
+                }
+                Text(fileDownloadStatus.value, style = MaterialTheme.typography.bodySmall)
                 OutlinedButton(
                     enabled = session.value != null && dataChannelConnected.value,
                     onClick = {
