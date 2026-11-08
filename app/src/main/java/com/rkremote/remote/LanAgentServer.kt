@@ -14,6 +14,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.InputStream
 import java.io.OutputStream
+import java.io.DataOutputStream
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.SocketException
@@ -330,13 +331,8 @@ class LanAgentServer(
                 }
                 return
             }
-            if (endpoint == "/screen.jpg") {
-                val frame = ScreenFrameStore.latestJpeg
-                if (frame == null) {
-                    respond(output, 503, JSONObject().put("error", "Screen sharing is not active or no frame is ready"))
-                } else {
-                    respondBytes(output, frame)
-                }
+            if (endpoint == "/screen/video") {
+                streamScreenVideo(client, output)
                 return
             }
             if (endpoint == "/camera.jpg") {
@@ -369,6 +365,44 @@ class LanAgentServer(
                 }
             }
             respond(output, 200, response)
+        }
+    }
+
+    /**
+     * Persistent length-framed H.264 stream. A slow socket receives the newest
+     * access unit on the next iteration; stale intermediate frames are skipped.
+     */
+    private fun streamScreenVideo(socket: Socket, output: OutputStream) {
+        val config = ScreenVideoStore.awaitConfig(5_000)
+        if (config == null) {
+            respond(output, 503, JSONObject().put("error", "Owner-approved screen video is not active"))
+            return
+        }
+        val stream = DataOutputStream(output)
+        stream.write(
+            ("HTTP/1.1 200 OK\\r\\n" +
+                "Content-Type: application/vnd.rkremote.h264-stream\\r\\n" +
+                "Connection: close\\r\\nCache-Control: no-store\\r\\n\\r\\n")
+                .toByteArray(Charsets.US_ASCII)
+        )
+        stream.write("RKV1".toByteArray(Charsets.US_ASCII))
+        stream.writeInt(config.width)
+        stream.writeInt(config.height)
+        stream.writeInt(config.csd0.size)
+        stream.write(config.csd0)
+        stream.writeInt(config.csd1.size)
+        stream.write(config.csd1)
+        stream.flush()
+        var lastSequence = 0L
+        while (running.get() && !socket.isClosed) {
+            val frame = ScreenVideoStore.awaitNext(lastSequence, 2_000) ?: continue
+            if (frame.bytes.size > ScreenVideoStore.MAX_ACCESS_UNIT) break
+            stream.writeLong(frame.ptsUs)
+            stream.writeInt(frame.flags)
+            stream.writeInt(frame.bytes.size)
+            stream.write(frame.bytes)
+            stream.flush()
+            lastSequence = frame.sequence
         }
     }
 
