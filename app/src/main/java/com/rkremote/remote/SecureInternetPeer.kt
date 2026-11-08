@@ -246,7 +246,8 @@ class SecureInternetPeer(
             }
         }
 
-    /** All app payloads are compressed when useful, fragmented, and Noise-encrypted before WSS. */
+    /** Compressible app payloads are compressed when useful, fragmented, and Noise-encrypted before WSS. */
+
     fun send(payload: ByteArray): Boolean = synchronized(outboundLock) {
         if (closed.get() || payload.isEmpty()) return@synchronized false
         runCatching {
