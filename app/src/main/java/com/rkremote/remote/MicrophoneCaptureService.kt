@@ -99,7 +99,7 @@ class MicrophoneCaptureService : Service() {
         require(minimum > 0) { "Microphone audio format is not supported" }
         val bufferSize = maxOf(minimum * 2, 8192)
         val audio = AudioRecord(
-            MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+            MediaRecorder.AudioSource.MIC,
             sampleRate,
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT,
@@ -107,7 +107,7 @@ class MicrophoneCaptureService : Service() {
         )
         require(audio.state == AudioRecord.STATE_INITIALIZED) { "Unable to initialize microphone" }
         recorder = audio
-        // Voice-communication source asks Android for its call-oriented input path.
+        // Keep the normal microphone route; optional effects attach to this recording session.
         // Hardware effects are optional and may be unavailable on some devices.
         if (AcousticEchoCanceler.isAvailable()) {
             echoCanceler = runCatching { AcousticEchoCanceler.create(audio.audioSessionId)?.apply { enabled = true } }.getOrNull()
