@@ -184,7 +184,7 @@ class RemoteScreenshotService : Service() {
         const val EXTRA_RESULT_DATA = "screenshot_projection_result_data"
         private const val RESULT_OK = -1
         private const val CHANNEL = "rkremote_screenshot_standby"
-        private const val NOTIFICATION_ID = 4203
+        private const val NOTIFICATION_ID = 4206
     }
 }
 
