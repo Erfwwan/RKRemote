@@ -313,3 +313,11 @@ This section supersedes older milestone notes above where they describe Internet
 - Added JVM tests for malformed JSON, array/missing payloads, string protocol versions, fractional sequences, and strict Cloudflare room-control parsing.
 - Removed a duplicate command.result branch in the controller's when dispatch after CI surfaced the Kotlin duplicate-branch warning.
 - CI for commit b28aa17e passed unit tests after the Cloudflare parser exception normalization; debug APK assembly was still running at the last check. Strict main-protocol parser and duplicate-branch cleanup are newer commits and must pass the next complete CI run before this branch tip is called build-verified.
+
+
+## WebRTC transport-loss revocation · 2026-11-08
+
+- WebRTC ICE/PeerConnection disconnection and DataChannel closure are now surfaced to the secure session coordinator.
+- In this version, transport loss closes the entire secure Internet session, clears pending signaling, ends the target command-router session, and drops the authenticated peer identity. The target's per-session capability grants therefore do not remain active after a dead DataChannel.
+- Automatic ICE restart/reconnect is deliberately not attempted yet. The user must establish a fresh session, compare SAS/peer identity again, and re-grant capabilities locally. Reconnect behavior remains a later hardening task.
+- This is source-integrated and awaiting the latest GitHub Actions run; no real network-loss test has been performed on devices.
