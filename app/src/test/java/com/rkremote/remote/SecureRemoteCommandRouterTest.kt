@@ -8,6 +8,15 @@ import org.junit.Test
 
 class SecureRemoteCommandRouterTest {
     @Test
+    fun registrationCannotWeakenACommandCapability() {
+        val router = SecureRemoteCommandRouter()
+        val failure = runCatching {
+            router.register("camera.snapshot.request", RemoteCapability.FILES) { null }
+        }.exceptionOrNull()
+        assertTrue(failure is IllegalArgumentException)
+    }
+
+    @Test
     fun dispatchRequiresOwnerGrantAndRegisteredHandler() {
         val router = SecureRemoteCommandRouter()
         var invoked = false
