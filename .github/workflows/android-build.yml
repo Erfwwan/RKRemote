@@ -1,7 +1,7 @@
 name: Android build
 
 on:
-  # Rebuild after Kotlin syntax correction: microphone stream and instant location.
+  # Verify owner revocation, stop acknowledgement and foreground-only instant location.
   push:
     branches:
       - feature/remote-agent-foundation
