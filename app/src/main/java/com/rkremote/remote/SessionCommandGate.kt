@@ -28,6 +28,13 @@ class SessionCommandGate {
     }
 
     @Synchronized
+    fun grantCapabilities(capabilities: Set<RemoteCapability>) {
+        check(sessionActive) { "No owner-approved active session" }
+        val peerId = approvedPeerId ?: error("No approved peer")
+        grants[peerId] = (grants[peerId] ?: emptySet()) + capabilities
+    }
+
+    @Synchronized
     fun endSession() {
         sessionActive = false
         approvedPeerId?.let {
