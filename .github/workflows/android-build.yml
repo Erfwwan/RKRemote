@@ -1,7 +1,7 @@
 name: Android build
 
 on:
-  # One-time build trigger: only a change to this workflow file starts a build.
+  # Approved one-time verification build after final source corrections.
   push:
     branches:
       - feature/remote-agent-foundation
