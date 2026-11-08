@@ -166,8 +166,8 @@ object LanControllerClient {
             .toString(Charsets.UTF_8)).toString(2)
 
     fun postPttChunk(ip: String, token: String, bytes: ByteArray): Boolean {
-        require(bytes.isNotEmpty() && bytes.size <= PttAudioQueue.MAX_CHUNK_BYTES) {
-            "PTT audio chunk must be 1..4096 bytes"
+        require(bytes.isNotEmpty() && bytes.size <= PttAudioQueue.MAX_CHUNK_BYTES && bytes.size % 2 == 0) {
+            "PTT PCM audio chunk must be an even 2..4096 bytes"
         }
         val response = requestRaw(
             "POST", ip, token, "/audio/ptt", bytes, "application/octet-stream"
