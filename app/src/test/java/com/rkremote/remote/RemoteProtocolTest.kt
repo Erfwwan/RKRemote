@@ -39,6 +39,27 @@ class RemoteProtocolTest {
     }
 
     @Test
+    fun replayGuardAcceptsIncreasingMessagesAndRejectsReplay() {
+        val now = 1_700_000_000_000L
+        val guard = SecureMessageGuard("room-session")
+        val first = RemoteMessage("secure.ping", "room-session", "id-1", 0, now, JSONObject())
+        val second = RemoteMessage("secure.pong", "room-session", "id-2", 1, now, JSONObject())
+        guard.accept(first, now)
+        guard.accept(second, now)
+        assertThrows(IllegalArgumentException::class.java) { guard.accept(first, now) }
+    }
+
+    @Test
+    fun replayGuardRejectsWrongSessionAndStaleTimestamp() {
+        val now = 1_700_000_000_000L
+        val guard = SecureMessageGuard("room-session", maxClockSkewMillis = 1000)
+        val wrongRoom = RemoteMessage("secure.ping", "other-room", "id-1", 0, now, JSONObject())
+        val stale = RemoteMessage("secure.ping", "room-session", "id-2", 0, now - 1001, JSONObject())
+        assertThrows(IllegalArgumentException::class.java) { guard.accept(wrongRoom, now) }
+        assertThrows(IllegalArgumentException::class.java) { guard.accept(stale, now) }
+    }
+
+    @Test
     fun rejectsUnknownMessageType() {
         val raw = JSONObject()
             .put("protocolVersion", 1)
