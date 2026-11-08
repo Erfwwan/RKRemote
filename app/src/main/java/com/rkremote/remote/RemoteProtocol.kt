@@ -29,7 +29,7 @@ data class RemoteMessage(
         const val MAX_MESSAGE_BYTES = 64 * 1024
 
         private val allowedTypes = setOf(
-            "hello", "pair.request", "pair.approve", "pair.reject", "secure.ping", "secure.pong", "diagnostics.request", "diagnostics.result",
+            "hello", "pair.request", "pair.approve", "pair.reject", "secure.ping", "secure.pong", "command.result", "diagnostics.request", "diagnostics.result",
             "session.start", "session.stop", "heartbeat", "ack",
             "capability.request", "capability.result", "notification.event",
             "file.list.request", "file.list.result", "file.transfer.request", "file.download.request", "file.upload.begin", "file.transfer.chunk", "file.transfer.complete", "notifications.sync.request", "notifications.sync.result",
