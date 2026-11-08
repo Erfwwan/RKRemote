@@ -164,7 +164,7 @@ private fun LocalSetupScreen() {
                 Column(Modifier.padding(14.dp)) {
                     Text("Build milestone 1 + LAN prototype", fontWeight = FontWeight.SemiBold)
                     Text(
-                        "Local permission setup, encrypted notification history, pairing-code prototype, protocol foundation, and pinned WSS transport. Part 1 adds read-only local Wi-Fi status and selected-folder listing. Screen, camera, microphone and audio controls are not connected yet.",
+                        "Local permissions, LAN control, screen sharing and remote input, file transfer, camera/microphone, push-to-talk, and owner-approved notification history prototypes. Use only on trusted private Wi-Fi; several security and device-validation tasks remain.",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
