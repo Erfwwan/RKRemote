@@ -1,25 +1,22 @@
-# Section 3 — File browsing and transfer
+# Section 3 — File-transfer management and network errors
 
-## Implemented behavior
+## Implemented
 
-- The target owner selects a storage tree using Android's Storage Access Framework (SAF); the app persists the read/write URI grant.
-- The controller can browse nested folders and list every child document returned by the selected document provider. The previous 200-item listing cap is removed.
-- The controller can download files from the target and upload files into the currently browsed target folder.
-- Both directions use 64 KiB streaming buffers. File contents are not accumulated in a single in-memory byte array, and the former 8 MiB application limit is removed.
-- Downloaded files are stored automatically in the controller's public Downloads/RKRemote/Received folder on Android 10+. Existing names are preserved by generating a numbered alternative rather than overwriting. On Android 8/9, the fallback is the app-specific Downloads/RKRemote/Received directory.
-- Uploads refuse to overwrite an existing file in the selected target folder.
-- The controller UI supports opening nested folders and navigating back. File operations are limited to viewing/listing, upload, and download; there is no remote delete, rename, move, or copy operation.
+- File browsing remains restricted to the folder explicitly selected by the target-device owner through Android's Storage Access Framework (SAF). Nested folders, direct-child listing, and upload destination selection are supported.
+- Upload and download stream in bounded chunks; the secure DataChannel send queue applies backpressure rather than allowing unbounded memory growth.
+- Uploads enforce the configured per-file limit, reject unknown sizes, refuse overwrites, validate ordered chunk offsets, and verify the final SHA-256 before reporting success.
+- Downloads validate transfer IDs, file size, ordered offsets, and final SHA-256. Completed files are published in the controller's Downloads/RKRemote/Received location with collision-safe names.
+- The controller reports upload and download percentage progress.
+- A download interrupted by a recoverable DataChannel send failure retains its verified partial file and can resume from the saved byte offset after a new secure connection. A non-retryable source/provider/integrity error aborts and removes the partial file.
+- Per-transfer cancellation is supported. Closing/revoking the target session cancels active target-side uploads and downloads; incomplete target-side upload destinations are removed where the provider allows it.
+- Retry windows are bounded; a transfer does not retry indefinitely or silently claim completion.
 
-## Android permission boundary
+## Remaining limitation
 
-This is not unrestricted access to every byte on the target phone. The owner must explicitly select a folder through the Android system picker. RKRemote can then browse and transfer documents exposed below that selected tree while the persisted SAF grant remains valid. Android and individual document providers may prevent selecting or accessing protected locations such as parts of Android/data, Android/obb, system/private app storage, or certain provider-managed locations. The app does not bypass these restrictions.
+- Upload source progress is reported, and chunks are retried while the current secure session remains available. A partially uploaded file is **not yet durably resumable after the secure session closes or the app process is terminated**; the user must start that upload again.
+- Provider-specific SAF behavior, free storage, process lifetime, and network conditions still affect completion.
+- Real two-device and cross-network validation remains reserved for the final project stage.
 
-## Large-file behavior
+## Security boundary
 
-The app no longer imposes a fixed per-file size limit. Transfers are streamed with bounded memory use. Actual maximum size and completion time depend on free storage, the selected document provider, filesystem/provider behavior, network stability, and Android process lifetime. Transfers are not resumable yet: if a connection or process is interrupted, the incomplete destination is deleted where the provider allows it, and the user must start the transfer again. The UI reports completion or failure; progress percentage and pause/resume are not yet implemented.
-
-## Security and validation
-
-The current LAN bearer-token HTTP transport is still plaintext. File contents and credentials must only be transferred over a trusted private Wi-Fi network until the Section 1 authenticated encrypted transport is integrated. Do not expose TCP port 18765 to the public internet.
-
-The code changes have been committed to the development branch. GitHub Actions build/test and physical two-device tests must pass before this section can be called device-validated.
+The target owner must explicitly select and retain access to the SAF folder. RKRemote does not bypass Android storage protections or access unrelated folders. Remote file operations are available only through the authenticated, owner-approved secure session; no remote delete, rename, move, or copy operation is exposed.
