@@ -86,7 +86,10 @@ class CloudflareSignalingClient(
                     val type = message.optString("type")
                     require(type in ROOM_EVENTS) { "Unexpected text message from signaling server" }
                     listener.onRoomEvent(type, message.optJSONObject("payload") ?: JSONObject())
-                }.onFailure(listener::onFailure)
+                }.onFailure { failure ->
+                    webSocket.close(1003, "Invalid room control message")
+                    listener.onFailure(failure)
+                }
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
