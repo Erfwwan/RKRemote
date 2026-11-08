@@ -50,7 +50,12 @@ class SessionForegroundService : Service() {
                 return START_NOT_STICKY
             }
             lanServer?.stop()
-            lanServer = LanAgentServer(applicationContext, token).also { it.start() }
+            lanServer = LanAgentServer(applicationContext, token) { reason ->
+                getSystemService(NotificationManager::class.java).notify(
+                    NOTIFICATION_ID,
+                    buildNotification("LAN agent stopped · " + reason.take(100))
+                )
+            }.also { it.start() }
         }
         return START_NOT_STICKY
     }
@@ -76,7 +81,7 @@ class SessionForegroundService : Service() {
         }
     }
 
-    private fun buildNotification(): Notification {
+    private fun buildNotification(statusText: String = "Remote access is active on this device."): Notification {
         val stopIntent = PendingIntent.getService(
             this,
             1,
@@ -92,7 +97,7 @@ class SessionForegroundService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
             .setContentTitle("RKRemote session active")
-            .setContentText("Remote access is active on this device.")
+            .setContentText(statusText)
             .setContentIntent(openIntent)
             .setOngoing(true)
             .addAction(0, "Stop session", stopIntent)
