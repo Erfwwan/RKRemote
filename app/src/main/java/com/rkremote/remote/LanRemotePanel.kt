@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -164,6 +165,7 @@ fun LanRemotePanel() {
         }
     }
     var localIp by remember { mutableStateOf(LanControllerClient.localIpv4() ?: "Wi-Fi address unavailable") }
+    var autoStartAfterBoot by remember { mutableStateOf(SessionCredentialStore.isAutoStartAfterBoot(context)) }
     val notificationsAllowed = Build.VERSION.SDK_INT < 33 ||
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
@@ -173,7 +175,7 @@ fun LanRemotePanel() {
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text("Part 1 · Local Wi-Fi connection", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text("Start the agent on the phone you want to access. Both phones must be on the same trusted Wi-Fi network.")
+            Text("Start the agent on the phone you want to access. Android may restore it after reclaiming the process; reboot restoration is optional below. Both phones must be on the same trusted Wi-Fi network.")
             Text("TARGET PHONE · AGENT", fontWeight = FontWeight.SemiBold)
             Text("This phone's local IP: $localIp")
             OutlinedButton(onClick = {
@@ -195,6 +197,23 @@ fun LanRemotePanel() {
                     )
                     token = ""
                 }) { Text("Stop") }
+            }
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Checkbox(
+                    checked = autoStartAfterBoot,
+                    onCheckedChange = { enabled ->
+                        autoStartAfterBoot = enabled
+                        SessionCredentialStore.setAutoStartAfterBoot(context, enabled)
+                    }
+                )
+                Column(Modifier.weight(1f)) {
+                    Text("Start agent after phone reboot", fontWeight = FontWeight.Medium)
+                    Text(
+                        "Optional. Restores only the LAN agent and its active session; camera, microphone and screen capture stay off.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
             if (!notificationsAllowed) {
                 Text("Grant notification permission in Android permissions above before starting the visible session.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
