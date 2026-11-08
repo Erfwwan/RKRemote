@@ -83,6 +83,7 @@ class SecureWebRtcPeer(
     private val observer = object : PeerConnection.Observer {
         override fun onSignalingChange(state: PeerConnection.SignalingState) = Unit
         override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {
+            if (closed.get()) return
             when (state) {
                 PeerConnection.IceConnectionState.CONNECTED,
                 PeerConnection.IceConnectionState.COMPLETED -> {
@@ -405,13 +406,22 @@ class SecureWebRtcPeer(
         clearDisconnectGracePeriod()
         synchronized(lock) { pendingRemoteIce.clear() }
         dataFramer.clear()
-        dataChannel?.unregisterObserver()
-        dataChannel?.close()
-        dataChannel?.dispose()
+
+        // Disposal must be best-effort per resource: one native cleanup failure
+        // must not prevent releasing the remaining WebRTC objects.
+        val channel = dataChannel
         dataChannel = null
-        peerConnection?.close()
-        peerConnection?.dispose()
+        if (channel != null) {
+            runCatching { channel.unregisterObserver() }
+            runCatching { channel.close() }
+            runCatching { channel.dispose() }
+        }
+        val connection = peerConnection
         peerConnection = null
+        if (connection != null) {
+            runCatching { connection.close() }
+            runCatching { connection.dispose() }
+        }
     }
 
     companion object {
