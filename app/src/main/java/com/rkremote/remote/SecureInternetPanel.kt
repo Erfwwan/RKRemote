@@ -1989,9 +1989,13 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                         Card(modifier = Modifier.fillMaxWidth().animateContentSize(), shape = RoundedCornerShape(22.dp),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                             Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Text("CONTACTS  /  ADDRESS BOOK", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.ExtraBold)
-                                Text("دفترچه مخاطبین", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
-                                Text(contactsStatus.value, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                    Text("RK CONTACTS", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.ExtraBold)
+                                    androidx.compose.material3.AssistChip(onClick = {}, label = { Text("${contactsItems.value.size} مخاطب") })
+                                }
+                                Text("دفترچه مخاطبین", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
+                                Text("جست‌وجو و مشاهده مخاطبین دستگاه متصل", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(contactsStatus.value, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                                 OutlinedTextField(value = contactsSearch.value, onValueChange = { contactsSearch.value = it.take(80) }, modifier = Modifier.fillMaxWidth(), label = { Text("جست‌وجوی نام یا شماره") }, singleLine = true)
                                 if (role.value == CloudflareSignalingClient.Role.CONTROLLER) {
                                     OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
@@ -2012,14 +2016,34 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                 }
                                 if (filteredContacts.isEmpty()) Text("مخاطبی برای نمایش وجود ندارد.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 filteredContacts.forEach { item ->
-                                    Row(modifier = Modifier.fillMaxWidth().animateContentSize().background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(16.dp)).padding(12.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                                        Box(modifier = Modifier.background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(50.dp)).padding(12.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
-                                            Text(item.optString("name").firstOrNull()?.uppercase() ?: "؟", color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.ExtraBold)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().animateContentSize()
+                                            .background(
+                                                Brush.linearGradient(listOf(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.surfaceVariant)),
+                                                RoundedCornerShape(18.dp)
+                                            )
+                                            .padding(13.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.78f), RoundedCornerShape(15.dp))
+                                                .padding(13.dp),
+                                            contentAlignment = androidx.compose.ui.Alignment.Center
+                                        ) {
+                                            Text(
+                                                item.optString("name").trim().firstOrNull()?.uppercase() ?: "؟",
+                                                color = MaterialTheme.colorScheme.primary,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                style = MaterialTheme.typography.titleMedium
+                                            )
                                         }
-                                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                            Text(item.optString("name", "بدون نام"), fontWeight = FontWeight.Bold)
-                                            Text(item.optString("number"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            Text(item.optString("name").ifBlank { "بدون نام" }, fontWeight = FontWeight.Bold,
+                                                style = MaterialTheme.typography.titleSmall)
+                                            Text(item.optString("number"), style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         }
                                     }
                                 }
