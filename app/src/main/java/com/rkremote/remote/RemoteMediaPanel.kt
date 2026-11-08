@@ -51,7 +51,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Owner-side capture controls and controller-side live camera/audio preview.
+ * Owner-side one-shot photo capture and controller-side single-photo/audio controls.
  * The target owner starts each capture locally; network requests only read
  * already-published frames/chunks and cannot turn sensors on.
  */
@@ -66,7 +66,7 @@ fun RemoteMediaPanel(
     var cameraBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var cameraJob by remember { mutableStateOf<Job?>(null) }
     var audioJob by remember { mutableStateOf<Job?>(null) }
-    var cameraPreview by remember { mutableStateOf(false) }
+    var photoRequestActive by remember { mutableStateOf(false) }
     var pendingCameraFacing by remember { mutableStateOf(CameraCharacteristics.LENS_FACING_BACK) }
     var audioListening by remember { mutableStateOf(false) }
     var pttPermissionGranted by remember {
@@ -266,8 +266,8 @@ fun RemoteMediaPanel(
             }
 
             Text("CONTROLLER PHONE · SINGLE PHOTO", fontWeight = FontWeight.SemiBold)
-            OutlinedButton(enabled = !cameraPreview && targetIp.isNotBlank() && targetToken.isNotBlank(), onClick = {
-                cameraPreview = true
+            OutlinedButton(enabled = !photoRequestActive && targetIp.isNotBlank() && targetToken.isNotBlank(), onClick = {
+                photoRequestActive = true
                 val ip = targetIp.trim()
                 val token = targetToken.trim()
                 cameraJob = scope.launch {
@@ -284,7 +284,7 @@ fun RemoteMediaPanel(
                     } catch (error: Exception) {
                         onStatus("Photo request failed: ${error.message}")
                     } finally {
-                        cameraPreview = false
+                        photoRequestActive = false
                         cameraJob = null
                     }
                 }
