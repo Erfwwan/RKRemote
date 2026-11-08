@@ -88,6 +88,23 @@ class SecureRemoteCommandRouterTest {
         assertFalse(router.dispatch("paired-peer", message("file.download.request", 1, "retry")).accepted)
     }
 
+    @Test
+    fun fileTransferCancellationRequiresFilesCapabilityAndOwnerGrant() {
+        val router = SecureRemoteCommandRouter()
+        var cancelled = false
+        router.register("file.transfer.cancel", RemoteCapability.FILES) {
+            cancelled = true
+            null
+        }
+        router.beginOwnerApprovedSession("paired-peer", setOf(RemoteCapability.SCREEN_VIEW))
+        assertFalse(router.dispatch("paired-peer", message("file.transfer.cancel", 0, "cancel-1")).accepted)
+        assertFalse(cancelled)
+
+        router.grantCapabilities(setOf(RemoteCapability.FILES))
+        assertTrue(router.dispatch("paired-peer", message("file.transfer.cancel", 1, "cancel-2")).accepted)
+        assertTrue(cancelled)
+    }
+
     private fun message(type: String, sequence: Long, requestId: String) = RemoteMessage(
         type = type,
         sessionId = "session",
