@@ -266,6 +266,7 @@ class SecureSafTransferBridge(context: Context) {
     }
 
     @Synchronized
+    @Synchronized
     fun appendUploadChunk(transferId: String, offset: Long, bytes: ByteArray) {
         val pending = pendingUploads[transferId] ?: throw IllegalStateException("No upload is active")
         require(pending.transferId == transferId) { "Unexpected upload identifier" }
@@ -297,6 +298,7 @@ class SecureSafTransferBridge(context: Context) {
     }
 
     /** Cancel only the transfer identified by the authenticated request. */
+    @Synchronized
     fun cancelTransfer(transferId: String): Boolean {
         if (downloadCancellations.cancel(transferId)) return true
         return abortUpload(transferId)
