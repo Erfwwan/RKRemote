@@ -69,3 +69,18 @@ The secure transport now includes a target-side command router. It is intentiona
 The router currently has no feature handlers registered by the app, so it rejects commands by default. Any future handler must re-check the current Android permission, local foreground service/capture state, SAF URI access and operation-specific limits. Remote commands must never silently start MediaProjection, camera or microphone capture.
 
 A separate `SecureVideoFrameCodec` now splits H.264 access units into 32 KiB JSON-safe chunks and reassembles them with strict size/metadata checks. It allows up to 2 MiB per frame, 64 chunks, two incomplete frames and a five-second assembly lifetime. This codec is not yet wired to the live encoder or a playback surface; it is a tested protocol building block, not a functioning live video stream.
+
+
+## Live H.264 screen streaming
+
+The current screen-video path is connected end to end at source level:
+
+1. The target owner starts Android's MediaProjection screen sharing through the existing local consent UI and keeps the persistent screen-sharing notification active.
+2. After Noise peer verification and WebRTC connection, the target owner separately presses **Allow this controller to view my screen**. This grants only the `SCREEN_VIEW` capability for the current session.
+3. The controller sends `screen.stream.start`. The target command router checks the authenticated peer, capability grant, request ID and replay/sequence guard.
+4. The target reads H.264 codec configuration and latest encoded access units from `ScreenVideoStore`, fragments frames into bounded 32 KiB chunks, and sends them as versioned messages through the DTLS DataChannel.
+5. The controller reassembles each access unit and feeds it to a MediaCodec decoder attached to a SurfaceView.
+
+The target can revoke remote command permissions immediately, stop the stream from the controller, stop the secure session, or use Android's local persistent notification to stop MediaProjection. Local capture ending also terminates the sender. Remote commands do not start MediaProjection.
+
+This is not yet hardware-validated. Android codec implementations can differ, and real-world frame loss, latency, orientation changes, screen rotation and NAT/TURN behavior still need testing on two physical devices. Remote touch input is not yet migrated to this Internet path.
