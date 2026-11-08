@@ -8,7 +8,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.security.MessageDigest
 import java.util.UUID
-import java.util.LinkedHashMap
 
 /**
  * End-to-end internet connection coordinator:
@@ -47,13 +46,10 @@ class SecureInternetPeer(
     private val turnConfig = turnServers.toList()
     private val closed = AtomicBoolean(false)
     private val outboundSequence = AtomicLong(0)
-    private val inboundSequence = AtomicLong(-1)
+    private val messageGuard = SecureMessageGuard(sessionId)
     private val sessionId = MessageDigest.getInstance("SHA-256")
         .digest(roomId.toByteArray(Charsets.UTF_8))
         .take(16).joinToString("") { "%02x".format(it) }
-    private val seenMessageIds = object : LinkedHashMap<String, Boolean>(512, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Boolean>?): Boolean = size > 512
-    }
     private val pendingSignals = ArrayDeque<ByteArray>()
     private val lock = Any()
     private var webRtc: SecureWebRtcPeer? = null
@@ -86,18 +82,7 @@ class SecureInternetPeer(
                                     try {
                                         require(payload.size <= RemoteMessage.MAX_MESSAGE_BYTES) { "Secure application message exceeds protocol limit" }
                                         val message = RemoteMessage.parse(payload.toString(Charsets.UTF_8))
-                                        require(message.sessionId == sessionId) { "Message belongs to another session" }
-                                        val now = System.currentTimeMillis()
-                                        require(message.sentAt >= now - MAX_CLOCK_SKEW_MS && message.sentAt <= now + MAX_CLOCK_SKEW_MS) {
-                                            "Message timestamp is outside the accepted window"
-                                        }
-                                        val previous = inboundSequence.get()
-                                        require(message.sequence > previous) { "Replayed or out-of-order message sequence" }
-                                        synchronized(seenMessageIds) {
-                                            require(!seenMessageIds.containsKey(message.messageId)) { "Duplicate message ID" }
-                                            seenMessageIds[message.messageId] = true
-                                        }
-                                        require(inboundSequence.compareAndSet(previous, message.sequence)) { "Concurrent or out-of-order inbound message" }
+                                        messageGuard.accept(message, System.currentTimeMillis())
                                         listener.onData(payload)
                                         listener.onRemoteMessage(message)
                                     } catch (error: Throwable) {
@@ -204,7 +189,6 @@ class SecureInternetPeer(
         if (!closed.compareAndSet(false, true)) return
         synchronized(lock) {
             pendingSignals.clear()
-            synchronized(seenMessageIds) { seenMessageIds.clear() }
             webRtc?.close()
             webRtc = null
         }
@@ -213,6 +197,5 @@ class SecureInternetPeer(
 
     companion object {
         private const val MAX_PENDING_SIGNALS = 32
-        private const val MAX_CLOCK_SKEW_MS = 10 * 60 * 1000L
     }
 }
