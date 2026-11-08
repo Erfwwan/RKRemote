@@ -1,76 +1,45 @@
-# RKRemote Internet P2P migration
+# RKRemote internet transport status
 
-## Target architecture
+## Active architecture
 
-The controller and target are peers with stable cryptographic identities. Discovery is used only to locate signed, short-lived peer advertisements. It never stores credentials, commands, notification contents, files, camera frames, screen video, or audio.
+The executable Android connection path in this branch is a **Cloudflare Durable Object encrypted relay**, not direct P2P.
 
-Preferred connection order:
+1. The target creates a fresh 256-bit random room ID and joins its own Cloudflare Worker over WSS.
+2. The target shares an RKRemote invitation URI with the intended controller.
+3. The controller joins the same room. The Worker permits one target and one controller.
+4. Both devices run the Noise XX handshake and bind the session keys to their stable device identities.
+5. Both owners compare the six-digit short authentication string and approve the peer locally.
+6. Application messages are bounded, optionally compressed before encryption, fragmented below the Worker frame limit, and encrypted with Noise ChaCha20-Poly1305.
+7. The Worker forwards opaque binary frames. It does not parse or store application payloads.
 
-1. Discover the target's signed advertisement.
-2. Attempt a direct authenticated peer connection using ICE/STUN and UDP hole punching where supported.
-3. Authenticate the exact paired peer using RK-SecureLink v1.
-4. If direct connectivity fails, offer a temporary independently operated/community relay path. Relay traffic remains end-to-end encrypted.
-5. If neither direct nor relay connectivity is available, report offline. Never downgrade to plaintext HTTP.
+All app traffic, including reports, files and media, traverses Cloudflare. The Worker can observe IP addresses, room IDs, roles, timing, frame sizes and traffic volume. It cannot read the encrypted app payloads. This is a relay architecture and must not be described as P2P.
 
-There is no RKRemote-operated central application server. Bootstrap peers are entry points, not authoritative coordinators. A temporary relay is a transport fallback, not a central data store.
+## Device identity and consent
 
-## Stage 1 — device identity and signed discovery record
+- Stable device identity keys are retained by Android Keystore.
+- The authenticated peer identity is checked as part of the secure handshake.
+- Owners compare the SAS and approve the peer on both devices.
+- The target owner separately grants each remote capability.
+- Persistent remember-me grants are limited to selected report capabilities and are encrypted at rest.
+- Camera, microphone and screen capture require local owner action and visible Android foreground/system consent.
+- Android permissions and special settings remain revocable by the device owner.
 
-Implemented foundation:
+## Direct P2P / WebRTC status
 
-- Stable P-256 EC signing key generated and retained by Android Keystore.
-- Private key is non-exportable and is never written to preferences or source control.
-- Peer ID is SHA-256 of the encoded public key.
-- Peer advertisements bind peer ID, public key, sequence, issue/expiry times, and transport multiaddresses with ECDSA/SHA-256.
-- Advertisements are bounded to 8 KiB, 8 addresses, and a maximum 10-minute lifetime.
-- Parsing verifies signature, peer-ID/public-key binding, expiry, clock skew, size and address syntax.
+Direct ICE/STUN/TURN/WebRTC transport is **not part of the active connection path** in this branch. The standalone WebRTC implementation and P2P record classes are experimental/historical code and are not invoked by the current Cloudflare session UI. Do not configure STUN/TURN or claim direct P2P connectivity.
 
-This is identity/record code only. DHT publication/lookup, NAT traversal, direct peer transport, relay fallback, and internet access remain unimplemented.
+A future direct-transport project would need a separately reviewed migration that preserves the authenticated device identity, SAS approval, capability gates, bounded framing, and a safe relay fallback. It must not silently switch transports or weaken encryption.
 
-## Stage 2 — DHT integration
+## Operational limitations
 
-- Select and pin a maintained Android-compatible libp2p implementation only after confirming Kademlia DHT, peer identity, Android API 26+, UDP behavior, and dependency supply-chain support.
-- Use multiple independent bootstrap peers.
-- Publish only signed, short-lived advertisements under a deterministic key derived from target Peer ID.
-- Validate signatures and monotonic sequence on every retrieved record; ignore expired or older records.
-- Never publish tokens, session keys, personal data, LAN-only addresses, or media metadata.
-- Add bounded lookup concurrency, rate limits, refresh, stale-record cleanup, and backoff.
+- Normal relay use requires each user to deploy their own Worker and enter its WSS address.
+- An API Token is optional and is only used to update an already-deployed Worker.
+- Cloudflare bandwidth and Durable Object usage limits/pricing apply.
+- A lost WebSocket currently requires a new secure session and fresh peer approval; automatic reconnect/resume is not claimed.
+- SMS and call-log permissions can be restricted by Android or distribution policy.
+- Background location scheduling is subject to Android power management and may run later than the requested 15-minute interval.
+- Worker deployment and in-app API-token updates have not yet been tested against a real Cloudflare account in this source milestone.
 
-The previously reviewed JVM libp2p candidate is not approved for production DHT/relay support; do not claim Kademlia or Circuit Relay v2 support until verified.
+## Verification status
 
-## Stage 3 — authenticated transport and Cloudflare rendezvous
-
-The design and binary rendezvous scaffold are specified in [RK-SecureLink v1](RK_SECURELINK_V1.md). The Cloudflare worker now accepts opaque binary frames only and rejects client text messages. The Android client forwards byte arrays without parsing them.
-
-The cryptographic Noise engine, P-256-to-X25519 key binding, authenticated WebRTC fingerprint exchange, and WebRTC PeerConnection are **not implemented yet**. Therefore this stage is not complete and must not be treated as secure Internet access.
-
-The legacy Cloudflare JSON offer/answer/ICE protocol has been removed from the worker. Do not deploy the worker as a usable secure connection until the handshake engine and peer authentication are implemented and tested.
-
-## Stage 4 — direct transport and relay
-
-- Prefer ICE direct UDP paths. STUN is for address discovery; it does not carry application payloads.
-- Bind WebRTC DTLS fingerprints to the peer identity authenticated through Noise.
-- Use WebRTC DTLS for DataChannels and SRTP for media. Do not add a redundant application encryption layer over those transports.
-- If direct connectivity fails, use an independently operated/community relay only after peer authentication. Relay nodes forward ciphertext and see network metadata, not plaintext or session keys.
-- Bound bandwidth, connection duration and queue sizes. Drop to offline rather than downgrade encryption.
-- Relay usage must be visible in connection diagnostics.
-
-## Stage 5 — migrate feature traffic
-
-Migrate screen video, camera, microphone/PTT, notification snapshots, remote input, and SAF file streams only after the authenticated peer channel and explicit capability grants are complete. Preserve Android owner-consent requirements. Sensor capture must remain locally started and visibly stoppable.
-
-## Acceptance criteria
-
-- Noise XX official test vectors pass on Android API 26+.
-- Two physical Android devices authenticate the exact previously paired identities on separate networks.
-- Wrong keys, MITM attempts, replay, malformed frames, stale records, revoked peers, and DTLS fingerprint mismatch are rejected.
-- Direct path works where NAT topology permits; diagnostics distinguish direct, relay, and offline.
-- Relay fallback never exposes plaintext to relay operator.
-- Network handover and changing public IP trigger bounded reconnect.
-- No public endpoint exposes the legacy plaintext TCP protocol.
-- Target retains visible session notification, local emergency stop, and ability to revoke pairing.
-- CI, security review, and two-device tests pass before Internet access is described as implemented.
-
-## Current security boundary
-
-The existing executable agent still uses plaintext bearer-token HTTP/TCP on port 18765. It is not safe for public Internet exposure. Do not configure port forwarding or expose that port. The P2P identity and Cloudflare binary signaling work do not change this fact.
+The code has not been built or run through the Android test suite in this review. Physical two-device testing, Cloudflare deployment validation, hostile-network tests, and an independent security review remain outstanding. Source-level changes do not establish production readiness.
