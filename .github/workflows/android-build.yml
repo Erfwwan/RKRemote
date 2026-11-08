@@ -1,7 +1,7 @@
 name: Android build
 
 on:
-  # Final target permissions hub and explicit PTT status panel compile verification.
+  # Verify confirmed first-run roles, target permission hub, request-only reports and two-way PTT.
   push:
     branches:
       - feature/remote-agent-foundation
