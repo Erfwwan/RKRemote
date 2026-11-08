@@ -33,8 +33,7 @@ class SecureInternetPeer(
         fun onRelayConnected() {}
         fun onPeerVerificationRequired(peerId: String, shortAuthenticationString: String)
         fun onSecureSignalingReady(peerId: String)
-        fun onWebRtcConnecting()
-        fun onWebRtcConnected()
+        fun onRelayReady()
         fun onData(payload: ByteArray)
         fun onRemoteMessage(message: RemoteMessage) {}
         fun onCommandResult(message: RemoteMessage, result: SecureRemoteCommandRouter.Result) {}
@@ -85,10 +84,7 @@ class SecureInternetPeer(
                             }, HEARTBEAT_INTERVAL_SECONDS, HEARTBEAT_INTERVAL_SECONDS, TimeUnit.SECONDS)
                         }
                         listener.onSecureSignalingReady(peerId)
-                        listener.onWebRtcConnecting()
-                        // This callback name is retained for UI compatibility; it now means
-                        // the authenticated Cloudflare encrypted relay is ready, not WebRTC.
-                        listener.onWebRtcConnected()
+                        listener.onRelayReady()
                     } catch (error: Throwable) {
                         listener.onFailure(error)
                         close()
