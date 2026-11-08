@@ -1,0 +1,111 @@
+import { DurableObject } from "cloudflare:workers";
+
+const ROOM_ID = /^[a-f0-9]{64}$/;
+const ROLES = new Set(["target", "controller"]);
+const MAX_FRAME_BYTES = 12 * 1024;
+const ROOM_TTL_MS = 10 * 60 * 1000;
+
+function jsonError(status, error) {
+  return Response.json({ ok: false, error }, { status });
+}
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    const match = url.pathname.match(/^\/signal\/([a-f0-9]{64})$/);
+    if (!match) return jsonError(404, "not_found");
+    if (request.method !== "GET") return jsonError(405, "method_not_allowed");
+    if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
+      return jsonError(426, "websocket_required");
+    }
+    const roomId = match[1];
+    const role = url.searchParams.get("role") ?? "";
+    if (!ROOM_ID.test(roomId) || !ROLES.has(role)) {
+      return jsonError(400, "invalid_room_or_role");
+    }
+    const id = env.SIGNAL_ROOMS.idFromName(roomId);
+    return env.SIGNAL_ROOMS.get(id).fetch(request);
+  },
+};
+
+export class SignalRoom extends DurableObject {
+  async fetch(request) {
+    if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
+      return new Response("WebSocket required", { status: 426 });
+    }
+    const role = new URL(request.url).searchParams.get("role");
+    if (role !== "target" && role !== "controller") {
+      return new Response("Invalid role", { status: 400 });
+    }
+    const sockets = this.ctx.getWebSockets();
+    const existingRoles = sockets
+      .map((socket) => socket.deserializeAttachment()?.role)
+      .filter(Boolean);
+    if (existingRoles.includes(role)) return new Response("Role already connected", { status: 409 });
+    if (role === "controller" && !existingRoles.includes("target")) {
+      return new Response("Target must connect first", { status: 409 });
+    }
+    if (sockets.length >= 2) return new Response("Room is full", { status: 409 });
+
+    const pair = new WebSocketPair();
+    const client = pair[0];
+    const server = pair[1];
+    this.ctx.acceptWebSocket(server);
+    server.serializeAttachment({ role, connectedAt: Date.now() });
+    await this.ctx.storage.setAlarm(Date.now() + ROOM_TTL_MS);
+    if (sockets.length !== 0) {
+      for (const peer of sockets) {
+        if (peer.readyState === WebSocket.OPEN) {
+          peer.send(JSON.stringify({ v: 1, type: "peer-joined", payload: { role } }));
+        }
+      }
+      server.send(JSON.stringify({ v: 1, type: "peer-joined", payload: { role: "target" } }));
+    }
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  async webSocketMessage(socket, message) {
+    if (typeof message === "string") {
+      socket.close(1003, "Binary encrypted frames required");
+      return;
+    }
+    if (message.byteLength < 1 || message.byteLength > MAX_FRAME_BYTES) {
+      socket.close(1009, "Invalid or oversized encrypted frame");
+      return;
+    }
+    await this.ctx.storage.setAlarm(Date.now() + ROOM_TTL_MS);
+    const peers = this.ctx.getWebSockets().filter(
+      (peer) => peer !== socket && peer.readyState === WebSocket.OPEN
+    );
+    if (peers.length !== 1) {
+      socket.send(JSON.stringify({ v: 1, type: "peer-not-ready", payload: {} }));
+      return;
+    }
+    peers[0].send(message);
+  }
+
+  async webSocketClose(socket, code, reason) {
+    this.notifyPeer(socket, "peer-left");
+    try { socket.close(code, reason); } catch {}
+  }
+
+  async webSocketError(socket) {
+    this.notifyPeer(socket, "peer-left");
+    try { socket.close(1011, "WebSocket error"); } catch {}
+  }
+
+  async alarm() {
+    for (const socket of this.ctx.getWebSockets()) {
+      try { socket.close(1001, "Relay room expired"); } catch {}
+    }
+    await this.ctx.storage.deleteAll();
+  }
+
+  notifyPeer(socket, type) {
+    for (const peer of this.ctx.getWebSockets()) {
+      if (peer !== socket && peer.readyState === WebSocket.OPEN) {
+        try { peer.send(JSON.stringify({ v: 1, type, payload: {} })); } catch {}
+      }
+    }
+  }
+}
