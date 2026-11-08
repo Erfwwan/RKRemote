@@ -44,7 +44,7 @@ class SecureSafTransferBridge(context: Context) {
                     truncated = true
                     break
                 }
-                val id = cursor.getString(0) ?: continue
+                val id = cursor.getString(0)?.takeIf { it.isNotBlank() && it.length <= 512 } ?: continue
                 val mime = cursor.getString(2) ?: "application/octet-stream"
                 items.put(JSONObject()
                     .put("id", id)
@@ -198,7 +198,7 @@ class SecureSafTransferBridge(context: Context) {
         }
 
     companion object {
-        const val MAX_LIST_ITEMS = 100
+        const val MAX_LIST_ITEMS = 40
         const val MAX_CHUNK_BYTES = 24 * 1024
         const val MAX_FILE_BYTES = 50L * 1024L * 1024L
         private const val MAX_DOCUMENT_ID_CHARS = 2048
