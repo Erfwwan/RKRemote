@@ -85,10 +85,11 @@ class SecureDataChannelFramerTest {
         }
 
         assertNull(receiver.accept(secondFrames.first(), nowMillis = 1_101L))
-        assertArrayEquals(
-            secondPayload,
-            receiver.accept(secondFrames.last(), nowMillis = 1_102L)
-        )
+        var result: ByteArray? = null
+        secondFrames.drop(1).forEachIndexed { index, frame ->
+            result = receiver.accept(frame, nowMillis = 1_102L + index)
+        }
+        assertArrayEquals(secondPayload, result)
     }
 
     @Test
@@ -102,7 +103,9 @@ class SecureDataChannelFramerTest {
         assertNull(receiver.accept(first.first()))
         receiver.clear()
         assertNull(receiver.accept(second.first()))
-        assertArrayEquals(secondPayload, receiver.accept(second.last()))
+        var result: ByteArray? = null
+        second.drop(1).forEach { frame -> result = receiver.accept(frame) }
+        assertArrayEquals(secondPayload, result)
     }
 
 }
