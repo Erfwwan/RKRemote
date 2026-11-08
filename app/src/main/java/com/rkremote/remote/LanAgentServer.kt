@@ -37,6 +37,8 @@ class LanAgentServer(
     private val running = AtomicBoolean(false)
     @Volatile private var server: ServerSocket? = null
     private var worker: Thread? = null
+    @Volatile private var lastError: String? = null
+    private val startedAtMillis = System.currentTimeMillis()
     private val clientSockets = ConcurrentHashMap.newKeySet<Socket>()
     private val clients = ThreadPoolExecutor(
         2, 4, 30, TimeUnit.SECONDS, ArrayBlockingQueue(16)
@@ -64,16 +66,23 @@ class LanAgentServer(
         if (!running.compareAndSet(false, true)) return
         worker = Thread({
             try {
-                ServerSocket(port, 8).use { socketServer ->
+                ServerSocket().use { socketServer ->
+                    socketServer.reuseAddress = true
+                    socketServer.bind(java.net.InetSocketAddress(port), 8)
                     server = socketServer
+                    lastError = null
                     while (running.get()) {
                         try {
-                            val client = socketServer.accept()
+                            val client = socketServer.accept().apply {
+                                soTimeout = 30_000
+                                tcpNoDelay = true
+                                keepAlive = true
+                            }
                             clientSockets.add(client)
                             val task = ClientTask(client)
                             try {
                                 clients.execute(task)
-                            } catch (_: Exception) {
+                            } catch (_: java.util.concurrent.RejectedExecutionException) {
                                 task.close()
                             }
                         } catch (e: SocketException) {
@@ -81,7 +90,8 @@ class LanAgentServer(
                         }
                     }
                 }
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                if (running.get()) lastError = error.message ?: error.javaClass.simpleName
                 running.set(false)
             } finally {
                 server = null
@@ -102,6 +112,7 @@ class LanAgentServer(
         clients.shutdownNow().forEach { task ->
             if (task is ClientTask) task.close()
         }
+        runCatching { clients.awaitTermination(500, TimeUnit.MILLISECONDS) }
     }
 
     private fun handle(socket: Socket) {
@@ -334,8 +345,12 @@ class LanAgentServer(
             val response = when (endpoint) {
                 "/health" -> JSONObject()
                     .put("app", "RKRemote")
-                    .put("status", "online")
+                    .put("status", if (running.get()) "online" else "offline")
                     .put("mode", "owner-authorized-lan")
+                    .put("uptimeMs", (System.currentTimeMillis() - startedAtMillis).coerceAtLeast(0L))
+                    .put("activeClients", clientSockets.size)
+                    .put("queuedClients", clients.queue.size)
+                    .put("lastError", lastError ?: JSONObject.NULL)
                 "/files" -> listSelectedFolder()
                 else -> {
                     respond(output, 404, JSONObject().put("error", "Not found"))
