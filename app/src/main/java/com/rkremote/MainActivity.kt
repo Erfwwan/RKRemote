@@ -181,7 +181,7 @@ private fun LocalSetupScreen(darkMode: Boolean, onToggleTheme: () -> Unit) {
             ))
             add(PermissionItem(
                 "مخاطبان",
-                "اختیاری؛ فقط برای نمایش نام مخاطب کنار شماره پیامک‌ها. بدون این مجوز، گزارش همچنان با شماره نمایش داده می‌شود.",
+                "برای نمایش دفترچه مخاطبین؛ دسترسی و ارسال فهرست فقط با تأیید مستقل صاحب گوشی انجام می‌شود.",
                 listOf(Manifest.permission.READ_CONTACTS)
             ))
             add(PermissionItem(
