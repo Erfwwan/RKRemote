@@ -12,7 +12,7 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /**
- * Encrypted, owner-managed remember-me grants for the two report capabilities.
+ * Encrypted, owner-managed remember-me grants for SMS, call-history and location sharing.
  *
  * Entries are bound to the remote peer's stable, signed P2P identity ID. The
  * store never persists a grant for any other capability.
