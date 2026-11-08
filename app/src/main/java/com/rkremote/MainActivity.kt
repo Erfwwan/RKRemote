@@ -51,7 +51,7 @@ import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.rememberDrawerState
 import kotlinx.coroutines.launch
 import com.rkremote.remote.PairingPanel
-import com.rkremote.remote.LanRemotePanel
+import com.rkremote.remote.CloudflareSetupPanel
 import com.rkremote.remote.SecureInternetPanel
 import com.rkremote.remote.OpenNetworkPanel
 
@@ -59,7 +59,7 @@ private enum class AppPage(val title: String) {
     HOME("خانه"),
     INTERNET("اتصال اینترنتی امن"),
     OPEN_NETWORK("شبکه‌های سفارشی"),
-    LAN("کنترل شبکه محلی"),
+    CLOUDFLARE_SETUP("راه‌اندازی Cloudflare"),
     PAIRING("جفت‌سازی دستگاه"),
     PERMISSIONS("مجوزهای اندروید"),
     NOTIFICATIONS("تاریخچه اعلان‌ها"),
@@ -207,7 +207,7 @@ private fun LocalSetupScreen() {
                                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                     Text("مدیریت دستگاه", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                                     Text("برای دسترسی به هر قابلیت، منوی سه‌خط بالا را باز کن و بخش موردنظر را انتخاب کن.")
-                                    Text("اتصال امن اینترنتی، کنترل شبکه محلی، جفت‌سازی، مجوزهای اندروید، اعلان‌ها و فایل‌ها در صفحه‌های جداگانه قرار گرفته‌اند.",
+                                    Text("راه‌اندازی Cloudflare، اتصال امن اینترنتی، شبکه‌های سفارشی، جفت‌سازی، مجوزهای اندروید، اعلان‌ها و فایل‌ها در صفحه‌های جداگانه قرار گرفته‌اند.",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
@@ -246,9 +246,9 @@ private fun LocalSetupScreen() {
                     }
                 }
 
-                Box(Modifier.fillMaxSize().offset(x = if (currentPage == AppPage.LAN) 0.dp else 2000.dp)) {
+                Box(Modifier.fillMaxSize().offset(x = if (currentPage == AppPage.CLOUDFLARE_SETUP) 0.dp else 2000.dp)) {
                     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        item { LanRemotePanel() }
+                        item { CloudflareSetupPanel() }
                     }
                 }
 
