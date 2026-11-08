@@ -10,6 +10,7 @@ import org.json.JSONObject
 import java.net.URI
 import java.security.SecureRandom
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Opaque binary rendezvous transport for the RK-SecureLink Noise handshake.
@@ -41,6 +42,7 @@ class CloudflareSignalingClient(
         .build()
 
     @Volatile private var socket: WebSocket? = null
+    private val closed = AtomicBoolean(false)
 
     init {
         require(baseUri.scheme?.equals("wss", ignoreCase = true) == true) { "Only wss:// is accepted" }
@@ -58,14 +60,16 @@ class CloudflareSignalingClient(
 
     @Synchronized
     fun connect() {
+        check(!closed.get()) { "Signaling client is closed" }
         check(socket == null) { "Signaling socket is already active" }
         val endpoint = baseWssUrl.trimEnd('/') + "/signal/" + roomId + "?role=" + role.wireValue
         socket = client.newWebSocket(Request.Builder().url(endpoint).build(), object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                listener.onConnected()
+                if (!closed.get()) listener.onConnected() else webSocket.cancel()
             }
 
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
+                if (closed.get()) return
                 if (bytes.size == 0 || bytes.size > MAX_FRAME_BYTES) {
                     webSocket.close(1009, "Invalid encrypted frame size")
                     listener.onFailure(IllegalArgumentException("Encrypted signaling frame size is invalid"))
@@ -75,6 +79,7 @@ class CloudflareSignalingClient(
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
+                if (closed.get()) return
                 runCatching {
                     val message = CloudflareRoomControlMessage.parse(text)
                     listener.onRoomEvent(message.type, message.payload)
@@ -85,13 +90,17 @@ class CloudflareSignalingClient(
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                synchronized(this@CloudflareSignalingClient) { socket = null }
-                listener.onDisconnected(reason.ifBlank { "Closed ($code)" })
+                synchronized(this@CloudflareSignalingClient) {
+                    if (socket === webSocket) socket = null
+                }
+                if (!closed.get()) listener.onDisconnected(reason.ifBlank { "Closed ($code)" })
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                synchronized(this@CloudflareSignalingClient) { socket = null }
-                listener.onFailure(t)
+                synchronized(this@CloudflareSignalingClient) {
+                    if (socket === webSocket) socket = null
+                }
+                if (!closed.get()) listener.onFailure(t)
             }
         })
     }
@@ -99,13 +108,21 @@ class CloudflareSignalingClient(
     /** Send one complete opaque Noise frame. Never pass plaintext SDP, ICE, or app data. */
     fun sendEncryptedFrame(frame: ByteArray): Boolean {
         require(frame.isNotEmpty() && frame.size <= MAX_FRAME_BYTES) { "Invalid encrypted frame size" }
+        if (closed.get()) return false
         return socket?.send(ByteString.of(*frame)) ?: false
     }
 
     @Synchronized
     fun close() {
-        socket?.close(1000, "Owner ended signaling")
+        if (!closed.compareAndSet(false, true)) return
+        val activeSocket = socket
         socket = null
+        // This client belongs to one terminal session; cancel rather than leaving an
+        // asynchronous WebSocket close handshake and dispatcher thread behind.
+        activeSocket?.cancel()
+        client.dispatcher.cancelAll()
+        client.dispatcher.executorService.shutdown()
+        client.connectionPool.evictAll()
     }
 
     companion object {
