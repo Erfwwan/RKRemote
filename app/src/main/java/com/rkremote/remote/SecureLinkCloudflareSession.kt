@@ -16,6 +16,7 @@ import java.util.ArrayDeque
 @RequiresApi(33)
 class SecureLinkCloudflareSession private constructor(
     private val handshake: SecureLinkHandshake,
+    private val initiator: Boolean,
     private val channel: FrameChannel,
     private val listener: Listener
 ) : AutoCloseable {
@@ -55,7 +56,7 @@ class SecureLinkCloudflareSession private constructor(
                 synchronized(this@SecureLinkCloudflareSession) {
                     if (closed) return
                     try {
-                        if (handshakeIsInitiator) sendRequired(handshake.start())
+                        if (initiator) sendRequired(handshake.start())
                     } catch (error: Throwable) {
                         fail(error)
                     }
@@ -120,11 +121,6 @@ class SecureLinkCloudflareSession private constructor(
             }
         })
     }
-
-    private val handshakeIsInitiator: Boolean
-        get() = roleIsController
-
-    private var roleIsController: Boolean = false
 
     /** Start the WSS rendezvous. Target should connect before controller. */
     @Synchronized
@@ -227,9 +223,12 @@ class SecureLinkCloudflareSession private constructor(
             listener: Listener
         ): SecureLinkCloudflareSession {
             val adapter = CloudflareFrameChannel(baseWssUrl, roomId, role)
-            val session = SecureLinkCloudflareSession(handshake, adapter, listener)
-            session.roleIsController = role == CloudflareSignalingClient.Role.CONTROLLER
-            return session
+            return SecureLinkCloudflareSession(
+                handshake,
+                initiator = role == CloudflareSignalingClient.Role.CONTROLLER,
+                channel = adapter,
+                listener = listener
+            )
         }
     }
 
