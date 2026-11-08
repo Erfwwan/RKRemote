@@ -6,11 +6,14 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.AudioAttributes
+import android.media.AudioRecord
+import android.media.MediaRecorder
 import android.media.AudioFormat
 import android.media.AudioTrack
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,6 +31,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -60,6 +64,76 @@ fun RemoteMediaPanel(
     var audioJob by remember { mutableStateOf<Job?>(null) }
     var cameraPreview by remember { mutableStateOf(false) }
     var audioListening by remember { mutableStateOf(false) }
+    var pttPermissionGranted by remember {
+        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
+    }
+    var pttActive by remember { mutableStateOf(false) }
+    var pttJob by remember { mutableStateOf<Job?>(null) }
+    var pttRecorder by remember { mutableStateOf<AudioRecord?>(null) }
+
+    val pttPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        pttPermissionGranted = granted
+        onStatus(if (granted) "Microphone permission granted. Hold the PTT button to talk." else "Microphone permission was denied.")
+    }
+
+    val beginPtt: () -> Unit = {
+        if (!pttActive && targetIp.isNotBlank() && targetToken.isNotBlank()) {
+            pttActive = true
+            val ip = targetIp.trim()
+            val token = targetToken.trim()
+            pttJob = scope.launch(Dispatchers.IO) {
+                var recorder: AudioRecord? = null
+                try {
+                    val minBuffer = AudioRecord.getMinBufferSize(
+                        MicrophoneCaptureService.SAMPLE_RATE,
+                        AudioFormat.CHANNEL_IN_MONO,
+                        AudioFormat.ENCODING_PCM_16BIT
+                    )
+                    require(minBuffer > 0) { "Microphone PCM format is not supported" }
+                    val audio = AudioRecord(
+                        MediaRecorder.AudioSource.MIC,
+                        MicrophoneCaptureService.SAMPLE_RATE,
+                        AudioFormat.CHANNEL_IN_MONO,
+                        AudioFormat.ENCODING_PCM_16BIT,
+                        maxOf(minBuffer * 2, 8192)
+                    )
+                    require(audio.state == AudioRecord.STATE_INITIALIZED) { "Unable to initialize microphone" }
+                    recorder = audio
+                    withContext(Dispatchers.Main) { pttRecorder = audio }
+                    audio.startRecording()
+                    val buffer = ByteArray(3200) // approximately 100 ms at 16 kHz / 16-bit mono
+                    while (isActive) {
+                        val count = audio.read(buffer, 0, buffer.size, AudioRecord.READ_BLOCKING)
+                        if (count > 0 && isActive) {
+                            val accepted = LanControllerClient.postPttChunk(ip, token, buffer.copyOf(count))
+                            if (!accepted) throw IllegalStateException("Target PTT speaker is not enabled")
+                        } else if (count < 0) {
+                            throw IllegalStateException("Microphone read failed: $count")
+                        }
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    withContext(Dispatchers.Main) { onStatus("PTT stopped: ${error.message}") }
+                } finally {
+                    recorder?.let { audio ->
+                        runCatching { audio.stop() }
+                        audio.release()
+                    }
+                    withContext(Dispatchers.Main) {
+                        pttRecorder = null
+                        pttActive = false
+                        pttJob = null
+                    }
+                }
+            }
+        }
+    }
+    val endPtt: () -> Unit = {
+        pttRecorder?.let { audio -> runCatching { audio.stop() } }
+        pttJob?.cancel()
+        onStatus("PTT transmission stopped.")
+    }
 
     val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
@@ -82,6 +156,8 @@ fun RemoteMediaPanel(
         onDispose {
             cameraJob?.cancel()
             audioJob?.cancel()
+            pttRecorder?.let { runCatching { it.stop() } }
+            pttJob?.cancel()
         }
     }
 
@@ -124,6 +200,55 @@ fun RemoteMediaPanel(
                     context.startService(Intent(context, MicrophoneCaptureService::class.java).setAction(MicrophoneCaptureService.ACTION_STOP))
                     onStatus("Microphone stop requested on this phone.")
                 }) { Text("Stop microphone") }
+            }
+
+            Text("TARGET PHONE · PTT SPEAKER", fontWeight = FontWeight.SemiBold)
+            Text(
+                "The target owner must enable this speaker locally. Incoming voice cannot play while it is disabled.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = {
+                    runCatching {
+                        ContextCompat.startForegroundService(context, Intent(context, PttPlaybackService::class.java))
+                    }.onSuccess { onStatus("PTT speaker enabled locally. A persistent stop notification is visible.") }
+                        .onFailure { onStatus("Could not enable PTT speaker: ${it.message}") }
+                }) { Text("Enable PTT speaker") }
+                OutlinedButton(onClick = {
+                    context.startService(Intent(context, PttPlaybackService::class.java).setAction(PttPlaybackService.ACTION_STOP))
+                    onStatus("PTT speaker disabled locally.")
+                }) { Text("Disable PTT speaker") }
+            }
+
+            Text("CONTROLLER PHONE · PUSH TO TALK", fontWeight = FontWeight.SemiBold)
+            Card(
+                modifier = Modifier.fillMaxWidth().pointerInput(pttPermissionGranted, targetIp, targetToken) {
+                    detectTapGestures(onPress = {
+                        if (!pttPermissionGranted) {
+                            onStatus("Grant microphone permission before using push-to-talk.")
+                            pttPermission.launch(Manifest.permission.RECORD_AUDIO)
+                        } else if (targetIp.isNotBlank() && targetToken.isNotBlank()) {
+                            beginPtt()
+                            tryAwaitRelease()
+                            endPtt()
+                        }
+                    })
+                }
+            ) {
+                Column(
+                    Modifier.fillMaxWidth().padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        if (pttActive) "TRANSMITTING · RELEASE TO STOP" else "HOLD TO TALK",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "Press and hold to send microphone audio to the target speaker.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
             }
 
             Text("CONTROLLER PHONE · REMOTE CAMERA", fontWeight = FontWeight.SemiBold)
@@ -223,7 +348,7 @@ fun RemoteMediaPanel(
                 }) { Text("Stop listening") }
             }
             Text(
-                "Audio format: mono PCM, 16 kHz, 16-bit. Camera preview is low-rate JPEG. These are prototypes, not encrypted internet streaming.",
+                "Audio uses mono PCM, 16 kHz, 16-bit. Hold-to-talk sends short chunks; the target must locally enable its speaker. Use headphones to reduce acoustic feedback. Camera preview is low-rate JPEG. This is a LAN prototype, not encrypted internet streaming.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
