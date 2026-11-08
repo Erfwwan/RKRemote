@@ -22,9 +22,12 @@ import java.util.concurrent.atomic.AtomicReference
 /** A single short PCM chunk for the active controller; never written to disk. */
 object MicrophoneChunkStore {
     private val latest = AtomicReference<ByteArray?>(null)
+    @Volatile private var capturing = false
     fun publish(bytes: ByteArray) { latest.set(bytes) }
     fun take(): ByteArray? = latest.getAndSet(null)
-    fun clear() { latest.set(null) }
+    fun setCapturing(value: Boolean) { capturing = value; if (!value) latest.set(null) }
+    fun isCapturing(): Boolean = capturing
+    fun clear() { latest.set(null); capturing = false }
 }
 
 /**
@@ -117,6 +120,7 @@ class MicrophoneCaptureService : Service() {
         }
         active.set(true)
         audio.startRecording()
+        MicrophoneChunkStore.setCapturing(true)
         val thread = Thread({
             val buffer = ByteArray(4096)
             while (active.get()) {
