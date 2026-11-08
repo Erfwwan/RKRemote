@@ -808,6 +808,10 @@ fun SecureInternetPanel() {
                                                             .put("transferId", transferId)
                                                     )
                                                 }
+                                                if (transferId.isNotBlank()) {
+                                                    activeTransferId.compareAndSet(transferId, null)
+                                                    transferActive.set(false)
+                                                }
                                                 mainHandler.post {
                                             if (activePeerRef.get() !== activePeer) return@post
                                             fileDownloadStatus.value = it.message ?: "Download chunk rejected"
