@@ -22,7 +22,7 @@ internal object RemoteMessageDirection {
         "calllog.sync.result",
         "notifications.sync.result",
         "screen.video.config",
-        "screen.video.frame",
+        "screen.video.chunk",
         "screen.video.end",
         "audio.chunk"
     )
