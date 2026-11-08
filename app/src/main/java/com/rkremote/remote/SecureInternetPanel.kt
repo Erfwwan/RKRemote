@@ -1,6 +1,5 @@
 package com.rkremote.remote
 
-import com.rkremote.BuildConfig
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -35,6 +34,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -64,11 +64,6 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import net.openid.appauth.AuthorizationException
-import net.openid.appauth.AuthorizationResponse
-import net.openid.appauth.AuthorizationService
-import net.openid.appauth.TokenRequest
-import net.openid.appauth.GrantTypeValues
 
 enum class SecureFeatureSection {
     CONNECTION, SCREEN, CAMERA, AUDIO, FILES, NOTIFICATIONS, CALL_LOGS, SMS_MESSAGES, LOCATION, SESSION_PERMISSIONS
@@ -79,99 +74,61 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
     val context = LocalContext.current
     val persistentReportConsent = remember(context) { PersistentPeerReportConsent(context) }
     val setupPrefs = remember(context) { context.getSharedPreferences("rkremote_cloudflare_setup", android.content.Context.MODE_PRIVATE) }
+    LaunchedEffect(context) {
+        context.getSharedPreferences("rkremote_cf_oauth_encrypted", android.content.Context.MODE_PRIVATE).edit().clear().apply()
+    }
     val savedRole = remember { setupPrefs.getString("role", "target") ?: "target" }
     val url = remember { mutableStateOf(setupPrefs.getString("worker_url", "").orEmpty()) }
     val room = remember { mutableStateOf(setupPrefs.getString("room_id", "").orEmpty()) }
     val role = remember { mutableStateOf(if (savedRole == "controller") CloudflareSignalingClient.Role.CONTROLLER else CloudflareSignalingClient.Role.TARGET) }
     val guideOpen = remember { mutableStateOf(false) }
-    val cloudflareAccounts = remember { mutableStateOf<List<CloudflareAccount>>(emptyList()) }
-    val selectedCloudflareAccount = remember { mutableStateOf("") }
-    val cloudflareAccountMenuOpen = remember { mutableStateOf(false) }
-    val cloudflareOAuthBusy = remember { mutableStateOf(false) }
-    val cloudflareOAuthStatus = remember { mutableStateOf("") }
-    val cloudflareAccessToken = remember { mutableStateOf(CloudflareTokenStore.accessToken(context)) }
+    val cloudflareApiTokenInput = remember { mutableStateOf("") }
+    val cloudflareApiTokenSaved = remember { mutableStateOf(CloudflareApiTokenStore.hasToken(context)) }
+    val cloudflareAccountId = remember { mutableStateOf(setupPrefs.getString("cloudflare_account_id", "").orEmpty()) }
+    val cloudflareDeployBusy = remember { mutableStateOf(false) }
+    val cloudflareDeployStatus = remember { mutableStateOf("") }
     val coroutineScope = rememberCoroutineScope()
-    val oauthService = remember(context) { AuthorizationService(context) }
-    DisposableEffect(oauthService) {
-        onDispose { oauthService.dispose() }
-    }
-    fun deployUsingCloudflareToken(token: String) {
-        coroutineScope.launch {
-            cloudflareOAuthBusy.value = true
-            try {
-                cloudflareOAuthStatus.value = "در حال دریافت حساب‌های Cloudflare..."
-                val accounts = withContext(Dispatchers.IO) {
-                    CloudflareAccountApi.listAccounts(token)
-                }
-                cloudflareAccounts.value = accounts
-                if (accounts.isEmpty()) {
-                    cloudflareOAuthStatus.value = "هیچ حسابی با مجوزهای انتخاب‌شده پیدا نشد."
-                } else if (accounts.size == 1) {
-                    selectedCloudflareAccount.value = accounts.first().id
-                    cloudflareOAuthStatus.value = "در حال ساخت یا به‌روزرسانی Worker..."
-                    val workerUrl = withContext(Dispatchers.IO) {
-                        CloudflareAccountApi.deployWorker(context, token, accounts.first().id)
-                    }
-                    url.value = workerUrl
-                    setupPrefs.edit().putString("worker_url", workerUrl).apply()
-                    cloudflareOAuthStatus.value = "Worker با موفقیت مستقر شد."
-                } else {
-                    cloudflareOAuthStatus.value = "حساب موردنظر را انتخاب کن و دکمه استقرار را بزن."
-                }
-            } catch (failure: Throwable) {
-                cloudflareOAuthStatus.value = failure.message ?: "استقرار Worker ناموفق بود."
-            } finally {
-                cloudflareOAuthBusy.value = false
-            }
+
+    fun saveCloudflareApiToken() {
+        val token = cloudflareApiTokenInput.value.trim()
+        if (token.length < 20) {
+            cloudflareDeployStatus.value = "توکن واردشده معتبر به نظر نمی‌رسد."
+            return
         }
-    }
-    val cloudflareOAuthLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        val authResponse = AuthorizationResponse.fromIntent(result.data)
-        val authException = AuthorizationException.fromIntent(result.data)
-        if (authResponse != null) {
-            cloudflareOAuthBusy.value = true
-            oauthService.performTokenRequest(authResponse.createTokenExchangeRequest()) { tokenResponse, tokenError ->
-                if (tokenResponse == null || tokenResponse.accessToken.isNullOrBlank()) {
-                    cloudflareOAuthBusy.value = false
-                    cloudflareOAuthStatus.value = tokenError?.errorDescription ?: "ورود Cloudflare ناموفق بود"
-                } else {
-                    val token = tokenResponse.accessToken!!
-                    val expiresAt = tokenResponse.accessTokenExpirationTime
-                        ?: (System.currentTimeMillis() + 3_600_000L)
-                    CloudflareTokenStore.save(context, token, tokenResponse.refreshToken, expiresAt)
-                    cloudflareAccessToken.value = token
-                    coroutineScope.launch {
-                        try {
-                            cloudflareOAuthStatus.value = "در حال دریافت حساب‌های Cloudflare..."
-                            val accounts = withContext(Dispatchers.IO) {
-                                CloudflareAccountApi.listAccounts(token)
-                            }
-                            cloudflareAccounts.value = accounts
-                            if (accounts.isEmpty()) {
-                                cloudflareOAuthStatus.value = "هیچ حسابی با مجوزهای انتخاب‌شده پیدا نشد."
-                            } else if (accounts.size == 1) {
-                                selectedCloudflareAccount.value = accounts.first().id
-                                cloudflareOAuthStatus.value = "حساب پیدا شد؛ در حال ساخت Worker..."
-                                val workerUrl = withContext(Dispatchers.IO) {
-                                    CloudflareAccountApi.deployWorker(context, token, accounts.first().id)
-                                }
-                                url.value = workerUrl
-                                setupPrefs.edit().putString("worker_url", workerUrl).apply()
-                                cloudflareOAuthStatus.value = "Worker با موفقیت مستقر شد."
-                            } else {
-                                cloudflareOAuthStatus.value = "حساب موردنظر را انتخاب کن و دکمه استقرار را بزن."
-                            }
-                        } catch (failure: Throwable) {
-                            cloudflareOAuthStatus.value = failure.message ?: "استقرار Worker ناموفق بود."
-                        } finally {
-                            cloudflareOAuthBusy.value = false
-                        }
-                    }
-                }
+        runCatching { CloudflareApiTokenStore.save(context, token) }
+            .onSuccess {
+                cloudflareApiTokenInput.value = ""
+                cloudflareApiTokenSaved.value = true
+                cloudflareDeployStatus.value = "توکن به‌صورت رمزنگاری‌شده روی همین گوشی ذخیره شد."
             }
-        } else {
-            cloudflareOAuthBusy.value = false
-            cloudflareOAuthStatus.value = authException?.errorDescription ?: "ورود Cloudflare لغو شد."
+            .onFailure { cloudflareDeployStatus.value = it.message ?: "ذخیره توکن ناموفق بود." }
+    }
+
+    fun updateCloudflareWorker() {
+        val accountId = cloudflareAccountId.value.trim()
+        if (!accountId.matches(Regex("[a-fA-F0-9]{32}"))) {
+            cloudflareDeployStatus.value = "شناسه ۳۲ رقمی حساب Cloudflare را وارد کن."
+            return
+        }
+        val token = CloudflareApiTokenStore.token(context)
+        if (token.isNullOrBlank()) {
+            cloudflareDeployStatus.value = "ابتدا API Token اختصاصی خودت را وارد و ذخیره کن."
+            return
+        }
+        setupPrefs.edit().putString("cloudflare_account_id", accountId).apply()
+        coroutineScope.launch {
+            cloudflareDeployBusy.value = true
+            cloudflareDeployStatus.value = "در حال به‌روزرسانی Worker موجود..."
+            try {
+                withContext(Dispatchers.IO) {
+                    CloudflareAccountApi.updateExistingWorker(context, token, accountId)
+                }
+                cloudflareDeployStatus.value = "کد Worker با موفقیت به‌روزرسانی شد. آدرس Worker را در فیلد بالا وارد یا بررسی کن."
+            } catch (failure: Throwable) {
+                cloudflareDeployStatus.value = failure.message ?: "به‌روزرسانی Worker ناموفق بود."
+            } finally {
+                cloudflareDeployBusy.value = false
+            }
         }
     }
     val autoConnectPending = remember { mutableStateOf(setupPrefs.getBoolean("auto_connect", false)) }
@@ -1449,128 +1406,55 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(
                             "https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2FErfwwan%2FRKRemote%2Ftree%2Ffeature%2Fremote-agent-foundation%2Fcloudflare%2Fworker"
                         )))
-                    }.onFailure { error.value = it.message ?: "Could not open Cloudflare deployment" }
-                }) { Text("ساخت Worker در Cloudflare") }
+                    }.onFailure { error.value = it.message ?: "بازکردن صفحه ساخت Worker ناموفق بود." }
+                }) { Text("ساخت دستی Worker در Cloudflare") }
                 OutlinedButton(onClick = { guideOpen.value = true }) { Text("راهنمای فارسی") }
             }
-            Button(
-                enabled = !cloudflareOAuthBusy.value && BuildConfig.CLOUDFLARE_OAUTH_CLIENT_ID.isNotBlank(),
-                onClick = {
-                    val existingToken = cloudflareAccessToken.value
-                    if (existingToken != null &&
-                        CloudflareTokenStore.expiresAt(context) > System.currentTimeMillis() + 30_000L
-                    ) {
-                        deployUsingCloudflareToken(existingToken)
-                    } else {
-                        val refresh = CloudflareTokenStore.refreshToken(context)
-                        if (refresh != null && BuildConfig.CLOUDFLARE_OAUTH_CLIENT_ID.isNotBlank()) {
-                            cloudflareOAuthBusy.value = true
-                            val refreshRequest = TokenRequest.Builder(
-                                CloudflareOAuth.serviceConfiguration,
-                                BuildConfig.CLOUDFLARE_OAUTH_CLIENT_ID
-                            )
-                                .setGrantType(GrantTypeValues.REFRESH_TOKEN)
-                                .setRefreshToken(refresh)
-                                .build()
-                            oauthService.performTokenRequest(refreshRequest) { refreshed, refreshError ->
-                                if (refreshed?.accessToken.isNullOrBlank()) {
-                                    cloudflareOAuthBusy.value = false
-                                    cloudflareOAuthStatus.value = refreshError?.errorDescription
-                                        ?: "نشست Cloudflare منقضی شده؛ دوباره وارد شو."
-                                    CloudflareTokenStore.clear(context)
-                                    cloudflareAccessToken.value = null
-                                } else {
-                                    val newToken = refreshed!!.accessToken!!
-                                    val expiry = refreshed.accessTokenExpirationTime
-                                        ?: (System.currentTimeMillis() + 3_600_000L)
-                                    CloudflareTokenStore.save(context, newToken, refreshed.refreshToken ?: refresh, expiry)
-                                    cloudflareAccessToken.value = newToken
-                                    deployUsingCloudflareToken(newToken)
-                                }
-                            }
-                        } else {
-                            runCatching {
-                                cloudflareOAuthLauncher.launch(
-                                    oauthService.getAuthorizationRequestIntent(
-                                        CloudflareOAuth.authorizationRequest(BuildConfig.CLOUDFLARE_OAUTH_CLIENT_ID)
-                                    )
-                                )
-                            }.onFailure { cloudflareOAuthStatus.value = it.message ?: "شروع ورود Cloudflare ناموفق بود." }
-                        }
-                    }
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(if (cloudflareOAuthBusy.value) "در حال انجام..." else if (cloudflareAccessToken.value != null) "استقرار یا به‌روزرسانی خودکار Worker" else "ورود به Cloudflare و ساخت خودکار Worker")
-            }
-            if (BuildConfig.CLOUDFLARE_OAUTH_CLIENT_ID.isBlank()) {
-                Text(
-                    "ورود خودکار هنوز فعال نشده: ابتدا OAuth Client موبایل Cloudflare ثبت و Client ID آن در CLOUDFLARE_OAUTH_CLIENT_ID قرار داده شود.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            if (BuildConfig.CLOUDFLARE_OAUTH_CLIENT_ID.isBlank()) {
-                OutlinedButton(onClick = {
-                    runCatching {
-                        context.startActivity(
-                            Intent(
-                                Intent.ACTION_VIEW,
-                                Uri.parse("https://dash.cloudflare.com/?to=/:account/oauth-clients")
-                            )
-                        )
-                    }.onFailure {
-                        cloudflareOAuthStatus.value = it.message ?: "بازکردن صفحه OAuth Cloudflare ناموفق بود."
-                    }
-                }) { Text("ثبت OAuth Client در Cloudflare") }
-            }
-            if (cloudflareAccounts.value.size > 1) {
-                OutlinedButton(onClick = { cloudflareAccountMenuOpen.value = true }) {
-                    Text(
-                        cloudflareAccounts.value.firstOrNull { it.id == selectedCloudflareAccount.value }?.name
-                            ?: "انتخاب حساب Cloudflare"
-                    )
-                }
-                DropdownMenu(
-                    expanded = cloudflareAccountMenuOpen.value,
-                    onDismissRequest = { cloudflareAccountMenuOpen.value = false }
-                ) {
-                    cloudflareAccounts.value.forEach { account ->
-                        DropdownMenuItem(
-                            text = { Text(account.name) },
-                            onClick = {
-                                selectedCloudflareAccount.value = account.id
-                                cloudflareAccountMenuOpen.value = false
-                            }
-                        )
-                    }
-                }
-                Button(
-                    enabled = selectedCloudflareAccount.value.isNotBlank() && !cloudflareOAuthBusy.value,
+            OutlinedTextField(
+                value = cloudflareAccountId.value,
+                onValueChange = { cloudflareAccountId.value = it.trim() },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("شناسه حساب Cloudflare (Account ID)") },
+                placeholder = { Text("شناسه ۳۲ رقمی حساب") },
+                singleLine = true,
+                enabled = session.value == null
+            )
+            OutlinedTextField(
+                value = cloudflareApiTokenInput.value,
+                onValueChange = { cloudflareApiTokenInput.value = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(if (cloudflareApiTokenSaved.value) "API Token جدید (توکن قبلی ذخیره است)" else "API Token اختصاصی Cloudflare") },
+                placeholder = { Text("توکن را فقط در همین گوشی وارد کن") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                enabled = session.value == null
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    enabled = cloudflareApiTokenInput.value.isNotBlank() && session.value == null,
+                    onClick = { saveCloudflareApiToken() }
+                ) { Text("ذخیره امن توکن") }
+                OutlinedButton(
+                    enabled = cloudflareApiTokenSaved.value && session.value == null,
                     onClick = {
-                        val token = cloudflareAccessToken.value ?: return@Button
-                        coroutineScope.launch {
-                            cloudflareOAuthBusy.value = true
-                            try {
-                                cloudflareOAuthStatus.value = "در حال استقرار Worker..."
-                                val workerUrl = withContext(Dispatchers.IO) {
-                                    CloudflareAccountApi.deployWorker(context, token, selectedCloudflareAccount.value)
-                                }
-                                url.value = workerUrl
-                                setupPrefs.edit().putString("worker_url", workerUrl).apply()
-                                cloudflareOAuthStatus.value = "Worker با موفقیت مستقر شد."
-                            } catch (failure: Throwable) {
-                                cloudflareOAuthStatus.value = failure.message ?: "استقرار Worker ناموفق بود."
-                            } finally {
-                                cloudflareOAuthBusy.value = false
-                            }
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("استقرار در حساب انتخاب‌شده") }
+                        CloudflareApiTokenStore.clear(context)
+                        cloudflareApiTokenSaved.value = false
+                        cloudflareDeployStatus.value = "توکن ذخیره‌شده از این گوشی پاک شد؛ برای بی‌اعتبارشدن واقعی، آن را در Cloudflare هم Revoke کن."
+                    }
+                ) { Text("پاک‌کردن توکن") }
             }
-            if (cloudflareOAuthStatus.value.isNotBlank()) {
-                Text(cloudflareOAuthStatus.value, style = MaterialTheme.typography.bodySmall)
+            OutlinedButton(
+                enabled = cloudflareApiTokenSaved.value && !cloudflareDeployBusy.value && session.value == null,
+                onClick = { updateCloudflareWorker() },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text(if (cloudflareDeployBusy.value) "در حال به‌روزرسانی..." else "به‌روزرسانی Worker با API Token") }
+            OutlinedButton(onClick = {
+                runCatching {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://dash.cloudflare.com/profile/api-tokens")))
+                }.onFailure { cloudflareDeployStatus.value = it.message ?: "بازکردن صفحه ساخت API Token ناموفق بود." }
+            }, modifier = Modifier.fillMaxWidth()) { Text("ساخت API Token در Cloudflare") }
+            if (cloudflareDeployStatus.value.isNotBlank()) {
+                Text(cloudflareDeployStatus.value, style = MaterialTheme.typography.bodySmall)
             }
             if (guideOpen.value) {
                 androidx.compose.material3.AlertDialog(
@@ -1578,17 +1462,17 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     title = { Text("راهنمای ساده اتصال Cloudflare") },
                     text = {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("۱) دکمه «ساخت Worker در Cloudflare» را بزن و وارد حساب Cloudflare خودت شو.")
-                            Text("۲) پروژه RKRemote را Deploy کن و اجازه ایجاد Durable Object را تأیید کن.")
-                            Text("۳) برای ساخت خودکار، یک بار OAuth Client موبایل Cloudflare را طبق راهنمای پروژه ثبت کن و Client ID عمومی آن را در تنظیمات build قرار بده. برنامه رمز حساب یا API Token را نمی‌خواهد.")
-                            Text("۴) سپس «ورود به Cloudflare و ساخت خودکار Worker» را بزن. پس از تأیید دسترسی، برنامه Worker، Durable Object و workers.dev را خودش تنظیم می‌کند و آدرس را ذخیره می‌کند.")
-                            Text("۵) اگر OAuth Client هنوز تنظیم نشده، از دکمه ساخت دستی Worker استفاده کن و نشانی workers.dev را در فیلد آدرس وارد کن.")
+                            Text("۱) با دکمه «ساخت دستی Worker در Cloudflare» وارد حساب خودت شو و پروژه RKRemote را Deploy کن. تأیید ایجاد Durable Object لازم است.")
+                            Text("۲) آدرس workers.dev ساخته‌شده را در فیلد «آدرس Worker» وارد کن.")
+                            Text("۳) از صفحه API Tokens یک توکن جداگانه بساز و دسترسی Workers Editor را فقط به Worker مربوط به rkremote-signaling محدود کن. برای ساخت اولیه Worker از لینک Deploy استفاده می‌شود؛ توکن فقط برای به‌روزرسانی کد Worker موجود است.")
+                            Text("۴) Account ID را از صفحه Overview همان حساب کپی کن، سپس Account ID و API Token را در این صفحه وارد و توکن را ذخیره امن کن.")
+                            Text("۵) دکمه «به‌روزرسانی Worker با API Token» فقط کد Worker موجود را به‌روزرسانی می‌کند. توکن با Android Keystore رمزنگاری می‌شود و به گوشی دیگر ارسال نمی‌شود.")
                             Text("۶) روی گوشی مقصد «شروع اتصال» را بزن. برنامه یک اتاق تصادفی می‌سازد و لینک دعوت را برای اشتراک‌گذاری باز می‌کند.")
                             Text("۷) گوشی دوم لینک دعوت را باز می‌کند و بدون واردکردن Room ID یا انتخاب نقش، به همان اتاق وصل می‌شود.")
                             Text("۸) هر دو گوشی باید شناسه دستگاه و کد شش‌رقمی یکسان را بررسی و اتصال را جداگانه تأیید کنند.")
                             Text("۹) بعد از اتصال، فقط قابلیت‌هایی را که صاحب گوشی مقصد اجازه می‌دهد فعال کن. دوربین، میکروفن و ضبط صفحه همچنان باید محلی و با اعلان قابل‌مشاهده شروع شوند.")
                             Text("نکته: Cloudflare محتوای داده‌ها را نمی‌خواند، اما IP، زمان اتصال و حجم ترافیک را می‌بیند. تمام ترافیک از Worker عبور می‌کند و مشمول محدودیت و سهمیه حساب Cloudflare است.")
-                            Text("برای جزئیات ثبت OAuth Client، مسیر docs/CLOUDFLARE_OAUTH_SETUP.md را ببین.")
+                            Text("اگر Worker را فقط دستی ساخته‌ای و قصد به‌روزرسانی از داخل برنامه را نداری، واردکردن API Token لازم نیست؛ آدرس Worker برای اتصال کافی است.")
                         }
                     },
                     confirmButton = {
