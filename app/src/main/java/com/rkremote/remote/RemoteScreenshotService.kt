@@ -204,6 +204,10 @@ internal object RemoteScreenshotStore {
     fun offer(image: Image?) {
         if (image == null) return
         synchronized(lock) {
+            if (!active) {
+                runCatching { image.close() }
+                return
+            }
             runCatching { latestImage?.close() }
             latestImage = image
             lock.notifyAll()
