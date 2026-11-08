@@ -254,6 +254,7 @@ class SecureWebRtcPeer(
                 }
             }
             override fun onMessage(buffer: DataChannel.Buffer) {
+                if (closed.get()) return
                 if (!buffer.binary || buffer.data.remaining() !in (HEADER_BYTES + 1)..MAX_DATA_FRAME_BYTES) {
                     listener.onFailure(IllegalArgumentException("Invalid WebRTC data-channel frame"))
                     close()
@@ -273,7 +274,10 @@ class SecureWebRtcPeer(
 
     /** Forward only SecureLink onApplicationFrame payloads to this method. */
     fun acceptSecureSignal(payload: ByteArray) {
-        if (closed.get() || payload.isEmpty() || payload.size > MAX_SIGNAL_BYTES) {
+        // Late encrypted signaling frames can race with transport teardown.
+        // Once closed, ignore them instead of emitting another failure callback.
+        if (closed.get()) return
+        if (payload.isEmpty() || payload.size > MAX_SIGNAL_BYTES) {
             listener.onFailure(IllegalArgumentException("Invalid encrypted WebRTC signaling frame"))
             close()
             return
@@ -392,12 +396,16 @@ class SecureWebRtcPeer(
             override fun onCreateSuccess(description: SessionDescription) = guarded { onCreate(description) }
             override fun onSetSuccess() = guarded { onSet() }
             override fun onCreateFailure(error: String) {
-                listener.onFailure(IllegalStateException("WebRTC SDP creation failed: $error"))
-                close()
+                if (!closed.get()) {
+                    listener.onFailure(IllegalStateException("WebRTC SDP creation failed: $error"))
+                    close()
+                }
             }
             override fun onSetFailure(error: String) {
-                listener.onFailure(IllegalStateException("WebRTC SDP setup failed: $error"))
-                close()
+                if (!closed.get()) {
+                    listener.onFailure(IllegalStateException("WebRTC SDP setup failed: $error"))
+                    close()
+                }
             }
         }
 
