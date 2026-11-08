@@ -54,6 +54,7 @@ class SecureInternetPeer(
     private val messageGuard = SecureMessageGuard(sessionId)
     private val pendingSignals = ArrayDeque<ByteArray>()
     private val lock = Any()
+    private val outboundLock = Any()
     private var webRtc: SecureWebRtcPeer? = null
     @Volatile private var authenticatedPeerId: String? = null
     private lateinit var secureSession: SecureLinkCloudflareSession
@@ -212,28 +213,29 @@ class SecureInternetPeer(
     }
 
     /** Send a bounded, versioned application message over the DTLS DataChannel. */
-    fun sendMessage(type: String, payload: JSONObject = JSONObject()): Boolean {
-        if (closed.get()) return false
-        return runCatching {
-            val sequence = outboundSequence.getAndIncrement()
-            require(sequence >= 0) { "Outbound sequence exhausted" }
-            val message = RemoteMessage(
-                type = type,
-                sessionId = sessionId,
-                messageId = UUID.randomUUID().toString(),
-                sequence = sequence,
-                sentAt = System.currentTimeMillis(),
-                payload = payload
-            )
-            val bytes = message.toJson().toString().toByteArray(Charsets.UTF_8)
-            require(bytes.size <= RemoteMessage.MAX_MESSAGE_BYTES) { "Application message exceeds protocol limit" }
-            RemoteMessage.parse(bytes.toString(Charsets.UTF_8))
-            send(bytes)
-        }.getOrElse {
-            listener.onFailure(it)
-            false
+    fun sendMessage(type: String, payload: JSONObject = JSONObject()): Boolean =
+        synchronized(outboundLock) {
+            if (closed.get()) return@synchronized false
+            runCatching {
+                val sequence = outboundSequence.getAndIncrement()
+                require(sequence >= 0) { "Outbound sequence exhausted" }
+                val message = RemoteMessage(
+                    type = type,
+                    sessionId = sessionId,
+                    messageId = UUID.randomUUID().toString(),
+                    sequence = sequence,
+                    sentAt = System.currentTimeMillis(),
+                    payload = payload
+                )
+                val bytes = message.toJson().toString().toByteArray(Charsets.UTF_8)
+                require(bytes.size <= RemoteMessage.MAX_MESSAGE_BYTES) { "Application message exceeds protocol limit" }
+                RemoteMessage.parse(bytes.toString(Charsets.UTF_8))
+                send(bytes)
+            }.getOrElse {
+                listener.onFailure(it)
+                false
+            }
         }
-    }
 
     /** Application data is sent only over the DTLS-protected WebRTC DataChannel. */
     fun send(payload: ByteArray): Boolean {
