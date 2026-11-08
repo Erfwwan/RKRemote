@@ -53,10 +53,12 @@ import kotlinx.coroutines.launch
 import com.rkremote.remote.PairingPanel
 import com.rkremote.remote.LanRemotePanel
 import com.rkremote.remote.SecureInternetPanel
+import com.rkremote.remote.OpenNetworkPanel
 
 private enum class AppPage(val title: String) {
     HOME("خانه"),
     INTERNET("اتصال اینترنتی امن"),
+    OPEN_NETWORK("شبکه‌های سفارشی"),
     LAN("کنترل شبکه محلی"),
     PAIRING("جفت‌سازی دستگاه"),
     PERMISSIONS("مجوزهای اندروید"),
@@ -265,6 +267,12 @@ private fun LocalSetupScreen() {
                 Box(Modifier.fillMaxSize().offset(x = if (currentPage == AppPage.INTERNET) 0.dp else 2000.dp)) {
                     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         item { SecureInternetPanel() }
+                    }
+                }
+
+                Box(Modifier.fillMaxSize().offset(x = if (currentPage == AppPage.OPEN_NETWORK) 0.dp else 2000.dp)) {
+                    LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        item { OpenNetworkPanel() }
                     }
                 }
 
