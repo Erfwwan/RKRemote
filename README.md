@@ -12,9 +12,11 @@ Consent-based Android remote-device management for devices owned by the operator
 
 ## Cloudflare account integration
 
-The Android source now includes OAuth Authorization Code + PKCE login, encrypted token storage using Android Keystore, account selection, and Cloudflare API deployment of the Worker and Durable Object binding. It does not ask for a Cloudflare password, Global API Key, or API token.
+Each user deploys the Worker into their own Cloudflare account using the manual Deploy button below. RKRemote then needs only the Worker WSS address for normal pairing and encrypted relay operation.
 
-One-time setup is still required: a Cloudflare account administrator must register a private mobile OAuth client and provide its public Client ID to the build. The redirect URI and scopes are documented in [Cloudflare OAuth setup](docs/CLOUDFLARE_OAUTH_SETUP.md). Until that Client ID is configured, use the manual Deploy button.
+An optional, user-owned Cloudflare API Token can be entered in the app to update the already-created `rkremote-signaling` Worker. The token is encrypted locally with AES-GCM and an Android Keystore key; it is not shared with the paired phone. The app does not use OAuth, a shared developer token, a Global API Key, or the user's Cloudflare password. The token is optional: users who only want to connect can leave it blank.
+
+Create a token with **Workers Editor** access scoped to the existing `rkremote-signaling` Worker only. The manual Deploy step creates the Worker first; the in-app token operation only updates that existing Worker. See [Cloudflare manual setup](docs/CLOUDFLARE_OAUTH_SETUP.md).
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Erfwwan/RKRemote/tree/feature/remote-agent-foundation/cloudflare/worker)
 
@@ -31,13 +33,13 @@ The app does not bypass Android permissions, silently start sensors, hide its se
 - Compression is performed before encryption and only kept when it saves at least 32 bytes. Already-compressed images/audio/video generally receive little or no size reduction.
 - Noise protects app payloads end-to-end. WSS protects each phone-to-Cloudflare hop. The Worker never receives plaintext app messages.
 - The room ID is not device authentication. Peer identity verification and owner approval remain mandatory.
-- All OAuth tokens are encrypted at rest using Android Keystore. A Cloudflare OAuth grant can be revoked from the Cloudflare account.
+- The optional user API Token is encrypted at rest using Android Keystore. Removing it from the app does not revoke it at Cloudflare; revoke it separately in Cloudflare when no longer needed.
 
 ## Build and verification
 
 Requirements: Android Studio, JDK 17, Gradle 8.11.1 and Android SDK 35.
 
-The source changes in this milestone have **not** been built or tested. OAuth deployment has not been run against a real Cloudflare account. Physical tests on both phones remain deferred to the final stage. A successful build would not by itself prove transport correctness or production readiness.
+The source changes in this milestone have **not** been built or tested. API-token-based Worker update has not been run against a real Cloudflare account. Physical tests on both phones remain deferred to the final stage. A successful build would not by itself prove transport correctness or production readiness.
 
 See:
 - [Cloudflare Worker deployment](cloudflare/worker/README.md)
