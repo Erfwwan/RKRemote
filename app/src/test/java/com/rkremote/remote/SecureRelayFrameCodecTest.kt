@@ -8,7 +8,8 @@ import java.security.SecureRandom
 class SecureRelayFrameCodecTest {
     @Test
     fun compressedPayloadRoundTripsAcrossRelayFrames() {
-        val source = ByteArray(48 * 1024) { "RKRemote encrypted relay ".toByteArray()[it % 26] }
+        val pattern = "RKRemote encrypted relay ".toByteArray()
+        val source = ByteArray(48 * 1024) { pattern[it % pattern.size] }
         val sender = SecureRelayFrameCodec()
         val receiver = SecureRelayFrameCodec()
 
