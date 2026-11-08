@@ -56,6 +56,7 @@ class CameraCaptureService : Service() {
     private var thread: HandlerThread? = null
     @Volatile private var lastFrameAt = 0L
     @Volatile private var activeLensFacing = CameraCharacteristics.LENS_FACING_BACK
+    @Volatile private var cameraGeneration = 0
 
     override fun onCreate() {
         super.onCreate()
@@ -117,6 +118,7 @@ class CameraCaptureService : Service() {
     }
 
     private fun startCamera(lensFacing: Int) {
+        val generation = cameraGeneration
         val manager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
         val cameraId = manager.cameraIdList.firstOrNull { id ->
             manager.getCameraCharacteristics(id).get(CameraCharacteristics.LENS_FACING) == lensFacing
@@ -138,7 +140,7 @@ class CameraCaptureService : Service() {
         reader = imageReader
         active.set(true)
         imageReader.setOnImageAvailableListener({ source ->
-            if (!active.get()) return@setOnImageAvailableListener
+            if (!active.get() || generation != cameraGeneration) return@setOnImageAvailableListener
             val now = android.os.SystemClock.elapsedRealtime()
             if (now - lastFrameAt < 500) {
                 source.acquireLatestImage()?.close()
@@ -159,7 +161,7 @@ class CameraCaptureService : Service() {
 
         manager.openCamera(cameraId, object : CameraDevice.StateCallback() {
             override fun onOpened(device: CameraDevice) {
-                if (!active.get()) {
+                if (!active.get() || generation != cameraGeneration) {
                     device.close()
                     return
                 }
@@ -169,7 +171,7 @@ class CameraCaptureService : Service() {
                         listOf(imageReader.surface),
                         object : CameraCaptureSession.StateCallback() {
                             override fun onConfigured(configured: CameraCaptureSession) {
-                                if (!active.get()) {
+                                if (!active.get() || generation != cameraGeneration) {
                                     configured.close()
                                     return
                                 }
@@ -184,18 +186,18 @@ class CameraCaptureService : Service() {
                                     }.build()
                                     configured.setRepeatingRequest(request, null, handler)
                                 } catch (_: Exception) {
-                                    stopSelf()
+                                    if (generation == cameraGeneration) stopSelf()
                                 }
                             }
                             override fun onConfigureFailed(failed: CameraCaptureSession) {
                                 failed.close()
-                                stopSelf()
+                                if (generation == cameraGeneration) stopSelf()
                             }
                         },
                         handler
                     )
                 } catch (_: Exception) {
-                    stopSelf()
+                    if (generation == cameraGeneration) stopSelf()
                 }
             }
 
@@ -231,6 +233,7 @@ class CameraCaptureService : Service() {
     }
 
     private fun stopCamera() {
+        cameraGeneration += 1
         active.set(false)
         CameraFrameStore.clear()
         runCatching { session?.stopRepeating() }
