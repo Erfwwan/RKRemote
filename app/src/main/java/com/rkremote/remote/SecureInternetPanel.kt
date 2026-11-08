@@ -1521,7 +1521,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 Text("Saved report permissions by paired device", style = MaterialTheme.typography.titleSmall)
                 Text(persistentReportConsentStatus.value, style = MaterialTheme.typography.bodySmall)
                 if (rememberedReportGrants.value.isEmpty()) {
-                    Text("No persistent SMS or call-history grants are saved.", style = MaterialTheme.typography.bodySmall)
+                    Text("No persistent SMS, call-history or location grants are saved.", style = MaterialTheme.typography.bodySmall)
                 } else {
                     rememberedReportGrants.value.toSortedMap().forEach { (savedPeer, savedCapabilities) ->
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1548,6 +1548,15 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                             persistentReportConsentStatus.value = "SMS permission revoked for this peer"
                                         }.onFailure { error.value = it.message ?: "Could not revoke saved permission" }
                                     }) { Text("Revoke SMS") }
+                                }
+                                if (RemoteCapability.LOCATION in savedCapabilities) {
+                                    OutlinedButton(onClick = {
+                                        runCatching {
+                                            revokeRememberedReportCapability(savedPeer, setOf(RemoteCapability.LOCATION))
+                                        }.onSuccess {
+                                            persistentReportConsentStatus.value = "Location sharing permission revoked for this peer"
+                                        }.onFailure { error.value = it.message ?: "Could not revoke saved permission" }
+                                    }) { Text("Revoke location") }
                                 }
                             }
                         }
