@@ -881,13 +881,13 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                     }.onSuccess {
                                                         mainHandler.post {
                                                     if (activePeerRef.get() !== activePeer) return@post
-                                                    cameraStatus.value = "Receiving secure camera frame"
+                                                    cameraStatus.value = "دریافت عکس رمزنگاری‌شده"
                                                     }
                                                     }.onFailure {
                                                         imageAssembler.abort()
                                                         mainHandler.post {
                                                     if (activePeerRef.get() !== activePeer) return@post
-                                                    cameraStatus.value = it.message ?: "Invalid camera frame header"
+                                                    cameraStatus.value = it.message ?: "سرآیند عکس نامعتبر است"
                                                     }
                                                     }
                                                     "camera.frame.chunk" -> runCatching {
@@ -896,7 +896,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                         imageAssembler.abort()
                                                         mainHandler.post {
                                                     if (activePeerRef.get() !== activePeer) return@post
-                                                    cameraStatus.value = it.message ?: "Invalid camera frame chunk"
+                                                    cameraStatus.value = it.message ?: "بخش عکس نامعتبر است"
                                                     }
                                                     }
                                                     "camera.frame.complete" -> runCatching {
@@ -913,7 +913,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                         imageAssembler.abort()
                                                         mainHandler.post {
                                                     if (activePeerRef.get() !== activePeer) return@post
-                                                    cameraStatus.value = it.message ?: "Camera snapshot verification failed"
+                                                    cameraStatus.value = it.message ?: "اعتبارسنجی عکس ناموفق بود"
                                                     }
                                                     }
                                                     "ptt.audio.chunk" -> {
@@ -2005,10 +2005,19 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                 } else {
                                     Text(if (SecureContactsSync.hasContactsPermission(context)) "فهرست فقط با فشردن دکمه زیر و پس از مجوز اندروید خوانده می‌شود." else "برای نمایش مخاطبین، مجوز مخاطبین را در بخش مجوزهای اندروید فعال کن.", style = MaterialTheme.typography.bodySmall)
                                     OutlinedButton(enabled = SecureContactsSync.hasContactsPermission(context), onClick = {
-                                        runCatching { SecureContactsSync.readLatest(context) }.onSuccess { result ->
-                                            contactsItems.value = buildList { for (index in 0 until result.records.length()) result.records.optJSONObject(index)?.let { add(JSONObject(it.toString())) } }
-                                            contactsStatus.value = "${result.records.length()} مخاطب از ${result.totalAvailable} مخاطب"
-                                        }.onFailure { contactsStatus.value = it.message ?: "خواندن مخاطبین ناموفق بود" }
+                                        coroutineScope.launch {
+                                            contactsStatus.value = "در حال خواندن دفترچه مخاطبین…"
+                                            runCatching { withContext(Dispatchers.IO) { SecureContactsSync.readLatest(context) } }
+                                                .onSuccess { result ->
+                                                    contactsItems.value = buildList {
+                                                        for (index in 0 until result.records.length()) {
+                                                            result.records.optJSONObject(index)?.let { add(JSONObject(it.toString())) }
+                                                        }
+                                                    }
+                                                    contactsStatus.value = "${result.records.length()} مخاطب از ${result.totalAvailable} مخاطب"
+                                                }
+                                                .onFailure { contactsStatus.value = it.message ?: "خواندن مخاطبین ناموفق بود" }
+                                        }
                                     }) { Text("نمایش مخاطبین همین گوشی") }
                                 }
                                 val filteredContacts = contactsItems.value.filter { item ->
