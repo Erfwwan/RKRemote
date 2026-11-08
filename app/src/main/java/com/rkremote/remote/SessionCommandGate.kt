@@ -21,6 +21,11 @@ class SessionCommandGate {
     @Synchronized
     fun beginOwnerApprovedSession(peerId: String, capabilities: Set<RemoteCapability>) {
         require(peerId.isNotBlank() && peerId.length <= 128)
+        require(capabilities.isNotEmpty()) { "At least one owner-approved capability is required" }
+        // A gate represents exactly one active peer session. Drop any stale
+        // state before binding it to the newly authenticated peer.
+        grants.clear()
+        lastSequence.clear()
         approvedPeerId = peerId
         grants[peerId] = capabilities.toSet()
         lastSequence[peerId] = -1L
