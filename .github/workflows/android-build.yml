@@ -1,7 +1,7 @@
 name: Android build
 
 on:
-  # Approved one-time verification build after Compose branch nesting correction.
+  # Approved build: publish the debug APK before the test stage for early device review.
   push:
     branches:
       - feature/remote-agent-foundation
@@ -33,12 +33,8 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
-      - name: Run unit tests
-        run: gradle --no-daemon :app:testDebugUnitTest
       - name: Assemble debug APK
         run: gradle --no-daemon :app:assembleDebug
-      - name: Assemble release APK (unsigned unless operator credentials are configured)
-        run: gradle --no-daemon :app:assembleRelease
       - name: Upload installable debug APK
         uses: actions/upload-artifact@v4
         with:
@@ -46,6 +42,10 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
+      - name: Run unit tests
+        run: gradle --no-daemon :app:testDebugUnitTest
+      - name: Assemble release APK (unsigned unless operator credentials are configured)
+        run: gradle --no-daemon :app:assembleRelease
       - name: Upload release APK
         uses: actions/upload-artifact@v4
         with:
