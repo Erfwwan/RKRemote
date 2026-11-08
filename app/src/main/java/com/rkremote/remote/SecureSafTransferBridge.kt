@@ -280,7 +280,7 @@ class SecureSafTransferBridge(context: Context) {
     }
 
     private fun sanitizeUploadName(raw: String): String {
-        val name = raw.substringAfterLast('/').substringAfterLast('\\\\')
+        val name = raw.substringAfterLast('/').substringAfterLast('\\')
             .filter { it.code >= 32 && it.code != 127 }
             .take(180)
             .trim()
