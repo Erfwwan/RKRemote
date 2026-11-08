@@ -1356,6 +1356,17 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 }) { Text("Allow call history report") }
                 OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
                     runCatching {
+                        check(SecureSmsSync.hasSmsPermission(context)) {
+                            "Enable Android SMS permission locally first"
+                        }
+                        // SMS and call-log commands share the session gate; the SMS handler
+                        // independently verifies READ_SMS before reading any message.
+                        session.value?.grantOwnerApprovedCapabilities(setOf(RemoteCapability.CALL_LOG))
+                    }.onSuccess { status.value = "SMS report allowed for this session" }
+                        .onFailure { error.value = it.message ?: "Could not grant SMS report access" }
+                }) { Text("Allow SMS report") }
+                OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
+                    runCatching {
                         check(SecureNotificationSync.isNotificationAccessEnabled(context)) {
                             "Enable RKRemote Notification Access in Android settings first"
                         }
