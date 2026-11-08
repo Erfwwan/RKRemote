@@ -395,7 +395,11 @@ class LanAgentServer(
         stream.flush()
         var lastSequence = 0L
         while (running.get() && !socket.isClosed) {
-            val frame = ScreenVideoStore.awaitNext(lastSequence, 2_000) ?: run { if (!ScreenVideoStore.hasConfig()) break else continue }
+            val frame = ScreenVideoStore.awaitNext(lastSequence, 2_000)
+            if (frame == null) {
+                if (!ScreenVideoStore.hasConfig()) break
+                continue
+            }
             if (frame.bytes.size > ScreenVideoStore.MAX_ACCESS_UNIT) break
             stream.writeLong(frame.ptsUs)
             stream.writeInt(frame.flags)
