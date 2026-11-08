@@ -173,7 +173,7 @@ class SecureLinkHandshake(
     fun remotePeerId(): String? = remoteBinding?.peerId
 
     @Synchronized
-    fun close() {
+    override fun close() {
         if (state == State.CLOSED) return
         state = State.CLOSED
         approved = false
