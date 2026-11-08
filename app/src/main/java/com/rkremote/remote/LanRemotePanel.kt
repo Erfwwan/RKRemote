@@ -68,6 +68,8 @@ fun LanRemotePanel() {
     var targetToken by remember { mutableStateOf("") }
     var output by remember { mutableStateOf("No request yet.") }
     var busy by remember { mutableStateOf(false) }
+    var connectionStatus by remember { mutableStateOf("Not connected") }
+    var reconnectJob by remember { mutableStateOf<Job?>(null) }
     var screenBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var previewJob by remember { mutableStateOf<Job?>(null) }
     var previewRunning by remember { mutableStateOf(false) }
@@ -81,7 +83,7 @@ fun LanRemotePanel() {
     var notificationResult by remember { mutableStateOf("No notification history requested yet.") }
     var pendingDownloadId by remember { mutableStateOf("") }
     var pendingDownloadName by remember { mutableStateOf("download.bin") }
-    DisposableEffect(Unit) { onDispose { previewJob?.cancel() } }
+    DisposableEffect(Unit) { onDispose { previewJob?.cancel(); reconnectJob?.cancel() } }
     val projectionManager = remember { context.getSystemService(MediaProjectionManager::class.java) }
     val screenConsentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val data = result.data
@@ -216,6 +218,70 @@ fun LanRemotePanel() {
                 modifier = Modifier.fillMaxWidth(), singleLine = true,
                 label = { Text("Temporary access token") }
             )
+            Text("Connection: $connectionStatus", style = MaterialTheme.typography.bodySmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    enabled = targetIp.isNotBlank() && targetToken.isNotBlank(),
+                    onClick = {
+                        if (reconnectJob?.isActive == true) {
+                            reconnectJob?.cancel()
+                            reconnectJob = null
+                            connectionStatus = "Automatic reconnect stopped"
+                        } else {
+                            reconnectJob = scope.launch {
+                                var failures = 0
+                                while (isActive) {
+                                    val result = withContext(Dispatchers.IO) {
+                                        runCatching {
+                                            JSONObject(
+                                                LanControllerClient.request(
+                                                    targetIp.trim(), targetToken.trim(), "/health"
+                                                )
+                                            )
+                                        }
+                                    }
+                                    result.onSuccess { health ->
+                                        failures = 0
+                                        connectionStatus = "Connected · uptime " +
+                                            (health.optLong("uptimeMs") / 1000L) + "s · clients " +
+                                            health.optInt("activeClients")
+                                    }.onFailure { error ->
+                                        failures++
+                                        connectionStatus = "Disconnected · " +
+                                            (error.message ?: "network error") + " · retrying"
+                                    }
+                                    val waitMs = if (failures == 0) 5000L
+                                        else (1000L shl (failures - 1).coerceAtMost(4)).coerceAtMost(15000L)
+                                    delay(waitMs)
+                                }
+                            }
+                        }
+                    }
+                ) { Text(if (reconnectJob?.isActive == true) "Stop auto reconnect" else "Auto reconnect") }
+                OutlinedButton(
+                    enabled = !busy && targetIp.isNotBlank() && targetToken.isNotBlank(),
+                    onClick = {
+                        busy = true
+                        scope.launch {
+                            val result = withContext(Dispatchers.IO) {
+                                runCatching {
+                                    JSONObject(LanControllerClient.request(
+                                        targetIp.trim(), targetToken.trim(), "/health"
+                                    ))
+                                }
+                            }
+                            result.onSuccess {
+                                connectionStatus = "Connected · uptime " + (it.optLong("uptimeMs") / 1000L) + "s"
+                                output = it.toString(2)
+                            }.onFailure {
+                                connectionStatus = "Disconnected · " + it.message
+                                output = "Health check failed: " + it.message
+                            }
+                            busy = false
+                        }
+                    }
+                ) { Text("Check now") }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(enabled = !busy, onClick = {
                     busy = true
