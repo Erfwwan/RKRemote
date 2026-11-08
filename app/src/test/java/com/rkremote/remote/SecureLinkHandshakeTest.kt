@@ -78,6 +78,12 @@ class SecureLinkHandshakeTest {
         assertEquals(third.confirmationCode, responderDone.confirmationCode)
 
         val code = third.confirmationCode!!
+        assertThrows(IllegalStateException::class.java) {
+            initiator.encrypt("must wait for owner approval".toByteArray())
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            initiator.confirmPeer("not-the-code", responderIdentity.peerId)
+        }
         initiator.confirmPeer(code, responderIdentity.peerId)
         responder.confirmPeer(code, initiatorIdentity.peerId)
 
