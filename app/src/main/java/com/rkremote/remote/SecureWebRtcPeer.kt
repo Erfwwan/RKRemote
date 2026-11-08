@@ -318,9 +318,6 @@ class SecureWebRtcPeer(
     }
 
     private fun observeDataChannel(channel: DataChannel) {
-        channel.setBufferedAmountLowThreshold(
-            SecureDataChannelSendQueue.BUFFERED_AMOUNT_LOW_THRESHOLD
-        )
         channel.registerObserver(object : DataChannel.Observer {
             override fun onBufferedAmountChange(previousAmount: Long) {
                 if (!closed.get() &&
