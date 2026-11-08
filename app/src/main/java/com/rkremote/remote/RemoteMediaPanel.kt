@@ -238,7 +238,7 @@ fun RemoteMediaPanel(
             }
 
             Text("PART 5 · TWO-WAY AUDIO / PUSH-TO-TALK", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text("Hold to talk from the controller to the target. The target microphone can be listened to separately; both directions are owner-enabled and use short PCM chunks.", style = MaterialTheme.typography.bodySmall)
+            Text("Half-duplex walkie-talkie: hold to stream your voice live to the target speaker. This is not a phone call and the two directions are not active at once.", style = MaterialTheme.typography.bodySmall)
             Text("CONTROLLER PHONE · LIVE PUSH TO TALK", fontWeight = FontWeight.SemiBold)
             Card(
                 modifier = Modifier.fillMaxWidth().pointerInput(pttPermissionGranted, targetIp, targetToken) {
@@ -367,7 +367,7 @@ fun RemoteMediaPanel(
                 }) { Text("Stop listening") }
             }
             Text(
-                "Audio uses mono PCM, 16 kHz, 16-bit. Start transmission and receive playback independently for simultaneous two-way audio. Android echo cancellation and noise suppression are enabled when available; results depend on each phone. Use a quiet environment and moderate speaker volume. Camera frames are JPEG-compressed at quality 82 before transfer. This is a LAN prototype, not encrypted internet streaming.",
+                "PTT sends mono PCM, 16 kHz, 16-bit in live chunks while held; the target plays each chunk as it arrives through its main loudspeaker. The separate Section 4 microphone monitor is not part of PTT and should not be used simultaneously. Android echo cancellation and noise suppression are enabled when available, but cannot guarantee zero feedback. Camera frames are JPEG-compressed at quality 82 before transfer. This is a LAN prototype, not encrypted internet streaming.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
