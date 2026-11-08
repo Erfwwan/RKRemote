@@ -25,7 +25,8 @@ internal object RemoteMessageDirection {
         "screen.video.chunk",
         "screen.video.end",
         "audio.chunk",
-        "microphone.audio.chunk"
+        "microphone.audio.chunk",
+        "microphone.stream.ended"
     )
 
     // Every command registered by SecureRemoteCommandRouter is controller-originated.
