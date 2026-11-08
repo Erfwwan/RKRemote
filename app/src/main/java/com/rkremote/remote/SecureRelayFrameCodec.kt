@@ -120,6 +120,7 @@ internal class SecureRelayFrameCodec(
         private const val MAGIC = 0x524B4331 // RKC1
         private const val FLAG_DEFLATE = 0x01
         private const val ENVELOPE_BYTES = 9
+        private const val HEADER_BYTES = 24
         private const val NOISE_OVERHEAD_BYTES = 1 + 16 // APP marker + ChaChaPoly tag
         private const val MIN_COMPRESS_BYTES = 512
         private const val MIN_COMPRESSION_SAVING = 32
