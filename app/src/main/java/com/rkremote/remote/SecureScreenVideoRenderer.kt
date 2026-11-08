@@ -63,7 +63,7 @@ class SecureScreenVideoRenderer(
                 require(width in 2..480 && height in 2..480)
                 val csd0 = Base64.decode(payload.getString("csd0"), Base64.DEFAULT)
                 val csd1 = Base64.decode(payload.getString("csd1"), Base64.DEFAULT)
-                require(csd0.size <= MAX_CODEC_CONFIG_BYTES && csd1.size <= MAX_CODEC_CONFIG_BYTES)
+                require(csd0.isNotEmpty() && csd0.size <= MAX_CODEC_CONFIG_BYTES && csd1.size <= MAX_CODEC_CONFIG_BYTES)
                 val streamId = payload.getString("streamId")
                 require(streamId.matches(Regex("[A-Za-z0-9_-]{1,64}")))
                 handler.post {
@@ -107,7 +107,7 @@ class SecureScreenVideoRenderer(
                 currentConfig.height
             ).apply {
                 setByteBuffer("csd-0", ByteBuffer.wrap(currentConfig.csd0))
-                setByteBuffer("csd-1", ByteBuffer.wrap(currentConfig.csd1))
+                if (currentConfig.csd1.isNotEmpty()) setByteBuffer("csd-1", ByteBuffer.wrap(currentConfig.csd1))
                 setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, SecureVideoFrameCodec.MAX_FRAME_BYTES)
             }
             decoder = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC).also {
