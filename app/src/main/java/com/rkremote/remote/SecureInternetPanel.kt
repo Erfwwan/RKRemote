@@ -15,11 +15,14 @@ import android.os.Handler
 import android.os.Looper
 import android.view.SurfaceView
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -27,6 +30,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
@@ -42,6 +46,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
@@ -49,6 +54,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.viewinterop.AndroidView
 import org.json.JSONObject
 import java.util.Base64
@@ -1358,11 +1364,65 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
         }
     }
 
-    Card {
+    Card(
+        modifier = Modifier.fillMaxWidth().animateContentSize(),
+        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier.fillMaxWidth().padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            if (feature == SecureFeatureSection.CONNECTION) {
+                Box(
+                    modifier = Modifier.fillMaxWidth()
+                        .background(
+                            Brush.linearGradient(
+                                listOf(
+                                    MaterialTheme.colorScheme.primaryContainer,
+                                    MaterialTheme.colorScheme.surfaceVariant
+                                )
+                            ),
+                            RoundedCornerShape(22.dp)
+                        )
+                        .padding(20.dp)
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                        Text(
+                            "RKREMOTE  /  PRIVATE NETWORK",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        Text(
+                            "اتصال امن،\nبدون پیچیدگی.",
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        Text(
+                            "راه‌اندازی رله اختصاصی Cloudflare و جفت‌سازی دو دستگاه با تأیید دوطرفه.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        androidx.compose.material3.Surface(
+                            shape = RoundedCornerShape(50.dp),
+                            color = if (secureRelayConnected.value) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
+                        ) {
+                            Text(
+                                if (secureRelayConnected.value) "●  اتصال امن برقرار است" else "○  آماده راه‌اندازی",
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                                color = if (secureRelayConnected.value) MaterialTheme.colorScheme.onPrimary
+                                    else MaterialTheme.colorScheme.onSurface,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
             if (feature != SecureFeatureSection.CONNECTION) {
                 val sectionTitle = when (feature) {
                     SecureFeatureSection.SCREEN -> "نمایش و کنترل گوشی"
@@ -1384,10 +1444,11 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 )
             }
             if (feature == SecureFeatureSection.CONNECTION) {
-            Text("اتصال امن Cloudflare Relay", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("راه‌اندازی Cloudflare Relay", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text(
                 "تمام داده‌های برنامه از رله Cloudflare عبور می‌کنند؛ داده‌های قابل‌فشرده‌سازی ابتدا فشرده و سپس رمزنگاری سرتاسری می‌شوند. هیچ تنظیم STUN، TURN یا شبکهٔ دیگری لازم نیست.",
-                style = MaterialTheme.typography.bodySmall
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             OutlinedTextField(
                 value = url.value,
