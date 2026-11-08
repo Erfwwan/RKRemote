@@ -2,6 +2,7 @@ package com.rkremote.remote
 
 import android.Manifest
 import android.content.Intent
+import android.hardware.camera2.CameraCharacteristics
 import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Settings
@@ -67,6 +68,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 enum class SecureFeatureSection {
@@ -150,6 +152,8 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
     val renderer = remember { mutableStateOf<SecureScreenVideoRenderer?>(null) }
     val cameraBitmap = remember { mutableStateOf<Bitmap?>(null) }
     val cameraStatus = remember { mutableStateOf("Camera snapshot idle") }
+    val pendingCameraFacing = remember { mutableStateOf(CameraCharacteristics.LENS_FACING_BACK) }
+    val cameraCapturePending = remember { mutableStateOf(false) }
     val imageAssembler = remember { SecureImageFrameAssembler() }
     val cameraTransferActive = remember { AtomicBoolean(false) }
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
@@ -194,6 +198,56 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
     val audioPlayback = remember(context) { SecureAudioPlayback() }
     val audioStatus = remember { mutableStateOf("Microphone stream idle") }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
+    fun launchLocalCameraCapture(facing: Int) {
+        runCatching {
+            val intent = Intent(context, CameraCaptureService::class.java)
+                .putExtra(CameraCaptureService.EXTRA_LENS_FACING, facing)
+            ContextCompat.startForegroundService(context, intent)
+        }.onSuccess {
+            cameraCapturePending.value = true
+            cameraStatus.value = "در حال ثبت یک عکس روی همین گوشی؛ اعلان توقف اندروید نمایش داده می‌شود."
+        }.onFailure {
+            cameraCapturePending.value = false
+            cameraStatus.value = "شروع دوربین ناموفق بود: ${it.message}"
+        }
+    }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) launchLocalCameraCapture(pendingCameraFacing.value)
+        else cameraStatus.value = "مجوز دوربین داده نشد؛ هیچ عکسی ثبت نشد."
+    }
+
+    fun requestLocalCameraCapture(facing: Int) {
+        pendingCameraFacing.value = facing
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            launchLocalCameraCapture(facing)
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    LaunchedEffect(feature, role.value, cameraCapturePending.value) {
+        if (feature == SecureFeatureSection.CAMERA &&
+            role.value == CloudflareSignalingClient.Role.TARGET &&
+            cameraCapturePending.value
+        ) {
+            repeat(40) {
+                if (CameraFrameStore.latestFrame != null) {
+                    cameraCapturePending.value = false
+                    cameraStatus.value = "یک عکس آماده ارسال است؛ برای ارسال، مجوز نشست دوربین را جداگانه تأیید کن."
+                    return@LaunchedEffect
+                }
+                delay(500)
+            }
+            cameraCapturePending.value = false
+            cameraStatus.value = "ثبت عکس در زمان مجاز کامل نشد؛ دوربین را دوباره امتحان کن."
+        }
+    }
+
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { result ->
@@ -1775,10 +1829,44 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     session.value?.revokeOwnerApprovedCommands()
                     status.value = "All remote command permissions revoked for this session"
                 }) { Text("Revoke all remote permissions for this session") }
+            } else if (feature == SecureFeatureSection.CAMERA) {
+                Text("ثبت عکس روی همین گوشی", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "دوربین فقط با لمس دکمه‌های زیر و روی خود دستگاه فعال می‌شود. کنترل‌کننده از راه دور نمی‌تواند دوربین را روشن کند.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        enabled = !cameraCapturePending.value,
+                        onClick = { requestLocalCameraCapture(CameraCharacteristics.LENS_FACING_BACK) }
+                    ) { Text("ثبت عکس دوربین پشت") }
+                    OutlinedButton(
+                        enabled = !cameraCapturePending.value,
+                        onClick = { requestLocalCameraCapture(CameraCharacteristics.LENS_FACING_FRONT) }
+                    ) { Text("ثبت عکس دوربین جلو") }
+                }
+                Text(
+                    cameraStatus.value,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (CameraFrameStore.latestFrame != null) {
+                    OutlinedButton(onClick = {
+                        CameraFrameStore.clear()
+                        cameraCapturePending.value = false
+                        cameraStatus.value = "عکس آماده ارسال از حافظه پاک شد."
+                    }) { Text("پاک کردن عکس آماده ارسال") }
+                }
+                Text(
+                    "برای ارسال عکس، ابتدا در بخش «مجوزهای نشست» دسترسی دوربین را برای همین اتصال تأیید کن.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            } else {
                 Text(
                     "Start Android screen sharing locally before allowing screen viewing. Remote commands never start screen, camera or microphone capture.",
                     style = MaterialTheme.typography.bodySmall
                 )
+            }
             } else if (role.value == CloudflareSignalingClient.Role.CONTROLLER) {
                 Text("Controller", style = MaterialTheme.typography.titleSmall)
                 if (feature == SecureFeatureSection.CAMERA) {
