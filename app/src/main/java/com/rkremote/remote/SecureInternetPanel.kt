@@ -1067,6 +1067,9 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                             }
                                             override fun onData(payload: ByteArray) = Unit
                                             override fun onRemoteMessage(message: RemoteMessage) {
+                                                if (!RemoteMessageDirection.isAllowedIncoming(role.value, message.type)) {
+                                                    return
+                                                }
                                                 when (message.type) {
                                                     "camera.frame.begin" -> runCatching {
                                                         imageAssembler.begin(message.payload)
