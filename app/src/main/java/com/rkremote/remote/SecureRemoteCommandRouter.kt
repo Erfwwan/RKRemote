@@ -93,7 +93,6 @@ class SecureRemoteCommandRouter(
             "file.list.request" to RemoteCapability.FILES,
             "file.download.request" to RemoteCapability.FILES,
             "file.upload.begin" to RemoteCapability.FILES,
-            "notification.event" to RemoteCapability.NOTIFICATIONS,
             "camera.start.request" to RemoteCapability.CAMERA,
             "camera.stop" to RemoteCapability.CAMERA,
             "audio.start.request" to RemoteCapability.MICROPHONE,
