@@ -2,19 +2,50 @@
 
 Each RKRemote user deploys a separate Worker into their own Cloudflare account. There is no shared Cloudflare account, shared token, OAuth Client ID, or app-wide credential.
 
-## 1. Deploy your own Worker
+## 1. Deploy your own Worker without connecting GitHub
 
-1. Open the [Deploy to Cloudflare](https://deploy.workers.cloudflare.com/?url=https://github.com/Erfwwan/RKRemote/tree/feature/remote-agent-foundation/cloudflare/worker) link.
-2. Sign in to your Cloudflare account.
-3. Review the project and deploy it. Approve the `SignalRoom` Durable Object binding/migration when Cloudflare requests it.
-4. After deployment, copy the assigned `workers.dev` hostname.
-5. In RKRemote, enter the Worker address in this form:
+The old **Deploy to Cloudflare** button imported this repository through Cloudflare's GitHub integration. Do not use that button if you do not want to link GitHub. RKRemote does not need GitHub access at runtime.
+
+Use Wrangler CLI instead. It authenticates directly to your Cloudflare account and deploys the Worker source from your device/computer.
+
+### Android (Termux)
+
+1. Download the public [RKRemote source ZIP](https://github.com/Erfwwan/RKRemote/archive/refs/heads/feature/remote-agent-foundation.zip). Downloading a public ZIP does **not** connect or authorize a GitHub account.
+2. In Termux, install the required tools:
+
+```sh
+pkg update -y
+pkg install nodejs-lts unzip -y
+termux-setup-storage
+mkdir -p ~/rkremote-src
+unzip -o ~/storage/downloads/feature-remote-agent-foundation.zip -d ~/rkremote-src
+cd "$(find ~/rkremote-src -type d -path '*/cloudflare/worker' -print -quit)"
+npm install
+npx wrangler login
+npx wrangler deploy
+```
+
+If the downloaded ZIP has a different filename, replace `feature-remote-agent-foundation.zip` with its actual name. When the browser opens, sign in to **Cloudflare only** and approve Wrangler.
+
+### Computer
+
+1. Download and extract the same public source ZIP.
+2. Open a terminal in `cloudflare/worker`.
+3. Run:
+
+```sh
+npm install
+npx wrangler login
+npx wrangler deploy
+```
+
+4. Wrangler displays the deployed Worker hostname. Copy it into RKRemote in this format:
 
 ```
 wss://rkremote-signaling.<your-workers-subdomain>.workers.dev
 ```
 
-The exact hostname is assigned by Cloudflare and differs for each account. Do not copy another user's address.
+5. If Wrangler asks to create the `SignalRoom` Durable Object binding/migration, review and approve it.
 
 ## 2. Normal connection does not need an API Token
 
