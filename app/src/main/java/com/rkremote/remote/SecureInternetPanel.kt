@@ -80,6 +80,13 @@ fun SecureInternetPanel() {
     val fileDownloadStatus = remember { mutableStateOf("No download active") }
     val fileUploadStatus = remember { mutableStateOf("No upload active") }
     val downloadReceiver = remember(context) { SecureDownloadReceiver(context) }
+    val downloadResumePrefs = remember(context) {
+        context.getSharedPreferences("rkremote_download_resume", android.content.Context.MODE_PRIVATE)
+    }
+    val pendingDownloadId = remember(downloadReceiver) { mutableStateOf(downloadReceiver.pendingTransferId()) }
+    val pendingDownloadDocumentId = remember(context) {
+        mutableStateOf(downloadResumePrefs.getString("document_id", null))
+    }
     val safBridge = remember(context) { SecureSafTransferBridge(context) }
     val transferExecutor = remember { Executors.newFixedThreadPool(SecureSafTransferBridge.MAX_ACTIVE_UPLOADS) }
     val transferActive = remember { AtomicBoolean(false) }
@@ -404,6 +411,7 @@ fun SecureInternetPanel() {
                                                 safBridge.streamFile(
                                                     transferId = transferId,
                                                     documentId = documentId,
+                                                    startOffset = message.payload.optLong("offset", 0L),
                                                     onStart = { metadata ->
                                                         activeTransferId.get() == transferId && transferActive.get() &&
                                                             activePeer?.sendMessage(
@@ -834,6 +842,9 @@ fun SecureInternetPanel() {
                                                 downloadReceiver.complete(message.payload)
                                             }.onSuccess { saved ->
                                                 val transferId = message.payload.optString("transferId")
+                                                downloadResumePrefs.edit().remove("document_id").commit()
+                                                pendingDownloadId.value = null
+                                                pendingDownloadDocumentId.value = null
                                                 if (transferId.isNotBlank()) {
                                                     activeTransferId.compareAndSet(transferId, null)
                                                     transferActive.set(false)
@@ -922,6 +933,7 @@ fun SecureInternetPanel() {
                                             if (activePeerRef.get() !== activePeer) return@post
                                             transferActive.set(false)
                                             activeTransferId.set(null)
+                                            downloadReceiver.pause()
                                             safBridge.cancelAllTransfers()
                                             targetActiveUploadIds.clear()
                                             cameraTransferActive.set(false)
@@ -1285,14 +1297,21 @@ fun SecureInternetPanel() {
                                     fileDownloadStatus.value = "Another file transfer is active"
                                 } else {
                                     activeTransferId.set(transferId)
+                                    pendingDownloadId.value = transferId
+                                    pendingDownloadDocumentId.value = item.optString("id")
+                                    downloadResumePrefs.edit().putString("document_id", item.optString("id")).commit()
                                     val sent = session.value?.sendMessage(
                                         "file.download.request",
                                         JSONObject().put("requestId", transferId)
                                             .put("documentId", item.optString("id"))
+                                            .put("offset", 0L)
                                     ) == true
                                     if (!sent) {
                                         transferActive.set(false)
                                         activeTransferId.compareAndSet(transferId, null)
+                                        downloadResumePrefs.edit().remove("document_id").commit()
+                                        pendingDownloadId.value = null
+                                        pendingDownloadDocumentId.value = null
                                     }
                                     fileDownloadStatus.value = if (sent) "Download requested: " + item.optString("name")
                                         else "Could not request download"
@@ -1302,6 +1321,34 @@ fun SecureInternetPanel() {
                     }
                 }
                 Text(fileDownloadStatus.value, style = MaterialTheme.typography.bodySmall)
+                if (downloadReceiver.hasPendingTransfer() &&
+                    pendingDownloadId.value == downloadReceiver.pendingTransferId() &&
+                    !transferActive.get()) {
+                    OutlinedButton(
+                        enabled = session.value != null && dataChannelConnected.value &&
+                            !pendingDownloadDocumentId.value.isNullOrBlank(),
+                        onClick = {
+                            val transferId = pendingDownloadId.value ?: return@OutlinedButton
+                            val documentId = pendingDownloadDocumentId.value ?: return@OutlinedButton
+                            if (transferActive.compareAndSet(false, true)) {
+                                activeTransferId.set(transferId)
+                                val offset = downloadReceiver.pendingOffset()
+                                val sent = session.value?.sendMessage(
+                                    "file.download.request",
+                                    JSONObject().put("requestId", transferId)
+                                        .put("documentId", documentId)
+                                        .put("offset", offset)
+                                ) == true
+                                if (!sent) {
+                                    transferActive.set(false)
+                                    activeTransferId.compareAndSet(transferId, null)
+                                }
+                                fileDownloadStatus.value = if (sent)
+                                    "Resuming download from $offset bytes" else "Could not resume download"
+                            }
+                        }
+                    ) { Text("Resume previous download (${downloadReceiver.pendingOffset()} bytes)") }
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         enabled = session.value != null && dataChannelConnected.value &&
@@ -1328,8 +1375,11 @@ fun SecureInternetPanel() {
                                 transferActive.set(false)
                                 activeTransferId.compareAndSet(downloadId, null)
                                 downloadReceiver.abort()
+                                downloadResumePrefs.edit().remove("document_id").commit()
+                                pendingDownloadId.value = null
+                                pendingDownloadDocumentId.value = null
                             }
-                            fileDownloadStatus.value = "Active download cancelled"
+                            fileDownloadStatus.value = "Active or pending download cancelled"
                             fileUploadStatus.value = "Outgoing uploads cancelled"
                         }
                     ) { Text("Cancel transfers") }
