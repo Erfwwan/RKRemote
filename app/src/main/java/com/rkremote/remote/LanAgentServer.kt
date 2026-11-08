@@ -354,7 +354,7 @@ class LanAgentServer(
                 if (frame == null) {
                     respond(output, 503, JSONObject().put("error", "Camera is not active or no frame is ready"))
                 } else {
-                    respondBytes(output, frame)
+                    respondBytes(output, frame, CameraFrameStore.latestMimeType)
                 }
                 return
             }
@@ -630,9 +630,9 @@ class LanAgentServer(
         return JSONObject().put("items", items).put("parentId", parent)
     }
 
-    private fun respondBytes(output: OutputStream, bytes: ByteArray) {
+    private fun respondBytes(output: OutputStream, bytes: ByteArray, contentType: String = "image/jpeg") {
         val header = "HTTP/1.1 200 OK\r\n" +
-            "Content-Type: image/jpeg\r\n" +
+            "Content-Type: $contentType\r\n" +
             "Content-Length: ${bytes.size}\r\n" +
             "Connection: close\r\n" +
             "Cache-Control: no-store\r\n\r\n"
