@@ -17,7 +17,9 @@ RKRemote does not implement covert camera/microphone capture, hidden persistence
 - Bounded local notification event history (500 events), encrypted using AES-GCM with a non-exportable Android Keystore key
 - Notification contents are stored locally only; this milestone does not transmit them
 
-**Not implemented yet:** remote pairing, network transport, remote file operations, remote screen interaction, camera/audio streaming, or two-way walkie-talkie.
+**Available in the current development branch:** an owner-started, visible read-only LAN agent and same-app controller. On a trusted Wi-Fi network, the controller can test the target phone connection and list names/metadata from a folder explicitly selected on that phone. This is an early runnable milestone, not full remote control.
+
+**Still not implemented:** internet relay, secure TLS LAN transport, screen sharing/input, camera/audio streaming, file content transfer, contacts/call-log transfer, and two-way walkie-talkie.
 
 ## Build
 
@@ -54,12 +56,12 @@ Open the repository in Android Studio and run the app configuration on an Androi
 
 A GitHub Actions workflow now runs a debug APK compilation on pushes, pull requests, and manual dispatches. The workflow uses Gradle 8.11.1 with JDK 17.
 
-**Important:** the repository is not yet a complete remote-control product. The current Android application is the local capability-setup milestone. Remote pairing, authenticated network transport, remote screen interaction, camera/audio streaming, and push-to-talk remain future implementation work. Do not rely on the app for remote access until those features are implemented and tested on real devices.
+**Important:** the repository is not yet a complete remote-control product. The current Android application includes local capability setup and a minimal read-only LAN connection path. Full remote control, media streaming, and secure internet access remain future work. Do not rely on the app for remote access until those features are implemented and tested on real devices.
 
 
 
 ## Development branch
 
-The current development foundation is being prepared in [PR #1](https://github.com/Erfwwan/RKRemote/pull/1). It adds a versioned message envelope, one-time pairing-code prototype, TLS-pinned WebSocket transport, centralized capability checks, a visible session notification with a stop action, and initial JVM tests.
+The current development branch is [PR #1](https://github.com/Erfwwan/RKRemote/pull/1). It adds the LAN agent/controller prototype, security foundations, a visible session notification with a stop action, and JVM tests.
 
-See [implementation status](docs/IMPLEMENTATION_STATUS.md) for the exact boundary between implemented code and unfinished features. The project is not yet a complete remote-control system and should not be deployed for remote administration until the authenticated relay handshake, controller app, capability-specific operations, and device testing are completed.
+See [implementation status](docs/IMPLEMENTATION_STATUS.md) for the exact boundary between implemented code and unfinished features. The LAN prototype is read-only and intended only for a trusted private Wi-Fi network. Do not expose it to the internet. Full remote-control features and real-device validation are still required.
