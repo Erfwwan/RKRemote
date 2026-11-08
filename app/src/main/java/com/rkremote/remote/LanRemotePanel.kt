@@ -99,9 +99,9 @@ fun LanRemotePanel() {
             targetIp.isNotBlank() && targetToken.isNotBlank()) {
             player = RemoteVideoPlayer(
                 targetIp.trim(), targetToken.trim(), view.holder.surface,
-                onStatus = { message -> context.mainExecutor.execute { output = message } },
+                onStatus = { message -> android.os.Handler(android.os.Looper.getMainLooper()).post { output = message } },
                 onVideoSize = { width, height ->
-                    context.mainExecutor.execute { videoAspectRatio = width.toFloat() / height.toFloat() }
+                    android.os.Handler(android.os.Looper.getMainLooper()).post { videoAspectRatio = width.toFloat() / height.toFloat() }
                 }
             ).also { it.start() }
             videoPlayer = player
