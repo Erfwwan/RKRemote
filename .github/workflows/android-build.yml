@@ -1,7 +1,7 @@
 name: Android build
 
 on:
-  # Approved build: publish the debug APK before the test stage for early device review.
+  # Approved build: publish the debug APK before tests; latest camera-store test API is synchronized.
   push:
     branches:
       - feature/remote-agent-foundation
