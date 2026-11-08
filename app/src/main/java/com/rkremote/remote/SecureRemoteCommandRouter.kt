@@ -76,18 +76,22 @@ class SecureRemoteCommandRouter(
 
     @Synchronized
     fun dispatch(authenticatedPeerId: String, message: RemoteMessage): Result {
+        val requiredCapability = COMMAND_CAPABILITIES[message.type]
+            ?: return Result(false, "Message type is not a remote command")
+
+        // Consume the authenticated command sequence even when the local
+        // handler is unavailable or the request envelope is malformed.
+        // Production also has SecureMessageGuard, but this router remains safe
+        // when tested or reused independently.
+        val decision = gate.authorize(authenticatedPeerId, message.sequence, requiredCapability)
+        if (!decision.allowed) return Result(false, decision.reason)
+
         val route = routes[message.type]
             ?: return Result(false, "No local handler is registered for this command")
         val requestId = message.payload.optString("requestId", "")
         if (requestId.isBlank() || requestId.length > 128) {
             return Result(false, "A bounded requestId is required")
         }
-
-        // Consume the authenticated sequence before duplicate-ID rejection.
-        // This keeps the router safe even when exercised without the outer
-        // SecureMessageGuard used by the production peer transport.
-        val decision = gate.authorize(authenticatedPeerId, message.sequence, route.capability)
-        if (!decision.allowed) return Result(false, decision.reason)
         if (seenRequests.containsKey(requestId)) {
             return Result(false, "Duplicate requestId")
         }
