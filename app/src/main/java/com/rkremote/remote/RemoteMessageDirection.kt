@@ -27,7 +27,32 @@ internal object RemoteMessageDirection {
         "audio.chunk"
     )
 
-    private val controllerToTarget = setOf("ptt.audio.chunk")
+    // Every command registered by SecureRemoteCommandRouter is controller-originated.
+    // Keep this list explicit so a controller cannot accidentally consume a command
+    // echoed or injected back through a compromised/misconfigured relay.
+    private val controllerToTarget = setOf(
+        "screen.stream.start",
+        "screen.stream.stop",
+        "screen.input",
+        "file.list.request",
+        "file.download.request",
+        "file.transfer.request",
+        "file.upload.begin",
+        "file.transfer.chunk",
+        "file.transfer.complete",
+        "file.transfer.cancel",
+        "notifications.sync.request",
+        "calllog.sync.request",
+        "sms.sync.request",
+        "contacts.sync.request",
+        "location.sync.request",
+        "camera.snapshot.request",
+        "audio.start.request",
+        "audio.stop",
+        "ptt.start",
+        "ptt.stop",
+        "ptt.audio.chunk"
+    )
 
     fun isAllowedIncoming(role: CloudflareSignalingClient.Role, messageType: String): Boolean =
         when {
