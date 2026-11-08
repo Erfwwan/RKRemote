@@ -236,7 +236,7 @@ fun LanRemotePanel() {
                 }) { Text("Share this screen") }
                 OutlinedButton(onClick = {
                     context.startService(Intent(context, ScreenCaptureService::class.java).setAction(ScreenCaptureService.ACTION_STOP))
-                    screenBitmap = null
+                    previewRunning = false
                 }) { Text("Stop screen") }
             }
             Spacer(Modifier.height(4.dp))
