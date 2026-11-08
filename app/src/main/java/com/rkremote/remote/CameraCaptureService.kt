@@ -7,6 +7,8 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.Manifest
 import android.content.pm.ServiceInfo
 import android.graphics.ImageFormat
 import android.graphics.Bitmap
@@ -23,6 +25,7 @@ import android.os.HandlerThread
 import android.os.IBinder
 import android.util.Size
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.rkremote.MainActivity
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.atomic.AtomicBoolean
@@ -77,6 +80,11 @@ class CameraCaptureService : Service() {
         val requestedFacing = intent?.getIntExtra(EXTRA_LENS_FACING, CameraCharacteristics.LENS_FACING_BACK)
             ?: CameraCharacteristics.LENS_FACING_BACK
         if (requestedFacing != CameraCharacteristics.LENS_FACING_BACK && requestedFacing != CameraCharacteristics.LENS_FACING_FRONT) return START_NOT_STICKY
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            stopCamera()
+            stopSelfResult(startId)
+            return START_NOT_STICKY
+        }
         if (active.get()) {
             if (activeLensFacing == requestedFacing) return START_NOT_STICKY
             stopCamera()
