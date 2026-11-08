@@ -130,6 +130,8 @@ class SecureRemoteCommandRouter(
             "sms.sync.request" to RemoteCapability.CONTACTS,
             "contacts.sync.request" to RemoteCapability.ADDRESS_BOOK,
             "location.sync.request" to RemoteCapability.LOCATION,
+            "microphone.stream.start" to RemoteCapability.MICROPHONE,
+            "microphone.stream.stop" to RemoteCapability.MICROPHONE,
             "camera.snapshot.request" to RemoteCapability.CAMERA,
             "ptt.start" to RemoteCapability.PUSH_TO_TALK,
             "ptt.stop" to RemoteCapability.PUSH_TO_TALK
