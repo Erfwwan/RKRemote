@@ -55,7 +55,7 @@ import com.rkremote.remote.SecureFeatureSection
 
 private enum class AppPage(val title: String) {
     HOME("خانه"),
-    CONNECTIONS("اتصال و روش‌ها"),
+    CONNECTIONS("اتصال Cloudflare"),
     SCREEN("نمایش و کنترل گوشی"),
     CAMERA("دوربین"),
     AUDIO("میکروفن و واکی‌تاکی"),
@@ -73,6 +73,7 @@ private enum class AppPage(val title: String) {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        applyPairInvite(intent?.data)
         setContent {
             MaterialTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -80,6 +81,32 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private fun applyPairInvite(uri: Uri?) {
+        if (uri?.scheme != "rkremote" || uri.host != "pair") return
+        val worker = uri.getQueryParameter("worker")?.trim().orEmpty()
+        val room = uri.getQueryParameter("room")?.trim().orEmpty()
+        if (!worker.startsWith("wss://") || !room.matches(Regex("[a-f0-9]{64}"))) return
+        runCatching {
+            val parsed = java.net.URI(worker)
+            require(!parsed.host.isNullOrBlank() && parsed.rawUserInfo == null &&
+                parsed.rawQuery == null && parsed.rawFragment == null &&
+                (parsed.rawPath.isNullOrEmpty() || parsed.rawPath == "/"))
+            getSharedPreferences("rkremote_cloudflare_setup", Context.MODE_PRIVATE)
+                .edit()
+                .putString("worker_url", worker)
+                .putString("room_id", room)
+                .putString("role", "controller")
+                .apply()
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        applyPairInvite(intent.data)
+        recreate()
     }
 }
 
