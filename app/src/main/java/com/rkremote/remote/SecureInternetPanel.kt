@@ -284,6 +284,101 @@ fun SecureInternetPanel() {
                                         mainHandler.post { status.value = "Secure transport received · ${payload.size} bytes" }
                                     }
                                     override fun onRemoteMessage(message: RemoteMessage) {
+                                        if (message.type == "file.list.result") {
+                                            val items = message.payload.optJSONArray("items")
+                                            val parsed = buildList {
+                                                for (index in 0 until (items?.length() ?: 0)) {
+                                                    items?.optJSONObject(index)?.let { add(JSONObject(it.toString())) }
+                                                }
+                                            }
+                                            mainHandler.post {
+                                                fileEntries.value = parsed
+                                                fileParentId.value = message.payload.optString("parentId")
+                                                selectedFileId.value = null
+                                                fileStatus.value = "Loaded ${parsed.size} entries"
+                                            }
+                                        }
+                                        if (message.type == "file.download.begin") {
+                                            runCatching {
+                                                check(Build.VERSION.SDK_INT >= 29) { "Downloads folder integration requires Android 10+" }
+                                                downloadOutput?.close()
+                                                downloadUri?.let { context.contentResolver.delete(it, null, null) }
+                                                val name = message.payload.optString("name").take(255).ifBlank { "download.bin" }
+                                                val mime = message.payload.optString("mimeType").take(160)
+                                                    .takeIf { it.matches(Regex("[A-Za-z0-9!#                                    override fun onRemoteMessage(message: RemoteMessage) {
+                                        if (message.type == "notifications.sync.result") {^_.+-]+/[A-Za-z0-9!#                                    override fun onRemoteMessage(message: RemoteMessage) {
+                                        if (message.type == "notifications.sync.result") {^_.+-]+")) }
+                                                    ?: "application/octet-stream"
+                                                val values = ContentValues().apply {
+                                                    put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+                                                    put(MediaStore.MediaColumns.MIME_TYPE, mime)
+                                                    put(MediaStore.MediaColumns.RELATIVE_PATH, "Download/RKRemote")
+                                                    put(MediaStore.MediaColumns.IS_PENDING, 1)
+                                                }
+                                                val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                                                    ?: error("Could not create a file in Downloads")
+                                                downloadUri = uri
+                                                downloadOutput = context.contentResolver.openOutputStream(uri, "w")
+                                                    ?: error("Could not open the destination file")
+                                                downloadDigest = MessageDigest.getInstance("SHA-256")
+                                                downloadBytes = 0L
+                                                downloadExpectedBytes = message.payload.optLong("totalBytes", -1L)
+                                                mainHandler.post { fileStatus.value = "Receiving ${name} · ${downloadExpectedBytes} bytes" }
+                                            }.onFailure {
+                                                downloadOutput?.close()
+                                                downloadOutput = null
+                                                downloadUri?.let { context.contentResolver.delete(it, null, null) }
+                                                downloadUri = null
+                                                mainHandler.post { fileStatus.value = it.message ?: "Could not create download file" }
+                                            }
+                                        }
+                                        if (message.type == "file.download.chunk") {
+                                            runCatching {
+                                                val offset = message.payload.getLong("offset")
+                                                check(offset == downloadBytes) { "File chunk offset mismatch" }
+                                                val bytes = Base64.getDecoder().decode(message.payload.getString("data"))
+                                                check(bytes.isNotEmpty() && bytes.size <= SecureSafTransferBridge.MAX_CHUNK_BYTES)
+                                                downloadOutput?.write(bytes) ?: error("No active file download")
+                                                downloadDigest?.update(bytes)
+                                                downloadBytes += bytes.size.toLong()
+                                                check(downloadBytes <= SecureSafTransferBridge.MAX_FILE_BYTES)
+                                            }.onFailure {
+                                                downloadOutput?.close()
+                                                downloadOutput = null
+                                                downloadUri?.let { context.contentResolver.delete(it, null, null) }
+                                                downloadUri = null
+                                                mainHandler.post { fileStatus.value = it.message ?: "File transfer failed" }
+                                            }
+                                        }
+                                        if (message.type == "file.download.complete") {
+                                            runCatching {
+                                                val expectedHash = message.payload.getString("sha256")
+                                                val actualHash = downloadDigest?.digest()?.joinToString("") { "%02x".format(it) }
+                                                check(actualHash == expectedHash) { "Downloaded file SHA-256 verification failed" }
+                                                check(downloadBytes == message.payload.getLong("totalBytes")) { "Downloaded file size mismatch" }
+                                                downloadOutput?.flush()
+                                                downloadOutput?.close()
+                                                downloadOutput = null
+                                                val uri = downloadUri ?: error("Download destination disappeared")
+                                                val values = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
+                                                context.contentResolver.update(uri, values, null, null)
+                                                downloadUri = null
+                                                mainHandler.post { fileStatus.value = "Download verified · ${downloadBytes} bytes · saved in Download/RKRemote" }
+                                            }.onFailure {
+                                                downloadOutput?.close()
+                                                downloadOutput = null
+                                                downloadUri?.let { context.contentResolver.delete(it, null, null) }
+                                                downloadUri = null
+                                                mainHandler.post { fileStatus.value = it.message ?: "Download verification failed" }
+                                            }
+                                        }
+                                        if (message.type == "file.download.error") {
+                                            downloadOutput?.close()
+                                            downloadOutput = null
+                                            downloadUri?.let { context.contentResolver.delete(it, null, null) }
+                                            downloadUri = null
+                                            mainHandler.post { fileStatus.value = message.payload.optString("reason", "File transfer failed") }
+                                        }
                                         if (message.type == "notifications.sync.result") {
                                             val events = message.payload.optJSONArray("events")
                                             mainHandler.post {
@@ -419,6 +514,15 @@ fun SecureInternetPanel() {
                     enabled = session.value != null && dataChannelConnected.value,
                     onClick = {
                         runCatching {
+                            session.value?.grantOwnerApprovedCapabilities(setOf(RemoteCapability.FILES))
+                        }.onSuccess { status.value = "Secure file browsing and downloads approved for this session" }
+                            .onFailure { error.value = it.message ?: "Could not grant file access" }
+                    }
+                ) { Text("Allow secure file browsing and downloads") }
+                OutlinedButton(
+                    enabled = session.value != null && dataChannelConnected.value,
+                    onClick = {
+                        runCatching {
                             check(SecureNotificationSync.isNotificationAccessEnabled(context)) { "Enable RKRemote Notification Access in Android settings first" }
                             session.value?.grantOwnerApprovedCapabilities(setOf(RemoteCapability.NOTIFICATIONS))
                         }.onSuccess { status.value = "Notification sharing approved for this session" }
@@ -473,6 +577,64 @@ fun SecureInternetPanel() {
                         streamStatus.value = if (sent) "Text insertion request sent" else "Could not send text"
                     }
                 ) { Text("Insert text on target") }
+                OutlinedButton(
+                    enabled = session.value != null && dataChannelConnected.value,
+                    onClick = {
+                        val sent = session.value?.sendMessage(
+                            "file.list.request",
+                            JSONObject().put("requestId", java.util.UUID.randomUUID().toString())
+                                .put("parentId", fileParentId.value)
+                        ) == true
+                        fileStatus.value = if (sent) "File list requested" else "Could not request file list"
+                    }
+                ) { Text("Browse target files") }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        enabled = fileParentId.value.isNotBlank() && session.value != null && dataChannelConnected.value,
+                        onClick = {
+                            val sent = session.value?.sendMessage(
+                                "file.list.request",
+                                JSONObject().put("requestId", java.util.UUID.randomUUID().toString())
+                                    .put("parentId", "")
+                            ) == true
+                            fileStatus.value = if (sent) "Root folder requested" else "Could not navigate to root"
+                        }
+                    ) { Text("Root") }
+                    OutlinedButton(
+                        enabled = selectedFileId.value != null && session.value != null && dataChannelConnected.value,
+                        onClick = {
+                            val sent = session.value?.sendMessage(
+                                "file.download.request",
+                                JSONObject().put("requestId", java.util.UUID.randomUUID().toString())
+                                    .put("documentId", selectedFileId.value)
+                            ) == true
+                            fileStatus.value = if (sent) "Secure download requested" else "Could not start download"
+                        }
+                    ) { Text("Download selected") }
+                }
+                fileEntries.value.forEach { item ->
+                    val directory = item.optBoolean("directory")
+                    OutlinedButton(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            if (directory) {
+                                val sent = session.value?.sendMessage(
+                                    "file.list.request",
+                                    JSONObject().put("requestId", java.util.UUID.randomUUID().toString())
+                                        .put("parentId", item.optString("id"))
+                                ) == true
+                                if (sent) fileStatus.value = "Opening ${item.optString("name")}"
+                            } else {
+                                selectedFileId.value = item.optString("id")
+                                fileStatus.value = "Selected ${item.optString("name")}"
+                            }
+                        }
+                    ) {
+                        Text((if (directory) "📁 " else "📄 ") + item.optString("name") +
+                            (if (directory) "" else " · " + item.opt("size").toString() + " B"))
+                    }
+                }
+                Text(fileStatus.value, style = MaterialTheme.typography.bodySmall)
                 OutlinedButton(
                     enabled = session.value != null && dataChannelConnected.value,
                     onClick = {
