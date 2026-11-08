@@ -1,11 +1,14 @@
 package com.rkremote.remote
 
 import android.os.Build
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.os.Handler
 import android.os.Looper
 import android.view.SurfaceView
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -29,6 +32,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -57,6 +62,11 @@ fun SecureInternetPanel() {
     val error = remember { mutableStateOf<String?>(null) }
     val session = remember { mutableStateOf<SecureInternetPeer?>(null) }
     val renderer = remember { mutableStateOf<SecureScreenVideoRenderer?>(null) }
+    val cameraBitmap = remember { mutableStateOf<Bitmap?>(null) }
+    val cameraStatus = remember { mutableStateOf("Camera snapshot idle") }
+    val imageAssembler = remember { SecureImageFrameAssembler() }
+    val cameraTransferActive = remember { AtomicBoolean(false) }
+    val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     val streamStatus = remember { mutableStateOf("Screen stream idle") }
     val streamSender = remember { mutableStateOf<SecureScreenStreamSender?>(null) }
     val remoteText = remember { mutableStateOf("") }
@@ -171,6 +181,9 @@ fun SecureInternetPanel() {
     DisposableEffect(Unit) {
         onDispose {
             transferActive.set(false)
+            cameraTransferActive.set(false)
+            imageAssembler.abort()
+            cameraExecutor.shutdownNow()
             audioRelayActive.set(false)
             pttRelayActive.set(false)
             audioPlayback.close()
@@ -357,6 +370,68 @@ fun SecureInternetPanel() {
                                         }
                                         "file.download.begin"
                                     }
+                                    register("camera.start.request", RemoteCapability.CAMERA) {
+                                        val frame = CameraFrameStore.latestFrame?.copyOf()
+                                            ?: error("Start the camera locally on the target first")
+                                        require(frame.size in 1..SecureImageFrameAssembler.MAX_IMAGE_BYTES) {
+                                            "Camera frame exceeds the secure snapshot limit"
+                                        }
+                                        check(cameraTransferActive.compareAndSet(false, true)) {
+                                            "A camera snapshot is already being transferred"
+                                        }
+                                        val transferId = UUID.randomUUID().toString()
+                                        cameraExecutor.execute {
+                                            try {
+                                                fun sendWithRetry(type: String, payload: JSONObject): Boolean {
+                                                    var attempts = 0
+                                                    while (cameraTransferActive.get() && attempts < 200) {
+                                                        if (activePeer?.sendMessage(type, payload) == true) return true
+                                                        attempts++
+                                                        Thread.sleep(50)
+                                                    }
+                                                    return false
+                                                }
+                                                check(sendWithRetry(
+                                                    "camera.frame.begin",
+                                                    JSONObject()
+                                                        .put("transferId", transferId)
+                                                        .put("totalBytes", frame.size)
+                                                        .put("mimeType", CameraFrameStore.latestMimeType)
+                                                )) { "Could not start camera frame transfer" }
+                                                var offset = 0
+                                                while (offset < frame.size && cameraTransferActive.get()) {
+                                                    val end = minOf(offset + SecureImageFrameAssembler.MAX_CHUNK_BYTES, frame.size)
+                                                    val chunk = frame.copyOfRange(offset, end)
+                                                    check(sendWithRetry(
+                                                        "camera.frame.chunk",
+                                                        JSONObject()
+                                                            .put("transferId", transferId)
+                                                            .put("offset", offset)
+                                                            .put("data", Base64.getEncoder().encodeToString(chunk))
+                                                    )) { "Camera frame transfer was interrupted" }
+                                                    offset = end
+                                                }
+                                                check(cameraTransferActive.get()) { "Camera frame transfer was stopped" }
+                                                val hash = MessageDigest.getInstance("SHA-256").digest(frame)
+                                                    .joinToString("") { "%02x".format(it) }
+                                                check(sendWithRetry(
+                                                    "camera.frame.complete",
+                                                    JSONObject().put("transferId", transferId).put("sha256", hash)
+                                                )) { "Could not complete camera frame transfer" }
+                                            } catch (failure: Throwable) {
+                                                mainHandler.post {
+                                                    cameraStatus.value = failure.message ?: "Camera frame transfer failed"
+                                                }
+                                            } finally {
+                                                cameraTransferActive.set(false)
+                                            }
+                                        }
+                                        "camera.frame.begin"
+                                    }
+                                    register("camera.stop", RemoteCapability.CAMERA) {
+                                        cameraTransferActive.set(false)
+                                        null
+                                    }
                                     register("screen.stream.start", RemoteCapability.SCREEN_VIEW) {
                                         check(ScreenVideoStore.hasConfig()) { "Start screen sharing locally on the target first" }
                                         streamSender.value?.close()
@@ -481,6 +556,33 @@ fun SecureInternetPanel() {
                                     override fun onData(payload: ByteArray) = Unit
                                     override fun onRemoteMessage(message: RemoteMessage) {
                                         when (message.type) {
+                                            "camera.frame.begin" -> runCatching {
+                                                imageAssembler.begin(message.payload)
+                                            }.onSuccess {
+                                                mainHandler.post { cameraStatus.value = "Receiving secure camera snapshot" }
+                                            }.onFailure {
+                                                imageAssembler.abort()
+                                                mainHandler.post { cameraStatus.value = it.message ?: "Invalid camera frame header" }
+                                            }
+                                            "camera.frame.chunk" -> runCatching {
+                                                imageAssembler.append(message.payload)
+                                            }.onFailure {
+                                                imageAssembler.abort()
+                                                mainHandler.post { cameraStatus.value = it.message ?: "Invalid camera frame chunk" }
+                                            }
+                                            "camera.frame.complete" -> runCatching {
+                                                imageAssembler.finish(message.payload)
+                                            }.onSuccess { result ->
+                                                val bitmap = BitmapFactory.decodeByteArray(result.second, 0, result.second.size)
+                                                    ?: error("Received camera snapshot is not a valid image")
+                                                mainHandler.post {
+                                                    cameraBitmap.value = bitmap
+                                                    cameraStatus.value = "Secure camera snapshot received"
+                                                }
+                                            }.onFailure {
+                                                imageAssembler.abort()
+                                                mainHandler.post { cameraStatus.value = it.message ?: "Camera snapshot verification failed" }
+                                            }
                                             "ptt.audio.chunk" -> {
                                                 if (role.value == CloudflareSignalingClient.Role.TARGET && pttRelayActive.get()) {
                                                     runCatching {
@@ -623,6 +725,8 @@ fun SecureInternetPanel() {
                                     }
                                     override fun onDisconnected(reason: String) {
                                         transferActive.set(false)
+                                        cameraTransferActive.set(false)
+                                        imageAssembler.abort()
                                         audioRelayActive.set(false)
                                         pttRelayActive.set(false)
                                         PttAudioQueue.clear()
@@ -637,6 +741,8 @@ fun SecureInternetPanel() {
                                     }
                                     override fun onFailure(failure: Throwable) {
                                         transferActive.set(false)
+                                        cameraTransferActive.set(false)
+                                        imageAssembler.abort()
                                         audioRelayActive.set(false)
                                         pttRelayActive.set(false)
                                         PttAudioQueue.clear()
@@ -689,6 +795,15 @@ fun SecureInternetPanel() {
                     "Screen capture, Notification Access, and Accessibility must each be enabled locally first. Every remote capability below is granted separately for this session.",
                     style = MaterialTheme.typography.bodySmall
                 )
+                OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
+                    runCatching {
+                        check(CameraFrameStore.latestFrame != null) {
+                            "Start the rear or front camera locally on the target first"
+                        }
+                        session.value?.grantOwnerApprovedCapabilities(setOf(RemoteCapability.CAMERA))
+                    }.onSuccess { status.value = "Camera snapshots allowed for this session" }
+                        .onFailure { error.value = it.message ?: "Could not grant camera access" }
+                }) { Text("Allow camera snapshots") }
                 OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
                     runCatching { session.value?.grantOwnerApprovedCapabilities(setOf(RemoteCapability.SCREEN_VIEW)) }
                         .onSuccess { status.value = "Screen viewing allowed for this session" }
@@ -744,6 +859,27 @@ fun SecureInternetPanel() {
                 )
             } else {
                 Text("Controller", style = MaterialTheme.typography.titleSmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(enabled = session.value != null && dataChannelConnected.value && !cameraTransferActive.get(), onClick = {
+                        cameraStatus.value = if (sendInput("camera.start.request", JSONObject()))
+                            "Camera snapshot requested" else "Could not request camera snapshot"
+                    }) { Text("Request camera snapshot") }
+                    OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
+                        cameraTransferActive.set(false)
+                        imageAssembler.abort()
+                        sendInput("camera.stop", JSONObject())
+                        cameraStatus.value = "Camera snapshot transfer stopped"
+                    }) { Text("Stop camera transfer") }
+                }
+                Text(cameraStatus.value, style = MaterialTheme.typography.bodySmall)
+                cameraBitmap.value?.let { bitmap ->
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = "Secure owner-approved camera snapshot",
+                        modifier = Modifier.fillMaxWidth(),
+                        contentScale = ContentScale.Fit
+                    )
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(enabled = session.value != null && dataChannelConnected.value, onClick = {
                         streamStatus.value = if (sendInput("screen.stream.start", JSONObject()))
