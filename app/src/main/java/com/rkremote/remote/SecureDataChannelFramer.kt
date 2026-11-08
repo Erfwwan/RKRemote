@@ -6,7 +6,7 @@ import java.security.SecureRandom
 import java.util.LinkedHashMap
 
 /**
- * Bounded fragmentation/reassembly for ordered encrypted relay messages.
+ * Bounded fragmentation/reassembly for ordered Noise-encrypted Cloudflare relay messages.
  * The Noise transport protects each fragment; this layer validates large-message framing.
  */
 internal class SecureDataChannelFramer(
