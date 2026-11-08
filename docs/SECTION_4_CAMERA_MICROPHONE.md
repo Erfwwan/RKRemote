@@ -27,7 +27,7 @@ This section provides independent camera viewing and microphone listening from t
 - The target owner must physically start each sensor locally and accept the corresponding Android runtime permission. The camera can be switched between front and rear using the two separate local buttons; a network read request cannot activate or switch a sensor.
 - Camera frames and microphone chunks are memory-only and cleared when their service stops. The microphone worker now shuts its service down if `AudioRecord` unexpectedly fails, rather than leaving a stale active state.
 - Both capture services re-check the corresponding Android runtime permission at service entry; a stale or revoked permission prevents capture from starting.
-- The secure Internet path relays only frames/chunks already published by locally started services, after the target owner grants the corresponding per-session capability. It never starts either sensor.
+- The secure Internet path continuously relays camera frames and microphone chunks already published by locally started services, after the target owner grants the corresponding per-session capability. Camera frames are sent at approximately 1.5 fps as bounded, SHA-256-verified chunks. Remote stop ends only the relay; it does not activate or switch either sensor.
 - The current bearer-token LAN transport is plaintext. Use trusted private Wi-Fi only; do not expose TCP port 18765 to the public internet or untrusted networks until encrypted transport is integrated.
 
 ## Manual acceptance test
@@ -47,4 +47,4 @@ This section provides independent camera viewing and microphone listening from t
 
 ## Validation status
 
-The implementation includes independent local front/rear camera controls, microphone controls, persistent stop notifications, runtime permission checks, LAN preview endpoints, and secure Internet P2P relay of owner-started sensor data. Microphone worker failure now clears capture state and stops the service. Automated build/unit-test status must be checked for the latest commit. Physical two-device acceptance testing, long-duration camera/audio checks, and weak-network stress testing have not been performed and must not be described as passed.
+The implementation includes independent local front/rear camera controls, microphone controls, persistent stop notifications, runtime permission checks, LAN preview endpoints, and secure Internet P2P streaming of owner-started camera frames and microphone chunks. Camera frames are sent as bounded chunks with SHA-256 verification; the remote stop command stops relay only, not the physical sensor. Microphone worker failure now clears capture state and stops the service. Automated build/unit-test status must be checked for the latest commit. Physical two-device acceptance testing, long-duration camera/audio checks, and weak-network stress testing have not been performed and must not be described as passed.
