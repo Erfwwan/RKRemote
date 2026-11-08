@@ -6,20 +6,23 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.content.Context
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.rkremote.MainActivity
 
 /**
- * Visible foreground indicator for an owner-approved LAN session.
- * The system may recreate this service after process death; Stop clears the
- * encrypted session credential and disables further restoration.
+ * Visible foreground owner for active LAN or secure Internet sessions.
+ * A WebRTC session is kept alive while this service remains in the process;
+ * it cannot be reconstructed after process death and is never silently resumed.
  */
 class SessionForegroundService : Service() {
     private var lanServer: LanAgentServer? = null
+    private var internetPeer: SecureInternetPeer? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -29,10 +32,56 @@ class SessionForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
             SessionCredentialStore.clearActiveSession(this)
+            stopInternetPeer()
             lanServer?.stop()
             lanServer = null
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf(startId)
+            return START_NOT_STICKY
+        }
+
+        if (intent?.action == ACTION_STOP_INTERNET) {
+            stopInternetPeer()
+            if (lanServer == null) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf(startId)
+            } else {
+                getSystemService(NotificationManager::class.java).notify(
+                    NOTIFICATION_ID,
+                    buildNotification("LAN remote session remains active")
+                )
+            }
+            return START_NOT_STICKY
+        }
+
+        if (intent?.action == ACTION_START_INTERNET) {
+            val foregroundStart = runCatching {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    startForeground(
+                        NOTIFICATION_ID,
+                        buildNotification("Secure Internet P2P session active"),
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+                    )
+                } else {
+                    startForeground(NOTIFICATION_ID, buildNotification("Secure Internet P2P session active"))
+                }
+            }
+            if (foregroundStart.isFailure) {
+                pendingInternetPeer?.close()
+                pendingInternetPeer = null
+                Log.e(TAG, "Unable to start visible Internet session service", foregroundStart.exceptionOrNull())
+                stopSelf(startId)
+                return START_NOT_STICKY
+            }
+            val incoming = pendingInternetPeer
+            pendingInternetPeer = null
+            if (incoming == null) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf(startId)
+                return START_NOT_STICKY
+            }
+            stopInternetPeer()
+            internetPeer = incoming
             return START_NOT_STICKY
         }
 
@@ -91,12 +140,20 @@ class SessionForegroundService : Service() {
     }
 
     override fun onDestroy() {
+        stopInternetPeer()
         lanServer?.stop()
         lanServer = null
         super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun stopInternetPeer() {
+        val active = internetPeer
+        internetPeer = null
+        runCatching { active?.revokeOwnerApprovedCommands() }
+        runCatching { active?.close() }
+    }
 
     private fun createChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -136,11 +193,37 @@ class SessionForegroundService : Service() {
 
     companion object {
         const val ACTION_STOP = "com.rkremote.action.STOP_SESSION"
+        const val ACTION_START_INTERNET = "com.rkremote.action.START_INTERNET_SESSION"
+        const val ACTION_STOP_INTERNET = "com.rkremote.action.STOP_INTERNET_SESSION"
         const val ACTION_START_LAN = "com.rkremote.action.START_LAN"
         const val ACTION_RESTORE_LAN = "com.rkremote.action.RESTORE_LAN"
         const val EXTRA_TOKEN = "session_token"
         private const val CHANNEL_ID = "rkremote_active_session"
         private const val NOTIFICATION_ID = 4201
         private const val TAG = "RKRemoteSession"
+        @Volatile private var pendingInternetPeer: SecureInternetPeer? = null
+
+        /** Called only from the explicit Connect button after local owner action. */
+        fun startInternetSession(context: Context, peer: SecureInternetPeer) {
+            pendingInternetPeer?.close()
+            pendingInternetPeer = peer
+            try {
+                ContextCompat.startForegroundService(
+                    context.applicationContext,
+                    Intent(context, SessionForegroundService::class.java).setAction(ACTION_START_INTERNET)
+                )
+            } catch (failure: Throwable) {
+                if (pendingInternetPeer === peer) pendingInternetPeer = null
+                peer.close()
+                throw failure
+            }
+        }
+
+        /** Stop the Internet transport without revoking a separately active LAN session. */
+        fun stopInternetSession(context: Context) {
+            context.applicationContext.startService(
+                Intent(context, SessionForegroundService::class.java).setAction(ACTION_STOP_INTERNET)
+            )
+        }
     }
 }
