@@ -24,6 +24,10 @@ class SecureRemoteCommandRouterTest {
         val unregistered = router.dispatch("paired-peer", message("screen.input", 1, "r2"))
         assertFalse(unregistered.accepted)
         assertFalse(invoked)
+        // The unregistered command still consumes sequence 1.
+        assertFalse(
+            router.dispatch("paired-peer", message("screen.stream.start", 1, "r3")).accepted
+        )
     }
 
     @Test
