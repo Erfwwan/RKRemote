@@ -217,7 +217,7 @@ internal object RemoteScreenshotStore {
     fun captureJpeg(timeoutMs: Long = 8_000L): ByteArray? {
         val deadline = SystemClock.elapsedRealtime() + timeoutMs
         val image = synchronized(lock) {
-            while (latestImage == null) {
+            while (latestImage == null && active) {
                 val remaining = deadline - SystemClock.elapsedRealtime()
                 if (remaining <= 0L) return null
                 try {
@@ -227,6 +227,7 @@ internal object RemoteScreenshotStore {
                     return null
                 }
             }
+            if (!active) return null
             latestImage.also { latestImage = null }
         } ?: return null
 
