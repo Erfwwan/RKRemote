@@ -1,14 +1,26 @@
 # RKRemote encrypted Cloudflare relay Worker
 
-This Worker is the **transport relay**, not just a signaling rendezvous. Both Android devices connect to the same Durable Object room. The Worker forwards opaque binary frames byte-for-byte. The Android clients encrypt every application frame end-to-end with the established Noise XX transport before sending it.
+This Worker is the **transport relay**, not just a signaling rendezvous. Both Android devices connect to the same Durable Object room. The Worker forwards opaque binary frames byte-for-byte. Android clients encrypt application frames end-to-end with the established Noise XX transport before sending them.
 
-## Deploy without GitHub
+## Recommended deployment: GitHub Actions
 
-Do not use the old **Deploy to Cloudflare** button if you do not want to connect a GitHub account. That button uses Cloudflare's GitHub import integration. Downloading the public source ZIP and deploying with Wrangler does not link GitHub.
+You do **not** need to connect GitHub to Cloudflare or use Cloudflare's GitHub import integration.
 
-1. Download the [public RKRemote source ZIP](https://github.com/Erfwwan/RKRemote/archive/refs/heads/feature/remote-agent-foundation.zip).
-2. Open a terminal in this directory (`cloudflare/worker`).
-3. Run:
+1. In your Cloudflare dashboard, create a narrowly scoped API Token with the Workers deployment permissions Wrangler requires. Do not use the Global API Key.
+2. Copy your Cloudflare Account ID.
+3. In GitHub, open **Settings → Secrets and variables → Actions** for the RKRemote repository.
+4. Add repository secrets named `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+5. Run **Actions → Deploy Cloudflare Worker → Run workflow** once.
+
+After the first deployment, every push that changes `cloudflare/worker/**` on `feature/remote-agent-foundation` automatically deploys the updated Worker. The workflow summary reports the Worker address when available. Enter it in RKRemote as `wss://<worker-name>.<your-workers-subdomain>.workers.dev`.
+
+The token stays in GitHub Secrets. It is not committed to the repository, embedded in the APK, printed in logs, or sent to the paired phone.
+
+See [the complete setup guide](../../docs/CLOUDFLARE_SETUP.md) for troubleshooting and manual deployment.
+
+## Manual alternative
+
+If you prefer not to use GitHub Actions, download and extract the public repository ZIP, open a terminal in this directory, and run:
 
 ```sh
 npm install
@@ -16,19 +28,17 @@ npx wrangler login
 npx wrangler deploy
 ```
 
-Wrangler opens Cloudflare's own authorization page. Sign in to Cloudflare, approve the `SignalRoom` Durable Object binding/migration, and copy the resulting `workers.dev` hostname into RKRemote as `wss://...`.
-
-On Android, these commands can be run in Termux after installing `nodejs-lts` and `unzip`, extracting the ZIP, and changing into `cloudflare/worker`.
+Wrangler authenticates directly with Cloudflare. This path also does not link a GitHub account.
 
 ## Wire behavior
 
-- WebSocket path: /signal/<64-character-lowercase-hex-room-id>?role=target or ?role=controller.
+- WebSocket path: `/signal/<64-character-lowercase-hex-room-id>?role=target` or `?role=controller`.
 - Exactly one target and one controller socket may occupy a room.
 - The target must connect first.
 - Only binary frames from 1 byte through 12 KiB are accepted from clients. Text client frames are rejected.
 - The Worker forwards binary frames opaquely; it does not parse, log, persist, or interpret their bytes.
 - Small Worker-generated lifecycle events (peer-joined, peer-left, peer-not-ready) are plain control messages and contain no app content.
-- A room expires after 10 minutes without traffic. Valid encrypted app frames and a tiny encrypted heartbeat every 60 seconds refresh the inactivity lease once both owners have approved.
+- A room expires after 10 minutes without traffic. Valid encrypted app frames and a tiny encrypted heartbeat refresh the inactivity lease.
 - Each room has at most two connected devices.
 
 ## Encryption and privacy
