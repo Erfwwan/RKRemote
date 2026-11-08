@@ -28,6 +28,47 @@ object LanControllerClient {
     fun requestBytes(ip: String, token: String, endpoint: String): ByteArray =
         requestRaw("GET", ip, token, endpoint, null)
 
+    fun requestScreenshot(ip: String, token: String): ByteArray =
+        requestRaw("GET", ip, token, "/screenshot.jpg", null)
+
+    fun saveScreenshotToDownloads(context: Context, jpeg: ByteArray): String {
+        require(jpeg.isNotEmpty()) { "Screenshot is empty" }
+        val fileName = "RKRemote-${System.currentTimeMillis()}.jpg"
+        val relativePath = Environment.DIRECTORY_DOWNLOADS + "/RKRemote/Screenshots/"
+        if (Build.VERSION.SDK_INT >= 29) {
+            val resolver = context.contentResolver
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                put(MediaStore.Downloads.MIME_TYPE, "image/jpeg")
+                put(MediaStore.Downloads.RELATIVE_PATH, relativePath)
+                put(MediaStore.Downloads.IS_PENDING, 1)
+            }
+            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                ?: throw IllegalStateException("Unable to create screenshot in Download/RKRemote/Screenshots")
+            try {
+                resolver.openOutputStream(uri, "w")?.use { it.write(jpeg) }
+                    ?: throw IllegalStateException("Unable to open screenshot output")
+                resolver.update(uri, ContentValues().apply {
+                    put(MediaStore.Downloads.IS_PENDING, 0)
+                }, null, null)
+                return relativePath + fileName
+            } catch (error: Exception) {
+                runCatching { resolver.delete(uri, null, null) }
+                throw error
+            }
+        }
+        val directory = File(
+            context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS),
+            "RKRemote/Screenshots"
+        )
+        if (!directory.exists() && !directory.mkdirs()) {
+            throw IllegalStateException("Unable to create screenshot folder")
+        }
+        val destination = File(directory, fileName)
+        FileOutputStream(destination).use { it.write(jpeg) }
+        return destination.absolutePath
+    }
+
     fun downloadFileToReceivedFolder(
         context: Context,
         ip: String,
@@ -241,7 +282,7 @@ object LanControllerClient {
         extraHeaders: Map<String, String> = emptyMap()
     ): ByteArray {
         require(
-            (method == "GET" && (endpoint in setOf("/health", "/files", "/camera.jpg", "/audio/chunk", "/notifications") ||
+            (method == "GET" && (endpoint in setOf("/health", "/files", "/camera.jpg", "/screenshot.jpg", "/audio/chunk", "/notifications") ||
                 endpoint.startsWith("/files?") || endpoint.startsWith("/file/download?"))) ||
                 (method == "POST" && endpoint in setOf("/input/tap", "/input/gesture", "/input/text", "/audio/ptt"))
         ) { "Unsupported request" }
@@ -357,7 +398,7 @@ object LanControllerClient {
         return candidate
     }
 
-    private const val MAX_RESPONSE_BYTES = 16 * 1024 * 1024
+    private const val MAX_RESPONSE_BYTES = 32 * 1024 * 1024
 
     fun localIpv4(): String? = runCatching {
         NetworkInterface.getNetworkInterfaces().toList()
