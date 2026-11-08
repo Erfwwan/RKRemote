@@ -229,11 +229,26 @@ fun LanRemotePanel() {
                 OutlinedButton(enabled = !busy, onClick = {
                     busy = true
                     scope.launch {
-                        output = runCatching {
+                        val result = runCatching {
                             withContext(Dispatchers.IO) {
                                 LanControllerClient.request(targetIp.trim(), targetToken.trim(), "/files")
                             }
-                        }.getOrElse { "Request failed: ${it.message}" }
+                        }
+                        result.onSuccess { response ->
+                            output = response
+                            val items = JSONObject(response).optJSONArray("items") ?: JSONArray()
+                            remoteFileItems = (0 until items.length()).mapNotNull { index ->
+                                val item = items.optJSONObject(index) ?: return@mapNotNull null
+                                RemoteFileItem(
+                                    id = item.optString("id"),
+                                    name = item.optString("name", "unnamed"),
+                                    size = item.optLong("size", -1L),
+                                    directory = item.optBoolean("directory"),
+                                    mimeType = item.optString("mimeType", "application/octet-stream")
+                                )
+                            }
+                        }
+                        result.onFailure { output = "Request failed: " + it.message }
                         busy = false
                     }
                 }) { Text("List selected folder") }
