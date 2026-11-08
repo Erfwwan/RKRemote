@@ -83,7 +83,7 @@ class ScreenCaptureService : Service() {
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_menu_view)
             .setContentTitle("RKRemote screen sharing is active")
-            .setContentText("Live screen video is being shared on the local network.")
+            .setContentText("Live screen video is being shared with an approved RKRemote controller.")
             .setContentIntent(open)
             .setOngoing(true)
             .addAction(0, "Stop sharing", stop)
