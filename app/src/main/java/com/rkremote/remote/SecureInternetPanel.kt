@@ -1190,7 +1190,8 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                         mainHandler.post {
                                                             if (activePeerRef.get() !== activePeer) return@post
                                                             contactsItems.value = entries
-                                                            contactsStatus.value = "${entries.size} مخاطب دریافت شد"
+                                                            val available = message.payload.optInt("available", entries.size)
+                                                            contactsStatus.value = if (message.payload.optBoolean("truncated")) "${entries.size} مخاطب از $available مخاطب (فهرست محدود شده)" else "${entries.size} مخاطب دریافت شد"
                                                         }
                                                     }
                                                     "calllog.sync.result" -> {
@@ -1991,7 +1992,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                             Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                                     Text("RK CONTACTS", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.ExtraBold)
-                                    androidx.compose.material3.AssistChip(onClick = {}, label = { Text("${contactsItems.value.size} مخاطب") })
+                                    Text("${contactsItems.value.size} مخاطب", modifier = Modifier.background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(50.dp)).padding(horizontal = 10.dp, vertical = 6.dp), color = MaterialTheme.colorScheme.onPrimaryContainer, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                                 }
                                 Text("دفترچه مخاطبین", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
                                 Text("جست‌وجو و مشاهده مخاطبین دستگاه متصل", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
