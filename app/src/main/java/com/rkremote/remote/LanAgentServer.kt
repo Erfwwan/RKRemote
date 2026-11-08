@@ -85,7 +85,17 @@ class LanAgentServer(
                 respond(client.getOutputStream(), 401, JSONObject().put("error", "Unauthorized"))
                 return
             }
-            val response = when (parts[1].substringBefore('?')) {
+            val endpoint = parts[1].substringBefore('?')
+            if (endpoint == "/screen.jpg") {
+                val frame = ScreenFrameStore.latestJpeg
+                if (frame == null) {
+                    respond(client.getOutputStream(), 503, JSONObject().put("error", "Screen sharing is not active or no frame is ready"))
+                } else {
+                    respondBytes(client.getOutputStream(), frame)
+                }
+                return
+            }
+            val response = when (endpoint) {
                 "/health" -> JSONObject()
                     .put("app", "RKRemote")
                     .put("status", "online")
@@ -119,12 +129,24 @@ class LanAgentServer(
         return JSONObject().put("items", items).put("truncated", children.size > MAX_LIST_ITEMS)
     }
 
+    private fun respondBytes(output: OutputStream, bytes: ByteArray) {
+        val header = "HTTP/1.1 200 OK\r\n" +
+            "Content-Type: image/jpeg\r\n" +
+            "Content-Length: ${bytes.size}\r\n" +
+            "Connection: close\r\n" +
+            "Cache-Control: no-store\r\n\r\n"
+        output.write(header.toByteArray(Charsets.US_ASCII))
+        output.write(bytes)
+        output.flush()
+    }
+
     private fun respond(output: OutputStream, status: Int, body: JSONObject) {
         val bytes = body.toString().toByteArray(Charsets.UTF_8)
         val label = when (status) {
             200 -> "OK"
             401 -> "Unauthorized"
             404 -> "Not Found"
+            503 -> "Service Unavailable"
             else -> "Method Not Allowed"
         }
         val header = "HTTP/1.1 $status $label\r\n" +
