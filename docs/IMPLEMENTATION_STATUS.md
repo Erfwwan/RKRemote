@@ -35,6 +35,8 @@ The WSS transport, encryption utility, and command gate remain separate foundati
 
 ## Camera and microphone prototype boundary
 
+Implementation details and the two-device acceptance checklist are maintained in [docs/SECTION_4_CAMERA_MICROPHONE.md](SECTION_4_CAMERA_MICROPHONE.md). Camera and microphone run as separate owner-started foreground services; the controller can only read published media. The screenshot standby service uses a distinct notification ID so its persistent notification cannot overwrite the camera notification.
+
 Camera and microphone capture must be started by the owner from the target phone while the app is visible and after the corresponding Android runtime permission is granted. Each sensor runs in its own foreground service with a persistent notification and a stop action. The LAN endpoints only expose frames or queued audio chunks from a service that is already running; they cannot switch either sensor on. Camera frames and PCM audio chunks are memory-only and are discarded when capture stops. The LAN transport is still plaintext bearer-token HTTP on trusted Wi-Fi only; do not use these media endpoints on public networks or expose port 18765 to the internet. Audio currently uses short polling chunks and is not a jitter-buffered, lossless, low-latency voice transport. Physical-device validation is still required.
 
 
