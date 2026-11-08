@@ -98,6 +98,15 @@ class SecureInternetPeer(
                                                     "Target command router is not configured"
                                                 )
                                             listener.onCommandResult(message, result)
+                                            sendMessage(
+                                                "command.result",
+                                                JSONObject()
+                                                    .put("requestId", message.payload.optString("requestId"))
+                                                    .put("commandType", message.type)
+                                                    .put("accepted", result.accepted)
+                                                    .put("reason", result.reason)
+                                                    .put("responseType", result.responseType ?: JSONObject.NULL)
+                                            )
                                         }
                                         listener.onRemoteMessage(message)
                                     } catch (error: Throwable) {
