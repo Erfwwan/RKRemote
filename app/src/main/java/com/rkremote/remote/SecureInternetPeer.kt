@@ -281,7 +281,7 @@ class SecureInternetPeer(
             commandRouter?.endSession()
         } finally {
             authenticatedPeerId = null
-            secureSession.close()
+            runCatching { secureSession.close() }
             if (disconnectReason != null) {
                 runCatching { listener.onDisconnected(disconnectReason) }
             }
