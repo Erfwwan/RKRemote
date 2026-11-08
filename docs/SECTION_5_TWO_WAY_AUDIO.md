@@ -31,8 +31,8 @@ Android runtime permissions, privacy indicators, foreground-service rules, and O
 
 - This is a low-complexity LAN prototype, not production VoIP.
 - Each outgoing chunk currently uses a separate HTTP request. This adds latency and overhead compared with a persistent audio transport.
-- The return microphone path uses polling and can drop chunks. Neither direction has a proper jitter buffer, packet-loss concealment, codec compression, or synchronized full-duplex timing. Android Acoustic Echo Canceler and Noise Suppressor are enabled on recording sessions when available; their effectiveness depends on device support and routing.
-- Acoustic feedback is reduced with Android echo cancellation where supported, but cannot be guaranteed absent on every phone. Keep speaker volume moderate and test both devices; no headphone requirement is imposed by the app.
+- The return microphone path uses polling and can drop chunks. Neither direction has a proper jitter buffer, packet-loss concealment, codec compression, or synchronized full-duplex timing. Android Acoustic Echo Canceler and Noise Suppressor are enabled on recording sessions when available; their effectiveness depends on device support and routing. Playback uses the voice-communication audio route and prefers the built-in earpiece instead of the loudspeaker to reduce acoustic coupling.
+- Acoustic feedback is reduced with Android echo cancellation where supported, but cannot be guaranteed absent on every phone. The built-in earpiece route is intended to avoid requiring headphones; test both devices because OEM routing may differ.
 - The current LAN bearer-token transport is plaintext. Use only a trusted private Wi-Fi network; do not expose port 18765 to the public internet.
 - Physical two-device, long-duration, Bluetooth-route, and network-jitter tests remain outstanding.
 
