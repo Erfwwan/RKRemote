@@ -13,7 +13,7 @@ class SecureRemoteCommandRouterTest {
         var invoked = false
         router.register("screen.stream.start", RemoteCapability.SCREEN_VIEW) {
             invoked = true
-            "screen.snapshot.result"
+            "screen.video.config"
         }
         router.beginOwnerApprovedSession("paired-peer", setOf(RemoteCapability.FILES))
 
