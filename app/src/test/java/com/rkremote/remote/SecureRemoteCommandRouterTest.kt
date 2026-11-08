@@ -30,6 +30,7 @@ class SecureRemoteCommandRouterTest {
     fun firstCapabilityGrantCanInitializeOwnerApprovedSession() {
         val router = SecureRemoteCommandRouter()
         assertFalse(router.hasActiveSession())
+        router.register("file.list.request", RemoteCapability.FILES) { "file.list.result" }
         router.beginOwnerApprovedSession("paired-peer", setOf(RemoteCapability.SCREEN_VIEW))
         assertTrue(router.hasActiveSession())
         router.grantCapabilities(setOf(RemoteCapability.FILES))
