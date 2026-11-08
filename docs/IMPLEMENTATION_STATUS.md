@@ -93,3 +93,13 @@ This is **not yet internet connectivity**. DHT publication/lookup, NAT traversal
 The current jvm-libp2p candidate is not yet suitable to claim production DHT/relay support: its component matrix does not list Kademlia DHT as implemented and marks Circuit Relay v2 as prototype/beta. No dependency was added pending a validated Android-compatible implementation.
 
 Validation for this pass: source and JVM tests were committed, but no Gradle build, CI result, DHT integration test, NAT traversal test, or two-device internet test has yet been verified.
+
+
+## Cloudflare signaling scaffold · source committed
+
+- Added a Workers + Durable Objects WebSocket rendezvous under `cloudflare/worker`.
+- Added an Android `CloudflareSignalingClient` with random 256-bit room IDs and a strict signaling-message allow-list.
+- The service is intended only to exchange WebRTC offer/answer/ICE signaling messages. It does not relay commands, files, notifications, screen, camera, or audio.
+- The Android client is not yet connected to the Compose pairing UI; no WebRTC PeerConnection is implemented.
+- The Worker has not been deployed to a Cloudflare account. No Android build, Worker deployment, WebSocket integration test, or physical two-device internet test is verified.
+- Existing LAN TCP 18765 remains plaintext and LAN-only. Do not expose it publicly.
