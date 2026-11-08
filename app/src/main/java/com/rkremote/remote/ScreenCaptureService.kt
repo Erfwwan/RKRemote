@@ -32,6 +32,7 @@ class ScreenCaptureService : Service() {
     private var display: VirtualDisplay? = null
     private var encoder: MediaCodec? = null
     private var worker: HandlerThread? = null
+    @Volatile private var drainWorker: Thread? = null
     private val active = AtomicBoolean(false)
 
     override fun onCreate() {
@@ -132,11 +133,11 @@ class ScreenCaptureService : Service() {
             "RKRemote-live-video", width, height, metrics.densityDpi,
             DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, inputSurface, null, handler
         )
-        thread.startCodecDrain(codec)
+        startCodecDrain(codec)
     }
 
-    private fun HandlerThread.startCodecDrain(codec: MediaCodec) {
-        Thread({
+    private fun startCodecDrain(codec: MediaCodec) {
+        val drain = Thread({
             val info = MediaCodec.BufferInfo()
             while (active.get()) {
                 try {
@@ -168,10 +169,19 @@ class ScreenCaptureService : Service() {
                 } catch (_: IllegalStateException) {
                     break
                 } catch (_: Exception) {
-                    // A transient encoder output issue must not crash the process.
+                    // An encoder failure is terminal for this capture session. Avoid
+                    // a hot retry loop that can burn CPU while the codec is unhealthy.
+                    active.set(false)
+                    ScreenVideoStore.clear()
+                    stopSelf()
+                    break
                 }
             }
-        }, "RKRemote-H264-Drain").apply { isDaemon = true; start() }
+        }, "RKRemote-H264-Drain").apply {
+            isDaemon = true
+            drainWorker = this
+            start()
+        }
     }
 
     private fun ByteBuffer.copyRemaining(): ByteArray {
@@ -191,6 +201,12 @@ class ScreenCaptureService : Service() {
         val oldEncoder = encoder
         encoder = null
         runCatching { oldEncoder?.signalEndOfInputStream() }
+        val oldDrainWorker = drainWorker
+        if (oldDrainWorker != null && oldDrainWorker !== Thread.currentThread()) {
+            runCatching { oldDrainWorker.join(750) }
+        }
+        oldDrainWorker?.interrupt()
+        drainWorker = null
         runCatching { oldEncoder?.stop() }
         runCatching { oldEncoder?.release() }
         worker?.quitSafely()
