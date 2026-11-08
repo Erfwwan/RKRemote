@@ -7,6 +7,7 @@ import androidx.documentfile.provider.DocumentFile
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
+import java.io.OutputStream
 import java.util.Base64
 import java.security.MessageDigest
 
@@ -168,6 +169,123 @@ class SecureSafTransferBridge(context: Context) {
             throw IOException("File size changed during transfer")
         }
         onComplete(digest.digest().joinToString("") { "%02x".format(it) })
+    }
+
+
+    private data class PendingUpload(
+        val transferId: String,
+        val documentUri: Uri,
+        val output: OutputStream,
+        val expectedBytes: Long,
+        val digest: MessageDigest,
+        var nextOffset: Long = 0L
+    )
+    private var pendingUpload: PendingUpload? = null
+
+    @Synchronized
+    fun beginUpload(
+        transferId: String,
+        rawName: String,
+        rawMimeType: String,
+        totalBytes: Long,
+        parentId: String?
+    ) {
+        require(transferId.matches(Regex("[A-Za-z0-9_-]{1,128}")))
+        require(totalBytes in 0L..MAX_FILE_BYTES) { "Upload exceeds the 50 MiB limit" }
+        check(pendingUpload == null) { "Another upload is already active" }
+        val name = sanitizeUploadName(rawName)
+        val mime = rawMimeType.takeIf {
+            it.matches(Regex("[A-Za-z0-9!#    private fun selectedTree(): Uri {^_.+-]+/[A-Za-z0-9!#    private fun selectedTree(): Uri {^_.+-]+"))
+        } ?: "application/octet-stream"
+        val tree = selectedTree()
+        val rootId = DocumentsContract.getTreeDocumentId(tree)
+        val parent = parentId?.takeIf { it.isNotBlank() } ?: rootId
+        requireInsideTree(tree, parent)
+        val parentUri = DocumentsContract.buildDocumentUriUsingTree(tree, parent)
+        require(queryString(parentUri, DocumentsContract.Document.COLUMN_MIME_TYPE) ==
+            DocumentsContract.Document.MIME_TYPE_DIR) { "Upload destination is not a folder" }
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parent)
+        val duplicate = resolver.query(
+            childrenUri,
+            arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+            null,
+            null,
+            null
+        )?.use { cursor ->
+            var found = false
+            while (cursor.moveToNext()) {
+                if (cursor.getString(0) == name) {
+                    found = true
+                    break
+                }
+            }
+            found
+        } ?: false
+        require(!duplicate) { "A file with this name already exists; overwrite is disabled" }
+        val created = DocumentsContract.createDocument(resolver, parentUri, mime, name)
+            ?: throw IOException("Unable to create file in the selected folder")
+        try {
+            val output = resolver.openOutputStream(created, "w")
+                ?: throw IOException("Unable to open destination file")
+            pendingUpload = PendingUpload(
+                transferId,
+                created,
+                output,
+                totalBytes,
+                MessageDigest.getInstance("SHA-256")
+            )
+        } catch (error: Exception) {
+            runCatching { DocumentsContract.deleteDocument(resolver, created) }
+            throw error
+        }
+    }
+
+    @Synchronized
+    fun appendUploadChunk(transferId: String, offset: Long, bytes: ByteArray) {
+        val pending = pendingUpload ?: throw IllegalStateException("No upload is active")
+        require(pending.transferId == transferId) { "Unexpected upload identifier" }
+        require(offset == pending.nextOffset) { "Upload chunk is missing, duplicated or out of order" }
+        require(bytes.isNotEmpty() && bytes.size <= MAX_CHUNK_BYTES)
+        require(pending.nextOffset + bytes.size <= pending.expectedBytes) { "Upload exceeds announced size" }
+        pending.output.write(bytes)
+        pending.digest.update(bytes)
+        pending.nextOffset += bytes.size
+    }
+
+    @Synchronized
+    fun completeUpload(transferId: String, expectedSha256: String) {
+        val pending = pendingUpload ?: throw IllegalStateException("No upload is active")
+        require(pending.transferId == transferId) { "Unexpected upload identifier" }
+        try {
+            require(pending.nextOffset == pending.expectedBytes) { "Upload is incomplete" }
+            pending.output.flush()
+            pending.output.close()
+            val actual = pending.digest.digest().joinToString("") { "%02x".format(it) }
+            require(actual.equals(expectedSha256, ignoreCase = true)) { "Upload SHA-256 does not match" }
+            pendingUpload = null
+        } catch (error: Exception) {
+            runCatching { pending.output.close() }
+            runCatching { DocumentsContract.deleteDocument(resolver, pending.documentUri) }
+            pendingUpload = null
+            throw error
+        }
+    }
+
+    @Synchronized
+    fun abortUpload() {
+        val pending = pendingUpload ?: return
+        pendingUpload = null
+        runCatching { pending.output.close() }
+        runCatching { DocumentsContract.deleteDocument(resolver, pending.documentUri) }
+    }
+
+    private fun sanitizeUploadName(raw: String): String {
+        val name = raw.substringAfterLast('/').substringAfterLast('\\\\')
+            .filter { it.code >= 32 && it.code != 127 }
+            .take(180)
+            .trim()
+        require(name.isNotBlank() && name != "." && name != "..")
+        return name
     }
 
     private fun selectedTree(): Uri {
