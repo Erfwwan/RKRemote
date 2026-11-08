@@ -40,7 +40,7 @@ internal class SecureRelayFrameCodec(
         val body = if (useCompressed) compressed!! else message
         val envelope = ByteBuffer.allocate(ENVELOPE_BYTES + body.size)
             .putInt(MAGIC)
-            .put(if (useCompressed) FLAG_DEFLATE else 0)
+            .put((if (useCompressed) FLAG_DEFLATE else 0).toByte())
             .putInt(message.size)
             .put(body)
             .array()
