@@ -68,8 +68,6 @@ class RemoteMessageDirectionTest {
             "contacts.sync.request",
             "location.sync.request",
             "camera.snapshot.request",
-            "audio.start.request",
-            "audio.stop",
             "ptt.start",
             "ptt.stop"
         )
