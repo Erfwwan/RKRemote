@@ -71,12 +71,15 @@ class SecureLinkHandshake(
             fail()
             throw IllegalArgumentException("Invalid Noise frame size")
         }
-        check(state == State.WAITING_FOR_SECOND || state == State.WAITING_FOR_THIRD) {
-            "Unexpected Noise handshake frame"
-        }
         return try {
+            check(state == State.WAITING_FOR_SECOND || state == State.WAITING_FOR_THIRD) {
+                "Unexpected Noise handshake frame"
+            }
             if (initiator) receiveAsInitiator(frame) else receiveAsResponder(frame)
         } catch (error: Throwable) {
+            // Any unexpected, duplicated or out-of-order handshake frame is
+            // terminal. Do not leave an established transport usable after
+            // a protocol-state violation.
             fail()
             throw error
         }
