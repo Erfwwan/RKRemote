@@ -211,3 +211,15 @@ Validation for this pass: source and JVM tests were committed, but no Gradle bui
 - Accessibility dispatch is rejected when the service is not active, the action type is unknown, coordinates/duration are invalid, or text exceeds the existing 4096-character limit. Android remains responsible for the actual gesture/text action.
 - Added a unit test proving incremental capability grants preserve monotonic sequence protection.
 - CI for the latest input integration is still running; no physical device validation has been done.
+
+
+## Secure remote screen input and notification sync
+
+- Remote touch gestures and focused-field text insertion are now registered as target-side commands over the authenticated DTLS DataChannel. The target owner must explicitly enable Android Accessibility and separately grant `SCREEN_INPUT` for the current session.
+- The Accessibility bridge does not collect accessibility events or scrape screen text. It only dispatches bounded normalized gestures and sets text in the currently focused editable field.
+- Target owners can revoke all remote command capabilities immediately. Session teardown also closes the sender and ends the command gate.
+- Added read-only notification sync: it checks Android Notification Access locally, reads the AES-GCM encrypted local event store, returns at most the latest 20 events per request, and truncates fields. The target owner must explicitly grant `NOTIFICATIONS` for the session. Controller UI displays only a short preview of up to five returned events.
+- Notification sync uses the versioned message envelope over the secure WebRTC DataChannel; it does not send notification data through the Cloudflare Worker.
+- Notification access and remote input are separate Android settings and separate owner grants. Revoking session capabilities stops further requests; Android settings can also revoke either permission.
+- CI for earlier screen-input integration commits passed unit tests and APK assembly in the available runs. The latest notification-sync commits are still running through CI; no hardware test has been performed.
+- Filesystem operations, camera, microphone and PTT are not yet wired to the secure Internet command channel. SAF access remains limited to owner-selected document trees.
