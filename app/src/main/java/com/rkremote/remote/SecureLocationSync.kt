@@ -85,7 +85,6 @@ class LocationHistoryStore(context: Context) {
         val json = JSONArray()
         bounded.forEach { json.put(it.toJson()) }
         writeEncrypted(json.toString())
-        prefs.edit().putBoolean(TRACKING_ENABLED, true).apply()
     }
 
     @Synchronized
@@ -164,7 +163,7 @@ class LocationHistoryStore(context: Context) {
 
 /**
  * Holds only the currently authenticated target-side transport. The worker
- * sends location only when the paired peer has a saved LOCATION consent.
+ * sends location only while the paired peer has both persistent and live consent.
  */
 object SecureLocationSync {
     fun buildLatestResponse(context: Context, requestId: String): JSONObject {
