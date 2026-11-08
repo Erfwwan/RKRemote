@@ -42,12 +42,12 @@ class SessionCommandGate {
         if (!sessionActive) return Decision(false, "No owner-approved active session")
         if (peerId != approvedPeerId) return Decision(false, "Peer is not paired for this session")
         if (sequence < 0) return Decision(false, "Invalid sequence")
-        val previous = lastSequence[peerId] ?: -1L
-        if (sequence <= previous) return Decision(false, "Replayed or out-of-order message")
-        lastSequence[peerId] = sequence
         if (capability !in (grants[peerId] ?: emptySet())) {
             return Decision(false, "Capability was not approved by the device owner")
         }
+        val previous = lastSequence[peerId] ?: -1L
+        if (sequence <= previous) return Decision(false, "Replayed or out-of-order message")
+        lastSequence[peerId] = sequence
         return Decision(true, "Approved")
     }
 
