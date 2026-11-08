@@ -14,18 +14,23 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -34,6 +39,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,9 +47,22 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.rememberDrawerState
+import kotlinx.coroutines.launch
 import com.rkremote.remote.PairingPanel
 import com.rkremote.remote.LanRemotePanel
 import com.rkremote.remote.SecureInternetPanel
+
+private enum class AppPage(val title: String) {
+    HOME("خانه"),
+    INTERNET("اتصال اینترنتی امن"),
+    LAN("کنترل شبکه محلی"),
+    PAIRING("جفت‌سازی دستگاه"),
+    PERMISSIONS("مجوزهای اندروید"),
+    NOTIFICATIONS("تاریخچه اعلان‌ها"),
+    FILES("دسترسی به فایل‌ها")
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -67,8 +86,12 @@ private data class PermissionItem(
 @Composable
 private fun LocalSetupScreen() {
     val context = LocalContext.current
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
+    var currentPage by remember { mutableStateOf(AppPage.HOME) }
     var refreshKey by remember { mutableIntStateOf(0) }
     var selectedFolder by remember { mutableStateOf(readSavedFolder(context)) }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { refreshKey++ }
@@ -88,53 +111,55 @@ private fun LocalSetupScreen() {
         refreshKey++
     }
 
-    val permissionItems = buildList {
-        add(PermissionItem(
-            "Camera",
-            "Required only when the owner starts a visible camera session.",
-            listOf(Manifest.permission.CAMERA)
-        ))
-        add(PermissionItem(
-            "Microphone",
-            "Required only during an explicitly started audio or walkie-talkie session.",
-            listOf(Manifest.permission.RECORD_AUDIO)
-        ))
-        add(PermissionItem(
-            "Contacts",
-            "Allows reading contacts on this device after permission is granted.",
-            listOf(Manifest.permission.READ_CONTACTS)
-        ))
-        add(PermissionItem(
-            "Call history",
-            "Allows reading call-log records where Android and device policy permit it.",
-            listOf(Manifest.permission.READ_CALL_LOG)
-        ))
-        add(PermissionItem(
-            "Location",
-            "Foreground location permission. Background location is not requested in this build.",
-            listOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION)
-        ))
-        if (Build.VERSION.SDK_INT >= 33) {
+    val permissionItems = remember {
+        buildList {
             add(PermissionItem(
-                "Photos and videos",
-                "Requests access to media. Android may offer selected-media access.",
-                buildList {
-                    add(Manifest.permission.READ_MEDIA_IMAGES)
-                    add(Manifest.permission.READ_MEDIA_VIDEO)
-                    if (Build.VERSION.SDK_INT >= 34) add(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
-                }
+                "Camera",
+                "Required only when the owner starts a visible camera session.",
+                listOf(Manifest.permission.CAMERA)
             ))
             add(PermissionItem(
-                "Notifications",
-                "Runtime notification permission. Reading other apps' notifications requires the separate Notification Access switch below.",
-                listOf(Manifest.permission.POST_NOTIFICATIONS)
+                "Microphone",
+                "Required only during an explicitly started audio or walkie-talkie session.",
+                listOf(Manifest.permission.RECORD_AUDIO)
             ))
-        } else {
             add(PermissionItem(
-                "Photos and videos",
-                "Legacy shared-storage read permission. Folder access is separately granted below.",
-                listOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+                "Contacts",
+                "Allows reading contacts on this device after permission is granted.",
+                listOf(Manifest.permission.READ_CONTACTS)
             ))
+            add(PermissionItem(
+                "Call history",
+                "Allows reading call-log records where Android and device policy permit it.",
+                listOf(Manifest.permission.READ_CALL_LOG)
+            ))
+            add(PermissionItem(
+                "Location",
+                "Foreground location permission. Background location is not requested in this build.",
+                listOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION)
+            ))
+            if (Build.VERSION.SDK_INT >= 33) {
+                add(PermissionItem(
+                    "Photos and videos",
+                    "Requests access to media. Android may offer selected-media access.",
+                    buildList {
+                        add(Manifest.permission.READ_MEDIA_IMAGES)
+                        add(Manifest.permission.READ_MEDIA_VIDEO)
+                        if (Build.VERSION.SDK_INT >= 34) add(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
+                    }
+                ))
+                add(PermissionItem(
+                    "Notifications",
+                    "Runtime notification permission. Reading other apps' notifications requires the separate Notification Access switch.",
+                    listOf(Manifest.permission.POST_NOTIFICATIONS)
+                ))
+            } else {
+                add(PermissionItem(
+                    "Photos and videos",
+                    "Legacy shared-storage read permission. Folder access is separately granted below.",
+                    listOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+                ))
+            }
         }
     }
 
@@ -143,111 +168,204 @@ private fun LocalSetupScreen() {
     val notificationAccess = hasNotificationAccess(context)
     val notificationCount = EncryptedNotificationStore.readAll(context).length()
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        item {
-            Text("RKRemote", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text(
-                "Local device setup · owner-approved access",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(6.dp))
-            Card {
-                Column(Modifier.padding(14.dp)) {
-                    Text("RKRemote prototype · Sections 1–8", fontWeight = FontWeight.SemiBold)
-                    Text(
-                        "Local permissions, LAN control, screen sharing and remote input, file transfer, camera/microphone, push-to-talk, and owner-approved notification history prototypes. Includes bounded connection retry and health diagnostics. Use only on trusted private Wi-Fi; security and physical-device validation remain.",
-                        style = MaterialTheme.typography.bodySmall
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet {
+                Text(
+                    "RKRemote",
+                    modifier = Modifier.padding(start = 22.dp, top = 24.dp, bottom = 8.dp),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    "انتخاب بخش موردنظر",
+                    modifier = Modifier.padding(start = 22.dp, bottom = 16.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                AppPage.entries.forEach { page ->
+                    NavigationDrawerItem(
+                        label = { Text(page.title) },
+                        selected = currentPage == page,
+                        onClick = {
+                            currentPage = page
+                            scope.launch { drawerState.close() }
+                        },
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 3.dp)
                     )
                 }
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    "دسترسی‌ها و قابلیت‌های حساس فقط با تأیید صاحب دستگاه فعال می‌شوند.",
+                    modifier = Modifier.padding(horizontal = 22.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
-        item { PairingPanel() }
-        item { SecureInternetPanel() }
-        item { LanRemotePanel() }
-        item {
-            Text("Android permissions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        }
-        items(permissionItems) { item ->
-            val granted = item.permissions.all { permission ->
-                ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
-            }
-            Card {
-                Column(Modifier.fillMaxWidth().padding(14.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(item.title, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            if (granted) "Granted" else "Not granted",
-                            color = if (granted) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.labelMedium
-                        )
+    ) {
+        Column(Modifier.fillMaxSize()) {
+            Surface(shadowElevation = 2.dp, color = MaterialTheme.colorScheme.surface) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedButton(onClick = { scope.launch { drawerState.open() } }) {
+                        Text("☰")
                     }
-                    Spacer(Modifier.height(4.dp))
-                    Text(item.description, style = MaterialTheme.typography.bodySmall)
-                    if (!granted) {
-                        Spacer(Modifier.height(8.dp))
-                        OutlinedButton(onClick = { permissionLauncher.launch(item.permissions.toTypedArray()) }) {
-                            Text("Request")
+                    Column(Modifier.padding(start = 12.dp)) {
+                        Text("RKRemote", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+                        Text(currentPage.title, style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+
+            // Keep feature panels composed while switching pages so an active
+            // secure session is not destroyed merely by opening the drawer.
+            Box(Modifier.fillMaxSize()) {
+                Box(Modifier.fillMaxSize().offset(x = if (currentPage == AppPage.HOME) 0.dp else 2000.dp)) {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize().padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        item {
+                            Card {
+                                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text("مدیریت دستگاه", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                                    Text("برای دسترسی به هر قابلیت، منوی سه‌خط بالا را باز کن و بخش موردنظر را انتخاب کن.")
+                                    Text("اتصال امن اینترنتی، کنترل شبکه محلی، جفت‌سازی، مجوزهای اندروید، اعلان‌ها و فایل‌ها در صفحه‌های جداگانه قرار گرفته‌اند.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                        item {
+                            Card {
+                                Column(Modifier.padding(16.dp)) {
+                                    Text("وضعیت اعلان‌ها", fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        if (notificationAccess) "دسترسی اعلان فعال است · $notificationCount رویداد ذخیره شده"
+                                        else "دسترسی اعلان هنوز فعال نشده است",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Box(Modifier.fillMaxSize().offset(x = if (currentPage == AppPage.PAIRING) 0.dp else 2000.dp)) {
+                    LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        item { PairingPanel() }
+                    }
+                }
+
+                Box(Modifier.fillMaxSize().offset(x = if (currentPage == AppPage.INTERNET) 0.dp else 2000.dp)) {
+                    LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        item { SecureInternetPanel() }
+                    }
+                }
+
+                Box(Modifier.fillMaxSize().offset(x = if (currentPage == AppPage.LAN) 0.dp else 2000.dp)) {
+                    LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        item { LanRemotePanel() }
+                    }
+                }
+
+                Box(Modifier.fillMaxSize().offset(x = if (currentPage == AppPage.PERMISSIONS) 0.dp else 2000.dp)) {
+                    LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        item { Text("مجوزهای اندروید", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
+                        items(permissionItems) { item ->
+                            val granted = item.permissions.all { permission ->
+                                ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+                            }
+                            Card {
+                                Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(item.title, fontWeight = FontWeight.SemiBold)
+                                        Text(
+                                            if (granted) "Granted" else "Not granted",
+                                            color = if (granted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            style = MaterialTheme.typography.labelMedium
+                                        )
+                                    }
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(item.description, style = MaterialTheme.typography.bodySmall)
+                                    if (!granted) {
+                                        Spacer(Modifier.height(8.dp))
+                                        OutlinedButton(onClick = { permissionLauncher.launch(item.permissions.toTypedArray()) }) {
+                                            Text("Request")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        item {
+                            OutlinedButton(modifier = Modifier.fillMaxWidth(), onClick = { refreshKey++ }) {
+                                Text("Refresh access status")
+                            }
+                        }
+                    }
+                }
+
+                Box(Modifier.fillMaxSize().offset(x = if (currentPage == AppPage.NOTIFICATIONS) 0.dp else 2000.dp)) {
+                    LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        item {
+                            Card {
+                                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("تاریخچه اعلان‌ها", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        if (notificationAccess) "Notification Access فعال است · $notificationCount رویداد به‌صورت محلی ذخیره شده"
+                                        else "Notification Access فعال نیست · محتوای اعلان‌ها دریافت نمی‌شود",
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                    Button(onClick = {
+                                        context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                                    }) {
+                                        Text("باز کردن تنظیمات دسترسی اعلان")
+                                    }
+                                    if (!notificationAccess) {
+                                        Text("فعال‌سازی این دسترسی باید مستقیماً توسط صاحب دستگاه در تنظیمات اندروید انجام شود.",
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            style = MaterialTheme.typography.bodySmall)
+                                    }
+                                    Text("محتوا ابتدا روی دستگاه رمزنگاری و ذخیره می‌شود. ارسال از راه دور فقط روی اتصال رمزنگاری‌شده و با مجوز همان نشست انجام می‌شود.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Box(Modifier.fillMaxSize().offset(x = if (currentPage == AppPage.FILES) 0.dp else 2000.dp)) {
+                    LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        item {
+                            Card {
+                                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("دسترسی به فایل‌ها", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        selectedFolder ?: "هنوز پوشه‌ای انتخاب نشده است. پوشه‌ای را انتخاب کن تا دسترسی پایدار به محتوای همان پوشه داده شود.",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    OutlinedButton(onClick = { folderPicker.launch(null) }) {
+                                        Text("انتخاب پوشه")
+                                    }
+                                    Text("دسترسی فایل‌ها محدود به پوشه‌ای است که خودت از پنجره رسمی Android انتخاب می‌کنی.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
                         }
                     }
                 }
             }
-        }
-        item {
-            Card {
-                Column(Modifier.fillMaxWidth().padding(14.dp)) {
-                    Text("Notification history", fontWeight = FontWeight.SemiBold)
-                    Text(
-                        if (notificationAccess) "Notification Access is enabled · $notificationCount local events stored"
-                        else "Notification Access is not enabled · no notification content is being captured",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Button(onClick = {
-                        context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-                    }) {
-                        Text("Open Notification Access settings")
-                    }
-                    if (!notificationAccess) {
-                        Text("Enable Notification Access in Android settings. Android requires this explicit owner action.",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-            }
-        }
-        item {
-            Card {
-                Column(Modifier.fillMaxWidth().padding(14.dp)) {
-                    Text("File and gallery folder", fontWeight = FontWeight.SemiBold)
-                    Text(
-                        selectedFolder ?: "No folder selected. Choose a folder to grant persistent access to its contents.",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedButton(onClick = { folderPicker.launch(null) }) {
-                        Text("Choose folder")
-                    }
-                }
-            }
-        }
-        item {
-            OutlinedButton(modifier = Modifier.fillMaxWidth(), onClick = { refreshKey++ }) {
-                Text("Refresh access status")
-            }
-            Text(
-                "Notification content is encrypted locally with an Android Keystore AES-GCM key. Remote delivery still requires a securely paired encrypted connection.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
     }
 }
