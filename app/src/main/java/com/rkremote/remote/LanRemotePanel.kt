@@ -218,12 +218,16 @@ fun LanRemotePanel() {
             }
             Text("INDEPENDENT SCREENSHOT STANDBY", fontWeight = FontWeight.SemiBold)
             Text(
-                "Separate from live video. Grant Android screen-capture permission once; while this foreground session stays active, the controller can request still images without another prompt.",
+                "Separate from live video. Android permits only one active MediaProjection session per app: stop live video before enabling this standby. While standby remains active, still images need no repeated prompt.",
                 style = MaterialTheme.typography.bodySmall
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(enabled = notificationsAllowed, onClick = {
-                    screenshotConsentLauncher.launch(projectionManager.createScreenCaptureIntent())
+                    if (ScreenVideoStore.hasConfig()) {
+                        output = "Stop live video first; Android allows only one active screen-capture session for this app."
+                    } else {
+                        screenshotConsentLauncher.launch(projectionManager.createScreenCaptureIntent())
+                    }
                 }) { Text("Enable screenshot standby") }
                 OutlinedButton(onClick = {
                     context.startService(
