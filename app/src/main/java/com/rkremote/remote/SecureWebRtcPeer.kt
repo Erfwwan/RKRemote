@@ -1,8 +1,11 @@
 package com.rkremote.remote
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import org.json.JSONObject
 import org.webrtc.DataChannel
 import org.webrtc.IceCandidate
@@ -14,6 +17,7 @@ import org.webrtc.SessionDescription
 import java.nio.ByteBuffer
 import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Direct WebRTC data transport layered on mutually-approved RK-SecureLink.
@@ -57,6 +61,37 @@ class SecureWebRtcPeer(
     private val turnConfig = turnServers.toList()
     private val closed = AtomicBoolean(false)
     private val remoteDescriptionSet = AtomicBoolean(false)
+    private val iceRestartInProgress = AtomicBoolean(false)
+    private val lastIceRestartAtMs = AtomicLong(0L)
+    private val connectivityManager =
+        appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    private val networkLock = Any()
+    private var currentDefaultNetwork: Network? = null
+    private var sawInitialDefaultNetwork = false
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            if (closed.get()) return
+            val changed = synchronized(networkLock) {
+                val previous = currentDefaultNetwork
+                currentDefaultNetwork = network
+                val wasInitialized = sawInitialDefaultNetwork
+                sawInitialDefaultNetwork = true
+                wasInitialized && previous != network
+            }
+            if (changed) requestIceRestart()
+        }
+
+        override fun onLost(network: Network) {
+            if (closed.get()) return
+            val lostCurrent = synchronized(networkLock) {
+                if (currentDefaultNetwork == network) {
+                    currentDefaultNetwork = null
+                    true
+                } else false
+            }
+            if (lostCurrent) scheduleDisconnectGracePeriod()
+        }
+    }
     private val pendingRemoteIce = ArrayDeque<IceCandidate>()
     private val dataFramer = SecureDataChannelFramer()
     private val lock = Any()
@@ -88,6 +123,7 @@ class SecureWebRtcPeer(
                 PeerConnection.IceConnectionState.CONNECTED,
                 PeerConnection.IceConnectionState.COMPLETED -> {
                     clearDisconnectGracePeriod()
+                    iceRestartInProgress.set(false)
                     if (dataChannel?.state() == DataChannel.State.OPEN) listener.onConnected()
                 }
                 PeerConnection.IceConnectionState.DISCONNECTED ->
@@ -140,7 +176,10 @@ class SecureWebRtcPeer(
         override fun onConnectionChange(newState: PeerConnection.PeerConnectionState) {
             if (closed.get()) return
             when (newState) {
-                PeerConnection.PeerConnectionState.CONNECTED -> clearDisconnectGracePeriod()
+                PeerConnection.PeerConnectionState.CONNECTED -> {
+                    clearDisconnectGracePeriod()
+                    iceRestartInProgress.set(false)
+                }
                 PeerConnection.PeerConnectionState.DISCONNECTED -> scheduleDisconnectGracePeriod()
                 PeerConnection.PeerConnectionState.FAILED -> {
                     try {
@@ -187,6 +226,7 @@ class SecureWebRtcPeer(
         }
         peerConnection = factory!!.createPeerConnection(rtcConfig, observer)
             ?: error("WebRTC could not create a PeerConnection")
+        runCatching { connectivityManager.registerDefaultNetworkCallback(networkCallback) }
     }
 
     /** Call only after SecureLink reports mutual owner approval and onSecureReady. */
@@ -348,11 +388,69 @@ class SecureWebRtcPeer(
                         }
                     }
                 }
+                "ice-restart-request" -> {
+                    require(role == Role.CONTROLLER) {
+                        "Only the controller may create the ICE-restart offer"
+                    }
+                    require(message.getString("peerId") == authenticatedPeerId) {
+                        "ICE-restart request peer identity mismatch"
+                    }
+                    startIceRestart()
+                }
                 else -> error("Unknown encrypted WebRTC signaling message")
             }
         } catch (error: Throwable) {
             listener.onFailure(error)
             close()
+        }
+    }
+
+    /**
+     * Recover a live authenticated session after a network handoff.
+     * The controller is the sole ICE-offer authority; the target requests a
+     * restart through the already authenticated Noise channel to avoid glare.
+     */
+    fun requestIceRestart(): Boolean {
+        if (closed.get()) return false
+        return if (role == Role.CONTROLLER) {
+            startIceRestart()
+        } else {
+            secureLink.sendApplication(
+                JSONObject()
+                    .put("type", "ice-restart-request")
+                    .put("peerId", localPeerId)
+                    .toString()
+                    .toByteArray(Charsets.UTF_8)
+            )
+        }
+    }
+
+    private fun startIceRestart(): Boolean {
+        if (closed.get() || role != Role.CONTROLLER) return false
+        val now = SystemClock.elapsedRealtime()
+        val previous = lastIceRestartAtMs.get()
+        if (previous != 0L && now - previous < ICE_RESTART_COOLDOWN_MS) return false
+        if (!iceRestartInProgress.compareAndSet(false, true)) return false
+        val connection = peerConnection
+        if (connection == null || connection.signalingState() != PeerConnection.SignalingState.STABLE) {
+            iceRestartInProgress.set(false)
+            return false
+        }
+        lastIceRestartAtMs.set(now)
+        val constraints = MediaConstraints().apply {
+            mandatory.add(MediaConstraints.KeyValuePair("IceRestart", "true"))
+        }
+        return runCatching {
+            connection.createOffer(
+                sdpObserver(onCreate = { description -> setLocalAndSignal(description, "offer") }),
+                constraints
+            )
+            true
+        }.getOrElse {
+            iceRestartInProgress.set(false)
+            listener.onFailure(it)
+            close()
+            false
         }
     }
 
@@ -426,6 +524,7 @@ class SecureWebRtcPeer(
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         clearDisconnectGracePeriod()
+        runCatching { connectivityManager.unregisterNetworkCallback(networkCallback) }
         synchronized(lock) { pendingRemoteIce.clear() }
         dataFramer.clear()
 
