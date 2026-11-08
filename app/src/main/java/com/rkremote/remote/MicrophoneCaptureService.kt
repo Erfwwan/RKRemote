@@ -164,13 +164,19 @@ class MicrophoneCaptureService : Service() {
         MicrophoneChunkStore.clear()
         val old = recorder
         recorder = null
+        // stop() unblocks a blocking AudioRecord.read(). Join before releasing
+        // the recorder/effects so the capture thread cannot race native teardown.
         runCatching { old?.stop() }
+        val captureWorker = worker
+        if (captureWorker != null && captureWorker !== Thread.currentThread()) {
+            runCatching { captureWorker.join(500) }
+        }
+        captureWorker?.interrupt()
         runCatching { old?.release() }
         runCatching { echoCanceler?.release() }
         runCatching { noiseSuppressor?.release() }
         echoCanceler = null
         noiseSuppressor = null
-        worker?.interrupt()
         worker = null
     }
 
