@@ -264,7 +264,16 @@ class SecureInternetPeer(
         }
     }
 
+    /** Stops a session from the persistent notification and informs the live UI. */
+    fun stopFromOwnerAction() {
+        closeInternal("نشست از اعلان اندروید متوقف شد")
+    }
+
     override fun close() {
+        closeInternal(null)
+    }
+
+    private fun closeInternal(disconnectReason: String?) {
         if (!closed.compareAndSet(false, true)) return
         try {
             heartbeatExecutor.shutdownNow()
@@ -273,6 +282,9 @@ class SecureInternetPeer(
         } finally {
             authenticatedPeerId = null
             secureSession.close()
+            if (disconnectReason != null) {
+                runCatching { listener.onDisconnected(disconnectReason) }
+            }
         }
     }
 
