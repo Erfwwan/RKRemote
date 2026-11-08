@@ -414,6 +414,26 @@ class LanAgentServer(
         output.flush()
     }
 
+    private fun respondAudioBytes(output: OutputStream, bytes: ByteArray) {
+        val header = "HTTP/1.1 200 OK\r\n" +
+            "Content-Type: application/octet-stream\r\n" +
+            "Content-Length: ${bytes.size}\r\n" +
+            "Connection: close\r\n" +
+            "Cache-Control: no-store\r\n\r\n"
+        output.write(header.toByteArray(Charsets.US_ASCII))
+        output.write(bytes)
+        output.flush()
+    }
+
+    private fun respondNoContent(output: OutputStream) {
+        val header = "HTTP/1.1 204 No Content\r\n" +
+            "Content-Length: 0\r\n" +
+            "Connection: close\r\n" +
+            "Cache-Control: no-store\r\n\r\n"
+        output.write(header.toByteArray(Charsets.US_ASCII))
+        output.flush()
+    }
+
     private fun respond(output: OutputStream, status: Int, body: JSONObject) {
         val bytes = body.toString().toByteArray(Charsets.UTF_8)
         val label = when (status) {
