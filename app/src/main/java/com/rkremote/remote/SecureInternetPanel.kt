@@ -101,6 +101,7 @@ fun SecureInternetPanel() {
             if (peer == null || uris.size > availableSlots) {
                 fileUploadStatus.value = if (peer == null) "Not connected" else "Only $availableSlots upload slot(s) available"
             } else {
+                val destinationParent = fileParentId.value.ifBlank { fileRootId.value }
                 uris.forEach { uri ->
                     val transferId = UUID.randomUUID().toString()
                     if (!outgoingUploadIds.add(transferId)) return@forEach
@@ -141,7 +142,7 @@ fun SecureInternetPanel() {
                                     .put("name", displayName)
                                     .put("mimeType", mime)
                                     .put("totalBytes", sizeBytes)
-                                    .put("parentId", fileParentId.value.ifBlank { fileRootId.value })
+                                    .put("parentId", destinationParent)
                             )) { "Could not start secure upload" }
                             val digest = MessageDigest.getInstance("SHA-256")
                             var total = 0L
