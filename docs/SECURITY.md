@@ -21,15 +21,26 @@ RKRemote is intended only for devices owned by the operator or devices for which
 - Credential harvesting, collection from other apps' private sandboxes, or exfiltration without explicit opt-in.
 - Publicly exposed unauthenticated control endpoints.
 
-## Transport requirements before remote control is enabled
+## Current internet transport
 
-1. Use TLS 1.3 where supported, with certificate/public-key pinning or an authenticated private relay.
+- Both devices connect to the Cloudflare Durable Object relay over WSS.
+- Noise XX with X25519 and ChaCha20-Poly1305 protects application payloads end-to-end after signed device identity verification and mutual SAS approval.
+- Application messages are optionally compressed before encryption, fragmented below the Worker's 12 KiB limit, and encrypted fragment-by-fragment.
+- The Worker forwards opaque binary ciphertext. It can still observe IP addresses, room IDs, roles, timing, frame sizes and traffic volume.
+- The room ID is not authentication. Reject replayed, expired, malformed, duplicate or out-of-order messages.
+- Require explicit capability grants for screen, camera, microphone, files, contacts, call log, location and notifications.
+- Never persist session keys or put API credentials, pairing secrets or private file contents in source control.
+- Worker-generated room lifecycle events are limited to non-sensitive status metadata. No application payload may be sent as plaintext.
+
+## Transport requirements
+
+1. Use WSS for each phone-to-Cloudflare hop and Noise for end-to-end application payload protection.
 2. Bind every command to an authenticated paired device and a fresh session nonce.
-3. Reject replayed, expired, malformed, or out-of-order commands.
-4. Require explicit capability grants for screen, camera, microphone, files, contacts, call log, and notifications.
+3. Reject replayed, expired, malformed, duplicate or out-of-order commands.
+4. Require explicit capability grants for each feature and preserve owner-visible stop/revoke controls.
 5. Do not persist pairing secrets in source control or plaintext preferences.
 6. Log security-relevant events without logging message bodies, passwords, tokens, or private file contents.
 
 ## Data retention
 
-The current milestone stores at most 500 notification events in app-private storage encrypted with AES-GCM and an Android Keystore key. No notification content is transmitted in the current build.
+The current milestone stores at most 500 notification events in app-private storage encrypted with AES-GCM and an Android Keystore key. If the target owner enables Android Notification Access and separately grants the NOTIFICATIONS capability for the active paired session, the app can send up to the latest 20 stored events end-to-end encrypted to the controller. The Cloudflare Worker never receives notification plaintext. Revoking the session capability or disabling Notification Access prevents further exports.

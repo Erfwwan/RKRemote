@@ -1,0 +1,13 @@
+{
+  "name": "rkremote-cloudflare-relay",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Opaque encrypted WebSocket relay for RKRemote using Cloudflare Durable Objects",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

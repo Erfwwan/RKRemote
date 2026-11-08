@@ -1,58 +1,49 @@
 # RKRemote
 
-A consent-based Android remote-device management project for devices owned or explicitly administered by the operator.
+Consent-based Android remote-device management for devices owned by the operator or devices for which the operator has explicit administrative authorization.
 
-## Security boundary
+## Current internet transport and pairing
 
-RKRemote does not implement covert camera/microphone capture, hidden persistence, permission bypasses, silent reboot, stealth installation, or collection from other apps' private sandboxes. Sensitive capabilities require Android's own permission or settings flow. Active camera, microphone, and screen-sharing sessions must be visible and stoppable on the target device.
+- **Cloudflare encrypted relay:** both phones connect to a Cloudflare Worker Durable Object room. The Worker forwards encrypted binary frames only.
+- **Noise XX + ChaCha20-Poly1305:** authenticates the two devices and encrypts application traffic end-to-end after both owners compare and approve the six-digit SAS.
+- **Compression and framing:** payloads are compressed only when useful, then fragmented below the Worker 12 KiB frame limit and encrypted fragment-by-fragment.
+- **No ICE/STUN/TURN setup:** no direct WebRTC path is required. All application data travels through Cloudflare.
+- **Automatic pairing invitation:** the target creates a random room and shares an RKRemote invitation link; the controller opens it and receives the Worker URL, room ID and role automatically.
 
-## Current status
+## Cloudflare account integration
 
-**Milestone 1 — Local capability setup**
+Each user deploys the Worker into their own Cloudflare account using the manual Deploy button below. RKRemote then needs only the Worker WSS address for normal pairing and encrypted relay operation.
 
-- Kotlin + Jetpack Compose Android app shell
-- Runtime permission setup for camera, microphone, foreground location, contacts, call history, and media
-- User-selected persistent folder access through Android Storage Access Framework
-- Notification listener service, enabled manually in Android Notification Access settings
-- Bounded local notification event history (500 events), encrypted using AES-GCM with a non-exportable Android Keystore key
-- Notification contents are stored locally only; this milestone does not transmit them
+An optional, user-owned Cloudflare API Token can be entered in the app to update the already-created `rkremote-signaling` Worker. The token is encrypted locally with AES-GCM and an Android Keystore key; it is not shared with the paired phone. The app does not use OAuth, a shared developer token, a Global API Key, or the user's Cloudflare password. The token is optional: users who only want to connect can leave it blank.
 
-**Not implemented yet:** remote pairing, network transport, remote file operations, remote screen interaction, camera/audio streaming, or two-way walkie-talkie.
+Create a token with **Workers Editor** access scoped to the existing `rkremote-signaling` Worker only. The manual Deploy step creates the Worker first; the in-app token operation only updates that existing Worker. See [Cloudflare manual setup](docs/CLOUDFLARE_SETUP.md).
 
-## Build
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Erfwwan/RKRemote/tree/feature/remote-agent-foundation/cloudflare/worker)
 
-- Android Studio with a recent stable Android SDK
-- JDK 17
-- Gradle 8.11.1
-- Android Gradle Plugin 8.9.1
+## Feature boundaries
 
-Open the repository in Android Studio and run the app configuration on an Android device or emulator.
+The source includes owner-approved screen viewing/input, owner-selected SAF file browsing and transfer, notification snapshots, call/SMS/contact/location reports, and owner-started single-photo camera, microphone and PTT functions. Each capability remains separately granted. Camera, microphone and screen capture still require local owner action, Android permissions, visible foreground notifications and local stop controls.
 
-## Planned milestones
+The app does not bypass Android permissions, silently start sensors, hide its session, or access arbitrary private app storage. Call-log/SMS/background-location access may be restricted by Android version and install channel.
 
-1. Local permission and capability setup (current).
-2. Authenticated device pairing and encrypted transport.
-3. User-approved screen sharing with Android MediaProjection and visible session controls.
-4. User-started camera/microphone sessions with foreground-service indicators.
-5. Scoped file/gallery browsing, contacts and call-history access.
-6. Notification history forwarding after explicit pairing and user opt-in.
-7. Two-way push-to-talk audio.
-8. Connection recovery, diagnostics, and long-duration battery/stability testing.
+## Important transport trade-offs
 
-## Privacy and security
+- All traffic is relayed through Cloudflare. This is more predictable across restrictive NATs than direct P2P, but increases Worker bandwidth usage and can incur usage charges or limits.
+- Cloudflare can observe IP addresses, room IDs, connection timing, frame sizes and traffic volume, but not the encrypted app payloads.
+- Compression is performed before encryption and only kept when it saves at least 32 bytes. Already-compressed images/audio/video generally receive little or no size reduction.
+- Noise protects app payloads end-to-end. WSS protects each phone-to-Cloudflare hop. The Worker never receives plaintext app messages.
+- The room ID is not device authentication. Peer identity verification and owner approval remain mandatory.
+- The optional user API Token is encrypted at rest using Android Keystore. Removing it from the app does not revoke it at Cloudflare; revoke it separately in Cloudflare when no longer needed.
 
-- Target-device owner explicitly enables each special access.
-- Notification Access can expose sensitive message contents; keep it disabled unless needed.
-- Local notification history is bounded to the latest 500 events and encrypted at rest.
-- No credentials, pairing secrets, or private keys belong in source control.
-- Never expose a relay or admin endpoint to the public internet without authentication, rate limits, and TLS.
+## Build and verification
 
-## Engineering documentation
+Requirements: Android Studio, JDK 17, Gradle 8.11.1 and Android SDK 35.
 
+The source changes in this milestone have **not** been built or tested. API-token-based Worker update has not been run against a real Cloudflare account. Physical tests on both phones remain deferred to the final stage. A successful build would not by itself prove transport correctness or production readiness.
+
+See:
+- [Cloudflare Worker deployment](cloudflare/worker/README.md)
+- [Cloudflare setup](docs/CLOUDFLARE_SETUP.md)
+- [Encrypted relay protocol](docs/CLOUDFLARE_RELAY_TRANSPORT.md)
 - [Security model](docs/SECURITY.md)
-- [Remote-control protocol and milestone design](docs/REMOTE_CONTROL_DESIGN.md)
-
-A GitHub Actions workflow now runs a debug APK compilation on pushes, pull requests, and manual dispatches. The workflow uses Gradle 8.11.1 with JDK 17.
-
-**Important:** the repository is not yet a complete remote-control product. The current Android application is the local capability-setup milestone. Remote pairing, authenticated network transport, remote screen interaction, camera/audio streaming, and push-to-talk remain future implementation work. Do not rely on the app for remote access until those features are implemented and tested on real devices.
-
+- [Implementation status](docs/IMPLEMENTATION_STATUS.md)
