@@ -105,6 +105,7 @@ class SecureRemoteCommandRouter(
             "file.upload.begin" to RemoteCapability.FILES,
             "file.transfer.chunk" to RemoteCapability.FILES,
             "file.transfer.complete" to RemoteCapability.FILES,
+            "file.transfer.cancel" to RemoteCapability.FILES,
             "notifications.sync.request" to RemoteCapability.NOTIFICATIONS,
             "camera.start.request" to RemoteCapability.CAMERA,
             "camera.stop" to RemoteCapability.CAMERA,
