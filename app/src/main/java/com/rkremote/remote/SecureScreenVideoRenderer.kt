@@ -171,6 +171,6 @@ class SecureScreenVideoRenderer(
 
     companion object {
         private const val INPUT_TIMEOUT_US = 10_000L
-        private const val MAX_CODEC_CONFIG_BYTES = 24 * 1024
+        private const val MAX_CODEC_CONFIG_BYTES = 8 * 1024
     }
 }
