@@ -250,7 +250,8 @@ class SecureInternetPeer(
             val messageType = runCatching {
                 JSONObject(payload.toString(Charsets.UTF_8)).optString("type")
             }.getOrDefault("")
-            val allowCompression = !messageType.startsWith("screen.") &&
+            val allowCompression = messageType.isNotBlank() &&
+                !messageType.startsWith("screen.") &&
                 !messageType.startsWith("camera.")
             relayCodec.encode(payload, allowCompression).all { fragment ->
                 secureSession.sendApplication(fragment).also { accepted ->
