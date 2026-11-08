@@ -41,7 +41,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import com.rkremote.remote.PairingPanel\nimport com.rkremote.remote.LanRemotePanel
+import com.rkremote.remote.PairingPanel
+import com.rkremote.remote.LanRemotePanel
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -164,7 +165,8 @@ private fun LocalSetupScreen() {
                 }
             }
         }
-        item { PairingPanel() }\n        item { LanRemotePanel() }
+        item { PairingPanel() }
+        item { LanRemotePanel() }
         item {
             Text("Android permissions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         }
