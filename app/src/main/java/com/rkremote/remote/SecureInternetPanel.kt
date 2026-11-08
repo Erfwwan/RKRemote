@@ -1588,7 +1588,10 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                         }
                         Card(modifier = Modifier.fillMaxWidth()) {
                             Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                Text(item.optString("address").ifBlank { "شماره ناشناس" }, fontWeight = FontWeight.SemiBold)
+                                Text(item.optString("name").ifBlank { item.optString("address").ifBlank { "شماره ناشناس" } }, fontWeight = FontWeight.SemiBold)
+                                if (item.optString("name").isNotBlank() && item.optString("address").isNotBlank()) {
+                                    Text(item.optString("address"), style = MaterialTheme.typography.bodySmall)
+                                }
                                 Text(typeLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                                 Text(item.optString("body"), style = MaterialTheme.typography.bodyMedium)
                                 Text(
