@@ -1,6 +1,7 @@
 package com.rkremote.remote
 
 import android.os.Build
+import android.provider.CallLog
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -43,13 +44,15 @@ import androidx.compose.ui.viewinterop.AndroidView
 import org.json.JSONObject
 import java.util.Base64
 import java.util.UUID
+import java.util.Date
+import java.text.DateFormat
 import java.security.MessageDigest
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 enum class SecureFeatureSection {
-    CONNECTION, SCREEN, CAMERA, AUDIO, FILES, NOTIFICATIONS, SESSION_PERMISSIONS
+    CONNECTION, SCREEN, CAMERA, AUDIO, FILES, NOTIFICATIONS, CALL_LOGS, SESSION_PERMISSIONS
 }
 
 @Composable
@@ -93,6 +96,8 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
     val streamSender = remember { mutableStateOf<SecureScreenStreamSender?>(null) }
     val remoteText = remember { mutableStateOf("") }
     val notificationSummary = remember { mutableStateOf("No notification sync requested") }
+    val callLogItems = remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+    val callLogStatus = remember { mutableStateOf("هنوز گزارشی بارگذاری نشده است") }
     val fileItems = remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     val fileStatus = remember { mutableStateOf("No folder loaded") }
     val fileParentId = remember { mutableStateOf("") }
@@ -319,6 +324,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     SecureFeatureSection.AUDIO -> "میکروفن و واکی‌تاکی"
                     SecureFeatureSection.FILES -> "مدیریت و انتقال فایل‌ها"
                     SecureFeatureSection.NOTIFICATIONS -> "همگام‌سازی اعلان‌ها"
+                    SecureFeatureSection.CALL_LOGS -> "گزارش تاریخچه تماس‌ها"
                     SecureFeatureSection.SESSION_PERMISSIONS -> "مجوزهای نشست"
                     SecureFeatureSection.CONNECTION -> "اتصال و روش‌ها"
                 }
@@ -748,6 +754,16 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                         }
                                         "notifications.sync.result"
                                     }
+                                    register("calllog.sync.request", RemoteCapability.CALL_LOG) { message ->
+                                        val response = SecureCallLogSync.buildLatestResponse(
+                                            context,
+                                            message.payload.getString("requestId")
+                                        )
+                                        check(activePeer?.sendMessage("calllog.sync.result", response) == true) {
+                                            "Could not send encrypted call history response"
+                                        }
+                                        "calllog.sync.result"
+                                    }
                                     register("screen.input", RemoteCapability.SCREEN_INPUT) { message ->
                                         val payload = message.payload
                                         val accepted = when (payload.getString("action")) {
@@ -1053,6 +1069,23 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                     else reason
                                                 }
                                             }
+                                            "calllog.sync.result" -> {
+                                                val records = message.payload.optJSONArray("records")
+                                                val entries = buildList {
+                                                    for (index in 0 until (records?.length() ?: 0)) {
+                                                        records?.optJSONObject(index)?.let { add(JSONObject(it.toString())) }
+                                                    }
+                                                }
+                                                mainHandler.post {
+                                                    if (activePeerRef.get() !== activePeer) return@post
+                                                    callLogItems.value = entries
+                                                    val returned = message.payload.optInt("returned", entries.size)
+                                                    val available = message.payload.optInt("available", returned)
+                                                    callLogStatus.value = if (message.payload.optBoolean("truncated"))
+                                                        "$returned تماس از $available تماس (گزارش محدود شده)"
+                                                    else "$returned تماس دریافت شد"
+                                                }
+                                            }
                                             "notifications.sync.result" -> {
                                                 val events = message.payload.optJSONArray("events")
                                                 val preview = buildList {
@@ -1265,6 +1298,15 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 }) { Text("Allow remote touch and text") }
                 OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
                     runCatching {
+                        check(SecureCallLogSync.hasCallLogPermission(context)) {
+                            "Enable Android Call history permission locally first"
+                        }
+                        session.value?.grantOwnerApprovedCapabilities(setOf(RemoteCapability.CALL_LOG))
+                    }.onSuccess { status.value = "Call history sharing allowed for this session" }
+                        .onFailure { error.value = it.message ?: "Could not grant call history access" }
+                }) { Text("Allow call history report") }
+                OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
+                    runCatching {
                         check(SecureNotificationSync.isNotificationAccessEnabled(context)) {
                             "Enable RKRemote Notification Access in Android settings first"
                         }
@@ -1439,6 +1481,78 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                         "Notification sync requested" else "Could not request notification sync"
                 }) { Text("Fetch recent notifications") }
                 Text(notificationSummary.value, style = MaterialTheme.typography.bodySmall)
+                }
+                if (feature == SecureFeatureSection.CALL_LOGS) {
+                    if (role.value == CloudflareSignalingClient.Role.CONTROLLER) {
+                        OutlinedButton(
+                            enabled = session.value != null && dataChannelConnected.value,
+                            onClick = {
+                                callLogStatus.value = if (sendInput("calllog.sync.request", JSONObject()))
+                                    "درخواست گزارش تماس به دستگاه مقصد ارسال شد"
+                                else "ارسال درخواست گزارش ناموفق بود"
+                            }
+                        ) { Text("دریافت گزارش تماس‌های دستگاه مقصد") }
+                    } else {
+                        Text(
+                            if (SecureCallLogSync.hasCallLogPermission(context))
+                                "مجوز تاریخچه تماس فعال است. گزارش فقط با فشردن دکمه زیر روی همین دستگاه خوانده می‌شود."
+                            else "برای مشاهده گزارش، ابتدا مجوز «تاریخچه تماس‌ها» را در بخش مجوزهای اندروید فعال کن.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        OutlinedButton(
+                            enabled = SecureCallLogSync.hasCallLogPermission(context),
+                            onClick = {
+                                runCatching { SecureCallLogSync.readLatest(context) }
+                                    .onSuccess { result ->
+                                        callLogItems.value = buildList {
+                                            for (index in 0 until result.records.length()) {
+                                                result.records.optJSONObject(index)?.let { add(JSONObject(it.toString())) }
+                                            }
+                                        }
+                                        callLogStatus.value = "${result.records.length()} تماس از ${result.totalAvailable} تماس"
+                                    }
+                                    .onFailure { callLogStatus.value = it.message ?: "خواندن تاریخچه تماس ناموفق بود" }
+                            }
+                        ) { Text("نمایش گزارش تماس‌های همین گوشی") }
+                    }
+                    Text(callLogStatus.value, style = MaterialTheme.typography.bodySmall)
+                    callLogItems.value.forEach { item ->
+                        val seconds = item.optLong("durationSeconds").coerceAtLeast(0L)
+                        val duration = "%d:%02d".format(seconds / 60, seconds % 60)
+                        val typeLabel = when (item.optInt("type")) {
+                            CallLog.Calls.INCOMING_TYPE -> "ورودی"
+                            CallLog.Calls.OUTGOING_TYPE -> "خروجی"
+                            CallLog.Calls.MISSED_TYPE -> "ازدست‌رفته"
+                            CallLog.Calls.REJECTED_TYPE -> "ردشده"
+                            CallLog.Calls.BLOCKED_TYPE -> "مسدودشده"
+                            CallLog.Calls.VOICEMAIL_TYPE -> "پیام‌گیر صوتی"
+                            else -> "نامشخص"
+                        }
+                        Card(modifier = Modifier.fillMaxWidth()) {
+                            Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Text(
+                                    item.optString("name").ifBlank { item.optString("number").ifBlank { "شماره ناشناس" } },
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                if (item.optString("name").isNotBlank() && item.optString("number").isNotBlank()) {
+                                    Text(item.optString("number"), style = MaterialTheme.typography.bodySmall)
+                                }
+                                Text(
+                                    "$typeLabel · مدت: $duration · " +
+                                        DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+                                            .format(Date(item.optLong("timestamp"))),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
+                    }
+                    if (role.value == CloudflareSignalingClient.Role.CONTROLLER) {
+                        Text(
+                            "گزارش فقط پس از فعال‌سازی مجوز اندروید و تأیید جداگانه «گزارش تاریخچه تماس‌ها» روی دستگاه مقصد قابل دریافت است.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
                 if (feature == SecureFeatureSection.FILES) {
                 OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
