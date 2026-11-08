@@ -59,6 +59,14 @@
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
         <service
+            android:name=".remote.CameraCaptureService"
+            android:exported="false"
+            android:foregroundServiceType="camera" />
+        <service
+            android:name=".remote.MicrophoneCaptureService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+        <service
             android:name=".remote.SessionForegroundService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
