@@ -40,7 +40,11 @@ class SecureRemoteCommandRouter(
 
     @Synchronized
     fun register(type: String, capability: RemoteCapability, handler: Handler) {
-        require(type in COMMAND_CAPABILITIES) { "Message type is not a remote command" }
+        val requiredCapability = COMMAND_CAPABILITIES[type]
+            ?: throw IllegalArgumentException("Message type is not a remote command")
+        require(capability == requiredCapability) {
+            "Handler capability does not match the protocol's required capability"
+        }
         routes[type] = Route(capability, handler)
     }
 
