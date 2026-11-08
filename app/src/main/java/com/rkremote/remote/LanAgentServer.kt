@@ -564,10 +564,20 @@ class LanAgentServer(
             "Connection: close\r\nCache-Control: no-store\r\n\r\n"
         output.write(header.toByteArray(Charsets.US_ASCII))
         val buffer = ByteArray(64 * 1024)
-        while (true) {
-            val count = input.read(buffer)
-            if (count < 0) break
-            output.write(buffer, 0, count)
+        if (size >= 0L) {
+            var remaining = size
+            while (remaining > 0L) {
+                val count = input.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
+                if (count < 0) throw java.io.IOException("Source file ended before its reported size")
+                output.write(buffer, 0, count)
+                remaining -= count.toLong()
+            }
+        } else {
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                output.write(buffer, 0, count)
+            }
         }
         output.flush()
     }
