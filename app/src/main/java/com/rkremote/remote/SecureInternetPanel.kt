@@ -59,6 +59,7 @@ enum class SecureFeatureSection {
 @Composable
 fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CONNECTION) {
     val context = LocalContext.current
+    val persistentReportConsent = remember(context) { PersistentPeerReportConsent(context) }
     val initialNetworkProfile = remember(context) {
         runCatching {
             val raw = context.getSharedPreferences("rkremote_custom_networks", android.content.Context.MODE_PRIVATE)
@@ -86,6 +87,10 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
     val sas = remember { mutableStateOf<String?>(null) }
     val error = remember { mutableStateOf<String?>(null) }
     val session = remember { mutableStateOf<SecureInternetPeer?>(null) }
+    val rememberedReportGrants = remember(context) {
+        mutableStateOf(runCatching { persistentReportConsent.allGrants() }.getOrDefault(emptyMap()))
+    }
+    val persistentReportConsentStatus = remember { mutableStateOf("مجوز دائمی برای دستگاه جفت‌شده‌ای ذخیره نشده است") }
     val activePeerRef = remember { AtomicReference<SecureInternetPeer?>(null) }
     val renderer = remember { mutableStateOf<SecureScreenVideoRenderer?>(null) }
     val cameraBitmap = remember { mutableStateOf<Bitmap?>(null) }
@@ -128,6 +133,36 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
     val audioPlayback = remember(context) { SecureAudioPlayback() }
     val audioStatus = remember { mutableStateOf("Microphone stream idle") }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
+
+    fun refreshRememberedReportGrants() {
+        rememberedReportGrants.value = persistentReportConsent.allGrants()
+    }
+
+    fun grantRememberedReportCapability(capability: RemoteCapability) {
+        val activeSession = session.value ?: error("Secure connection is not active")
+        val authenticatedId = activeSession.authenticatedPeerId()
+            ?: error("Authenticated peer identity is not ready")
+        when (capability) {
+            RemoteCapability.CALL_LOG -> check(SecureCallLogSync.hasCallLogPermission(context)) {
+                "Enable Android Call history permission locally first"
+            }
+            RemoteCapability.CONTACTS -> check(SecureSmsSync.hasSmsPermission(context)) {
+                "Enable Android SMS permission locally first"
+            }
+            else -> error("This permission cannot be remembered")
+        }
+        activeSession.grantOwnerApprovedCapabilities(setOf(capability))
+        persistentReportConsent.grant(authenticatedId, capability)
+        refreshRememberedReportGrants()
+    }
+
+    fun revokeRememberedReportCapability(peer: String, capabilities: Set<RemoteCapability>) {
+        persistentReportConsent.revoke(peer, capabilities)
+        if (session.value?.authenticatedPeerId() == peer) {
+            session.value?.revokeOwnerApprovedCapabilities(capabilities)
+        }
+        refreshRememberedReportGrants()
+    }
 
     val uploadPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
         if (uris.isNotEmpty()) {
@@ -820,6 +855,37 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                         mainHandler.post {
                                             if (activePeerRef.get() !== activePeer) return@post
                                             status.value = "Owners approved · negotiating WebRTC"
+                                            if (role.value == CloudflareSignalingClient.Role.TARGET) {
+                                                runCatching {
+                                                    val saved = persistentReportConsent.capabilitiesFor(id)
+                                                    buildSet {
+                                                        if (RemoteCapability.CALL_LOG in saved &&
+                                                            SecureCallLogSync.hasCallLogPermission(context)) {
+                                                            add(RemoteCapability.CALL_LOG)
+                                                        }
+                                                        if (RemoteCapability.CONTACTS in saved &&
+                                                            SecureSmsSync.hasSmsPermission(context)) {
+                                                            add(RemoteCapability.CONTACTS)
+                                                        }
+                                                    }
+                                                }.onSuccess { restored ->
+                                                    rememberedReportGrants.value = persistentReportConsent.allGrants()
+                                                    if (restored.isNotEmpty()) {
+                                                        runCatching {
+                                                            activePeer?.activateOwnerApprovedCommands(restored)
+                                                                ?: error("Secure peer is not ready")
+                                                        }.onSuccess {
+                                                            persistentReportConsentStatus.value =
+                                                                "مجوزهای ذخیره‌شده برای همین دستگاه پس از تأیید هویت فعال شدند"
+                                                            status.value = "Secure peer verified · saved report permissions restored"
+                                                        }.onFailure { failure ->
+                                                            error.value = failure.message ?: "Could not restore saved peer permissions"
+                                                        }
+                                                    }
+                                                }.onFailure { failure ->
+                                                    error.value = failure.message ?: "Could not read saved peer permissions"
+                                                }
+                                            }
                                             }
                                     }
                                     override fun onWebRtcConnecting() {
@@ -1321,7 +1387,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
             if (role.value == CloudflareSignalingClient.Role.TARGET && feature == SecureFeatureSection.SESSION_PERMISSIONS) {
                 Text("Owner controls", style = MaterialTheme.typography.titleSmall)
                 Text(
-                    "Screen capture, Notification Access, and Accessibility must each be enabled locally first. Every remote capability below is granted separately for this session.",
+                    "SMS و تاریخچه تماس پس از تأیید مالک برای هویت امن همین دستگاه ذخیره می‌شوند و در اتصال‌های بعدی، پس از تأیید دوباره هویت، خودکار فعال می‌شوند. سایر دسترسی‌ها فقط برای همان نشست هستند.",
                     style = MaterialTheme.typography.bodySmall
                 )
                 OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
@@ -1347,24 +1413,16 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 }) { Text("Allow remote touch and text") }
                 OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
                     runCatching {
-                        check(SecureCallLogSync.hasCallLogPermission(context)) {
-                            "Enable Android Call history permission locally first"
-                        }
-                        session.value?.grantOwnerApprovedCapabilities(setOf(RemoteCapability.CALL_LOG))
-                    }.onSuccess { status.value = "Call history sharing allowed for this session" }
-                        .onFailure { error.value = it.message ?: "Could not grant call history access" }
-                }) { Text("Allow call history report") }
+                        grantRememberedReportCapability(RemoteCapability.CALL_LOG)
+                    }.onSuccess { status.value = "Call-history report remembered for this paired device" }
+                        .onFailure { error.value = it.message ?: "Could not remember call-history permission" }
+                }) { Text("Always allow call-history report for this paired device") }
                 OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
                     runCatching {
-                        check(SecureSmsSync.hasSmsPermission(context)) {
-                            "Enable Android SMS permission locally first"
-                        }
-                        // SMS and call-log commands share the session gate; the SMS handler
-                        // independently verifies READ_SMS before reading any message.
-                        session.value?.grantOwnerApprovedCapabilities(setOf(RemoteCapability.CONTACTS))
-                    }.onSuccess { status.value = "SMS report allowed for this session" }
-                        .onFailure { error.value = it.message ?: "Could not grant SMS report access" }
-                }) { Text("Allow SMS report") }
+                        grantRememberedReportCapability(RemoteCapability.CONTACTS)
+                    }.onSuccess { status.value = "SMS report remembered for this paired device" }
+                        .onFailure { error.value = it.message ?: "Could not remember SMS permission" }
+                }) { Text("Always allow SMS report for this paired device") }
                 OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
                     runCatching {
                         check(SecureNotificationSync.isNotificationAccessEnabled(context)) {
@@ -1395,6 +1453,41 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                         .onSuccess { status.value = "Secure file access allowed for this session" }
                         .onFailure { error.value = it.message ?: "Could not grant file access" }
                 }) { Text("Allow secure file access") }
+                Text("Saved report permissions by paired device", style = MaterialTheme.typography.titleSmall)
+                Text(persistentReportConsentStatus.value, style = MaterialTheme.typography.bodySmall)
+                if (rememberedReportGrants.value.isEmpty()) {
+                    Text("No persistent SMS or call-history grants are saved.", style = MaterialTheme.typography.bodySmall)
+                } else {
+                    rememberedReportGrants.value.toSortedMap().forEach { (savedPeer, savedCapabilities) ->
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                "Peer: " + savedPeer.take(20) + if (savedPeer.length > 20) "…" else "",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (RemoteCapability.CALL_LOG in savedCapabilities) {
+                                    OutlinedButton(onClick = {
+                                        runCatching {
+                                            revokeRememberedReportCapability(savedPeer, setOf(RemoteCapability.CALL_LOG))
+                                        }.onSuccess {
+                                            persistentReportConsentStatus.value = "Call-history permission revoked for this peer"
+                                        }.onFailure { error.value = it.message ?: "Could not revoke saved permission" }
+                                    }) { Text("Revoke call history") }
+                                }
+                                if (RemoteCapability.CONTACTS in savedCapabilities) {
+                                    OutlinedButton(onClick = {
+                                        runCatching {
+                                            revokeRememberedReportCapability(savedPeer, setOf(RemoteCapability.CONTACTS))
+                                        }.onSuccess {
+                                            persistentReportConsentStatus.value = "SMS permission revoked for this peer"
+                                        }.onFailure { error.value = it.message ?: "Could not revoke saved permission" }
+                                    }) { Text("Revoke SMS") }
+                                }
+                            }
+                        }
+                    }
+                }
                 OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
                     transferActive.set(false)
                     cameraTransferActive.set(false)
@@ -1408,7 +1501,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     streamSender.value = null
                     session.value?.revokeOwnerApprovedCommands()
                     status.value = "All remote command permissions revoked for this session"
-                }) { Text("Revoke all remote permissions") }
+                }) { Text("Revoke all remote permissions for this session") }
                 Text(
                     "Start Android screen sharing locally before allowing screen viewing. Remote commands never start screen, camera or microphone capture.",
                     style = MaterialTheme.typography.bodySmall
