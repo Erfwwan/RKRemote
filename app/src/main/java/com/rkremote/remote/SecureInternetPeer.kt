@@ -202,6 +202,16 @@ class SecureInternetPeer(
         secureSession.connect()
     }
 
+    /**
+     * Ask the authenticated WebRTC link to refresh ICE candidates after a
+     * network handoff. The controller creates the restart offer; the target
+     * sends the request over the already-approved Noise channel.
+     */
+    fun requestNetworkRecovery(): Boolean {
+        if (closed.get()) return false
+        return webRtc?.requestIceRestart() ?: false
+    }
+
     /** Call only after the owner compares the SAS and peer ID on both devices. */
     fun approvePeer(shortAuthenticationString: String, expectedPeerId: String) {
         check(!closed.get()) { "Secure internet session is closed" }
