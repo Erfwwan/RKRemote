@@ -100,6 +100,13 @@ class LanAgentServer(
                 running.set(false)
             } finally {
                 server = null
+                if (!running.get()) {
+                    clientSockets.toList().forEach { runCatching { it.close() } }
+                    clientSockets.clear()
+                    clients.shutdownNow().forEach { task ->
+                        if (task is ClientTask) task.close()
+                    }
+                }
             }
         }, "RKRemote-LAN-Agent").apply {
             isDaemon = true
