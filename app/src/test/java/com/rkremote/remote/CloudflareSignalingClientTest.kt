@@ -41,6 +41,14 @@ class CloudflareSignalingClientTest {
         }
         assertThrows(IllegalArgumentException::class.java) {
             CloudflareSignalingClient(
+                "not-a-valid-origin",
+                "a".repeat(64),
+                CloudflareSignalingClient.Role.TARGET,
+                listener
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            CloudflareSignalingClient(
                 "wss://user:secret@rkremote.example.workers.dev",
                 "a".repeat(64),
                 CloudflareSignalingClient.Role.TARGET,
