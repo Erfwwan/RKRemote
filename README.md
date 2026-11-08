@@ -1,5 +1,9 @@
 # RKRemote
 
+[**دانلود APK قابل نصب (Debug) – آخرین ساخت موفق**](https://github.com/Erfwwan/RKRemote/actions/runs/42491908922)
+
+> در صفحه بالا، بخش **Artifacts** را باز کن و فایل **RKRemote-debug-apk** را دانلود کن. فایل Release فعلی بدون امضای اختصاصی است و برای نصب عمومی پیشنهاد نمی‌شود. فایل Artifact موقت است و طبق تنظیمات GitHub Actions پس از ۱۴ روز منقضی می‌شود.
+
 Consent-based Android remote-device management for devices owned or explicitly administered by the operator.
 
 ## Current implementation
