@@ -34,7 +34,7 @@ data class RemoteMessage(
             "session.start", "session.stop", "heartbeat", "ack",
             "capability.request", "capability.result", "notification.event",
             "file.list.request", "file.list.result", "file.transfer.request", "file.download.request", "file.download.begin", "file.download.chunk", "file.download.complete", "file.download.error", "file.upload.begin", "file.transfer.chunk", "file.transfer.complete", "file.transfer.cancel", "notifications.sync.request", "notifications.sync.result", "calllog.sync.request", "calllog.sync.result", "sms.sync.request", "sms.sync.result", "contacts.sync.request", "contacts.sync.result", "location.sync.request", "location.sync.result",
-            "screen.input", "screen.stream.start", "screen.stream.stop", "screen.video.config", "screen.video.chunk", "screen.video.end", "camera.snapshot.request", "camera.frame.begin", "camera.frame.chunk", "camera.frame.complete", "audio.start.request", "audio.stop",
+            "screen.input", "screen.stream.start", "screen.stream.stop", "screen.video.config", "screen.video.chunk", "screen.video.end", "camera.snapshot.request", "camera.frame.begin", "camera.frame.chunk", "camera.frame.complete",
             "ptt.start", "ptt.stop", "audio.chunk", "ptt.audio.chunk", "error"
         )
 
