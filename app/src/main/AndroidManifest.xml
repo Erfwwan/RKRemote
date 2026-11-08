@@ -64,10 +64,6 @@
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
         <service
-            android:name=".remote.RemoteScreenshotService"
-            android:exported="false"
-            android:foregroundServiceType="mediaProjection" />
-        <service
             android:name=".remote.CameraCaptureService"
             android:exported="false"
             android:foregroundServiceType="camera" />
