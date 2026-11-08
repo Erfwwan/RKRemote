@@ -41,6 +41,10 @@
             </intent-filter>
         </service>
         <service
+            android:name=".remote.ScreenCaptureService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+        <service
             android:name=".remote.SessionForegroundService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
