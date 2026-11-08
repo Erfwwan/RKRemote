@@ -79,6 +79,8 @@ fun LanRemotePanel() {
     var videoPlayer by remember { mutableStateOf<RemoteVideoPlayer?>(null) }
     var videoAspectRatio by remember { mutableStateOf(9f / 16f) }
     var previewRunning by remember { mutableStateOf(false) }
+    var screenshotBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var screenshotStatus by remember { mutableStateOf("No screenshot captured yet.") }
     var tapX by remember { mutableStateOf("0.5") }
     var tapY by remember { mutableStateOf("0.5") }
     var swipeEndX by remember { mutableStateOf("0.8") }
@@ -124,6 +126,18 @@ fun LanRemotePanel() {
             output = "Screen sharing started. Use the persistent notification to stop."
         } else {
             output = "Screen sharing permission was cancelled."
+        }
+    }
+    val screenshotConsentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val data = result.data
+        if (result.resultCode == Activity.RESULT_OK && data != null) {
+            val captureIntent = Intent(context, RemoteScreenshotService::class.java)
+                .putExtra(RemoteScreenshotService.EXTRA_RESULT_CODE, result.resultCode)
+                .putExtra(RemoteScreenshotService.EXTRA_RESULT_DATA, data)
+            ContextCompat.startForegroundService(context, captureIntent)
+            output = "Independent screenshot standby enabled. Keep its persistent notification active."
+        } else {
+            output = "Screenshot standby permission was cancelled."
         }
     }
     val uploadPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
@@ -201,6 +215,22 @@ fun LanRemotePanel() {
                     context.startService(Intent(context, ScreenCaptureService::class.java).setAction(ScreenCaptureService.ACTION_STOP))
                     previewRunning = false
                 }) { Text("Stop screen") }
+            }
+            Text("INDEPENDENT SCREENSHOT STANDBY", fontWeight = FontWeight.SemiBold)
+            Text(
+                "Separate from live video. Grant Android screen-capture permission once; while this foreground session stays active, the controller can request still images without another prompt.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(enabled = notificationsAllowed, onClick = {
+                    screenshotConsentLauncher.launch(projectionManager.createScreenCaptureIntent())
+                }) { Text("Enable screenshot standby") }
+                OutlinedButton(onClick = {
+                    context.startService(
+                        Intent(context, RemoteScreenshotService::class.java)
+                            .setAction(RemoteScreenshotService.ACTION_STOP)
+                    )
+                }) { Text("Stop screenshot standby") }
             }
             Spacer(Modifier.height(4.dp))
             Text("CONTROLLER PHONE", fontWeight = FontWeight.SemiBold)
@@ -579,6 +609,48 @@ fun LanRemotePanel() {
                 else "Video is stopped. Start live video to control the target screen.",
                 style = MaterialTheme.typography.bodySmall
             )
+            Text("ONE-SHOT SCREENSHOT", fontWeight = FontWeight.SemiBold)
+            Text(
+                "This request is independent of live video. The target phone must have screenshot standby enabled.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            OutlinedButton(
+                enabled = !busy && targetIp.isNotBlank() && targetToken.isNotBlank(),
+                onClick = {
+                    busy = true
+                    scope.launch {
+                        val result = runCatching {
+                            withContext(Dispatchers.IO) {
+                                val jpeg = LanControllerClient.requestScreenshot(
+                                    targetIp.trim(), targetToken.trim()
+                                )
+                                val bitmap = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size)
+                                    ?: throw IllegalStateException("Target returned an invalid JPEG image")
+                                val saved = LanControllerClient.saveScreenshotToDownloads(context, jpeg)
+                                bitmap to saved
+                            }
+                        }
+                        result.onSuccess { (bitmap, saved) ->
+                            screenshotBitmap = bitmap
+                            screenshotStatus = "Captured at native screen resolution · saved to $saved"
+                            output = screenshotStatus
+                        }.onFailure {
+                            screenshotStatus = "Screenshot failed: " + (it.message ?: "unknown error")
+                            output = screenshotStatus
+                        }
+                        busy = false
+                    }
+                }
+            ) { Text(if (busy) "Requesting…" else "Capture target screenshot") }
+            Text(screenshotStatus, style = MaterialTheme.typography.bodySmall)
+            screenshotBitmap?.let { bitmap ->
+                Image(
+                    bitmap = bitmap.asImageBitmap(),
+                    contentDescription = "Latest remote screenshot",
+                    modifier = Modifier.fillMaxWidth(),
+                    contentScale = ContentScale.Fit
+                )
+            }
             Spacer(Modifier.height(4.dp))
             Text("REMOTE TOUCH · TARGET PHONE", fontWeight = FontWeight.SemiBold)
             Text(
