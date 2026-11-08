@@ -64,8 +64,9 @@ fun SecureInternetPanel() {
     val room = remember { mutableStateOf(setupPrefs.getString("room_id", null).orEmpty()) }
     val role = remember { mutableStateOf(if (savedRole == "controller") CloudflareSignalingClient.Role.CONTROLLER else CloudflareSignalingClient.Role.TARGET) }
     val turnUrls = remember {
+        val savedIce = setupPrefs.getString("ice_urls", null)
         val addresses = initialNetworkProfile?.optJSONArray("iceUrls")
-        mutableStateOf(if (addresses == null) "" else
+        mutableStateOf(savedIce ?: if (addresses == null) "" else
             (0 until addresses.length()).joinToString(", ") { addresses.optString(it) })
     }
     val turnUsername = remember { mutableStateOf("") }
