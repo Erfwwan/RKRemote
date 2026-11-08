@@ -173,6 +173,15 @@ fun SecureInternetPanel() {
                         )) { "Could not finalize secure upload" }
                         mainHandler.post { fileUploadStatus.value = "Upload sent · waiting for target confirmation" }
                     } catch (failure: Throwable) {
+                        // Cancel a partially-created target file if upload fails.
+                        runCatching {
+                            peer.sendMessage(
+                                "file.transfer.cancel",
+                                JSONObject()
+                                    .put("requestId", UUID.randomUUID().toString())
+                                    .put("transferId", transferId)
+                            )
+                        }
                         mainHandler.post { fileUploadStatus.value = failure.message ?: "Upload failed" }
                     } finally {
                         transferActive.set(false)
@@ -769,6 +778,14 @@ fun SecureInternetPanel() {
                                             }.onFailure {
                                                 downloadReceiver.abort()
                                                 val transferId = message.payload.optString("transferId")
+                                                if (transferId.isNotBlank() && activePeerRef.get() === activePeer) {
+                                                    activePeer?.sendMessage(
+                                                        "file.transfer.cancel",
+                                                        JSONObject()
+                                                            .put("requestId", UUID.randomUUID().toString())
+                                                            .put("transferId", transferId)
+                                                    )
+                                                }
                                                 if (transferId.isNotBlank()) {
                                                     activeTransferId.compareAndSet(transferId, null)
                                                     transferActive.set(false)
@@ -782,6 +799,15 @@ fun SecureInternetPanel() {
                                                 downloadReceiver.chunk(message.payload)
                                             }.onFailure {
                                                 downloadReceiver.abort()
+                                                val transferId = message.payload.optString("transferId")
+                                                if (transferId.isNotBlank() && activePeerRef.get() === activePeer) {
+                                                    activePeer?.sendMessage(
+                                                        "file.transfer.cancel",
+                                                        JSONObject()
+                                                            .put("requestId", UUID.randomUUID().toString())
+                                                            .put("transferId", transferId)
+                                                    )
+                                                }
                                                 mainHandler.post {
                                             if (activePeerRef.get() !== activePeer) return@post
                                             fileDownloadStatus.value = it.message ?: "Download chunk rejected"
