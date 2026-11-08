@@ -50,17 +50,11 @@ import androidx.core.content.ContextCompat
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.rememberDrawerState
 import kotlinx.coroutines.launch
-import com.rkremote.remote.PairingPanel
-import com.rkremote.remote.CloudflareSetupPanel
-import com.rkremote.remote.SecureInternetPanel
-import com.rkremote.remote.OpenNetworkPanel
+import com.rkremote.remote.ConnectionHubPanel
 
 private enum class AppPage(val title: String) {
     HOME("خانه"),
-    INTERNET("اتصال اینترنتی امن"),
-    OPEN_NETWORK("شبکه‌های سفارشی"),
-    CLOUDFLARE_SETUP("راه‌اندازی Cloudflare"),
-    PAIRING("جفت‌سازی دستگاه"),
+    CONNECTIONS("اتصال و روش‌ها"),
     PERMISSIONS("مجوزهای اندروید"),
     NOTIFICATIONS("تاریخچه اعلان‌ها"),
     FILES("دسترسی به فایل‌ها")
@@ -116,19 +110,19 @@ private fun LocalSetupScreen() {
     val permissionItems = remember {
         buildList {
             add(PermissionItem(
-                "Camera",
-                "Required only when the owner starts a visible camera session.",
+                "دوربین",
+                "فقط هنگام شروع آگاهانه نشست دوربین توسط صاحب گوشی لازم است.",
                 listOf(Manifest.permission.CAMERA)
             ))
             add(PermissionItem(
-                "Microphone",
-                "Required only during an explicitly started audio or walkie-talkie session.",
+                "میکروفن",
+                "فقط برای نشست صوتی یا واکی‌تاکی که خودت شروع می‌کنی لازم است.",
                 listOf(Manifest.permission.RECORD_AUDIO)
             ))
             if (Build.VERSION.SDK_INT >= 33) {
                 add(PermissionItem(
-                    "Notifications",
-                    "Runtime notification permission. Reading other apps' notifications requires the separate Notification Access switch.",
+                    "اعلان‌ها",
+                    "مجوز اعلان برنامه؛ خواندن اعلان برنامه‌های دیگر به فعال‌سازی جداگانه Notification Access نیاز دارد.",
                     listOf(Manifest.permission.POST_NOTIFICATIONS)
                 ))
             }
@@ -151,7 +145,7 @@ private fun LocalSetupScreen() {
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    "انتخاب بخش موردنظر",
+                    "بخش موردنظر را انتخاب کن",
                     modifier = Modifier.padding(start = 22.dp, bottom = 16.dp),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -169,7 +163,7 @@ private fun LocalSetupScreen() {
                 }
                 Spacer(Modifier.height(16.dp))
                 Text(
-                    "دسترسی‌ها و قابلیت‌های حساس فقط با تأیید صاحب دستگاه فعال می‌شوند.",
+                    "قابلیت‌های حساس فقط با تأیید صاحب دستگاه فعال می‌شوند.",
                     modifier = Modifier.padding(horizontal = 22.dp, vertical = 8.dp),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -194,8 +188,8 @@ private fun LocalSetupScreen() {
                 }
             }
 
-            // Keep feature panels composed while switching pages so an active
-            // secure session is not destroyed merely by opening the drawer.
+            // Keep the connection hub composed while visiting other pages.
+            // This preserves an active secure session when the drawer is used.
             Box(Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxSize().offset(x = if (currentPage == AppPage.HOME) 0.dp else 2000.dp)) {
                     LazyColumn(
@@ -206,16 +200,13 @@ private fun LocalSetupScreen() {
                             Card {
                                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                     Text("مدیریت دستگاه", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                                    Text("برای دسترسی به هر قابلیت، منوی سه‌خط بالا را باز کن و بخش موردنظر را انتخاب کن.")
-                                    Text("راه‌اندازی Cloudflare، اتصال امن اینترنتی، شبکه‌های سفارشی، جفت‌سازی، مجوزهای اندروید، اعلان‌ها و فایل‌ها در صفحه‌های جداگانه قرار گرفته‌اند.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text("تمام روش‌های اتصال در گزینه «اتصال و روش‌ها» در منوی سه‌خط جمع شده‌اند.")
                                 }
                             }
                         }
                         item {
                             Card {
-                                Column(Modifier.padding(16.dp)) {
+                                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     Text("وضعیت اعلان‌ها", fontWeight = FontWeight.SemiBold)
                                     Text(
                                         if (notificationAccess) "دسترسی اعلان فعال است · $notificationCount رویداد ذخیره شده"
@@ -228,27 +219,9 @@ private fun LocalSetupScreen() {
                     }
                 }
 
-                Box(Modifier.fillMaxSize().offset(x = if (currentPage == AppPage.PAIRING) 0.dp else 2000.dp)) {
+                Box(Modifier.fillMaxSize().offset(x = if (currentPage == AppPage.CONNECTIONS) 0.dp else 2000.dp)) {
                     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        item { PairingPanel() }
-                    }
-                }
-
-                Box(Modifier.fillMaxSize().offset(x = if (currentPage == AppPage.INTERNET) 0.dp else 2000.dp)) {
-                    LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        item { SecureInternetPanel() }
-                    }
-                }
-
-                Box(Modifier.fillMaxSize().offset(x = if (currentPage == AppPage.OPEN_NETWORK) 0.dp else 2000.dp)) {
-                    LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        item { OpenNetworkPanel() }
-                    }
-                }
-
-                Box(Modifier.fillMaxSize().offset(x = if (currentPage == AppPage.CLOUDFLARE_SETUP) 0.dp else 2000.dp)) {
-                    LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        item { CloudflareSetupPanel() }
+                        item { ConnectionHubPanel() }
                     }
                 }
 
@@ -268,7 +241,7 @@ private fun LocalSetupScreen() {
                                     ) {
                                         Text(item.title, fontWeight = FontWeight.SemiBold)
                                         Text(
-                                            if (granted) "Granted" else "Not granted",
+                                            if (granted) "فعال" else "فعال نشده",
                                             color = if (granted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                             style = MaterialTheme.typography.labelMedium
                                         )
@@ -278,7 +251,7 @@ private fun LocalSetupScreen() {
                                     if (!granted) {
                                         Spacer(Modifier.height(8.dp))
                                         OutlinedButton(onClick = { permissionLauncher.launch(item.permissions.toTypedArray()) }) {
-                                            Text("Request")
+                                            Text("درخواست مجوز")
                                         }
                                     }
                                 }
@@ -286,7 +259,7 @@ private fun LocalSetupScreen() {
                         }
                         item {
                             OutlinedButton(modifier = Modifier.fillMaxWidth(), onClick = { refreshKey++ }) {
-                                Text("Refresh access status")
+                                Text("به‌روزرسانی وضعیت مجوزها")
                             }
                         }
                     }
@@ -299,8 +272,8 @@ private fun LocalSetupScreen() {
                                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Text("تاریخچه اعلان‌ها", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                                     Text(
-                                        if (notificationAccess) "Notification Access فعال است · $notificationCount رویداد به‌صورت محلی ذخیره شده"
-                                        else "Notification Access فعال نیست · محتوای اعلان‌ها دریافت نمی‌شود",
+                                        if (notificationAccess) "دسترسی اعلان فعال است · $notificationCount رویداد به‌صورت محلی ذخیره شده"
+                                        else "دسترسی اعلان فعال نیست · محتوای اعلان‌ها دریافت نمی‌شود",
                                         style = MaterialTheme.typography.bodyMedium
                                     )
                                     Button(onClick = {
@@ -329,7 +302,7 @@ private fun LocalSetupScreen() {
                                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Text("دسترسی به فایل‌ها", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                                     Text(
-                                        selectedFolder ?: "هنوز پوشه‌ای انتخاب نشده است. پوشه‌ای را انتخاب کن تا دسترسی پایدار به محتوای همان پوشه داده شود.",
+                                        selectedFolder ?: "هنوز پوشه‌ای انتخاب نشده است. پوشه‌ای را انتخاب کن تا دسترسی پایدار به همان پوشه داده شود.",
                                         style = MaterialTheme.typography.bodySmall
                                     )
                                     OutlinedButton(onClick = { folderPicker.launch(null) }) {
