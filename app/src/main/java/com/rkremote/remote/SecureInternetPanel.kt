@@ -329,6 +329,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
             val disposingSession = session.value
             activePeerRef.compareAndSet(disposingSession, null)
             if (disposingSession != null) {
+                LocationSessionBridge.detach(disposingSession)
                 SessionForegroundService.stopInternetSession(context)
                 disposingSession.revokeOwnerApprovedCommands()
                 disposingSession.close()
@@ -886,6 +887,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                             if (activePeerRef.get() !== activePeer) return@post
                                             status.value = "Owners approved · negotiating WebRTC"
                                             if (role.value == CloudflareSignalingClient.Role.TARGET) {
+                                                activePeer?.let(LocationSessionBridge::attach)
                                                 runCatching {
                                                     val saved = persistentReportConsent.capabilitiesFor(id)
                                                     buildSet {
@@ -1313,6 +1315,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                         mainHandler.post {
                                             // Do not let an old peer clean up resources owned by a newer session.
                                             if (activePeerRef.get() !== activePeer) return@post
+                                            LocationSessionBridge.detach(activePeer ?: return@post)
                                             transferActive.set(false)
                                             activeTransferId.set(null)
                                             downloadReceiver.pause()
@@ -1339,6 +1342,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                         }
                                     }
                                     override fun onFailure(failure: Throwable) {
+                                        activePeer?.let(LocationSessionBridge::detach)
                                         mainHandler.post {
                                             // A delayed failure from an old peer must not tear down
                                             // resources or UI state belonging to a newer session.
