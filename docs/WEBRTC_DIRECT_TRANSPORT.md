@@ -60,3 +60,12 @@ For reliable use across restrictive networks, provision a separately operated TU
 Once the DataChannel is connected, the app can exchange bounded RemoteMessage envelopes. The shared room ID derives the session namespace; each sender increments its own sequence and gives each message a UUID. Receivers reject messages from another room namespace, timestamps outside a ten-minute window, repeated message IDs, and non-increasing sequences. The UI's **Test secure message exchange** sends secure.ping; the other phone replies with secure.pong.
 
 This is only a protocol and bidirectional transport test. The allow-listed future message types do not execute operations. Screen, file, notification, camera, microphone, and PTT functions remain on their previous local/LAN code paths and are not yet available over this secure Internet connection. Do not expose the legacy TCP port 18765.
+
+
+## Target-side command gate and H.264 access-unit codec
+
+The secure transport now includes a target-side command router. It is intentionally inert until the target owner explicitly activates a capability set through `activateOwnerApprovedCommands`. Only registered command handlers can run, and each command must carry a request ID and pass the peer/session/capability/sequence checks. A completed Noise/SAS handshake does not automatically grant screen, input, file, notification, camera, microphone or PTT access. The target can revoke all remote command grants with `revokeOwnerApprovedCommands` without closing the encrypted link.
+
+The router currently has no feature handlers registered by the app, so it rejects commands by default. Any future handler must re-check the current Android permission, local foreground service/capture state, SAF URI access and operation-specific limits. Remote commands must never silently start MediaProjection, camera or microphone capture.
+
+A separate `SecureVideoFrameCodec` now splits H.264 access units into 32 KiB JSON-safe chunks and reassembles them with strict size/metadata checks. It allows up to 2 MiB per frame, 64 chunks, two incomplete frames and a five-second assembly lifetime. This codec is not yet wired to the live encoder or a playback surface; it is a tested protocol building block, not a functioning live video stream.
