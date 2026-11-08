@@ -7,45 +7,32 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.graphics.Bitmap
-import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
-import android.media.Image
-import android.media.ImageReader
+import android.media.MediaCodec
+import android.media.MediaCodecInfo
+import android.media.MediaFormat
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
-import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import com.rkremote.MainActivity
-import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** In-memory latest frame. Frames are never written to disk. */
-object ScreenFrameStore {
-    @Volatile var latestJpeg: ByteArray? = null
-        private set
-
-    fun publish(bytes: ByteArray) { latestJpeg = bytes }
-    fun clear() { latestJpeg = null }
-}
-
 /**
- * Captures only after Android's MediaProjection consent dialog.
- * A persistent notification remains visible for the entire capture session.
+ * Owner-approved H.264 screen capture. Encoded access units are kept in a
+ * latest-frame slot; slow viewers never build an unbounded frame backlog.
  */
 class ScreenCaptureService : Service() {
     private var projection: MediaProjection? = null
-    private var reader: ImageReader? = null
     private var display: VirtualDisplay? = null
+    private var encoder: MediaCodec? = null
     private var worker: HandlerThread? = null
     private val active = AtomicBoolean(false)
-    @Volatile private var lastFrameAt = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -60,16 +47,14 @@ class ScreenCaptureService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-
         startAsForeground()
         val code = intent?.getIntExtra(EXTRA_RESULT_CODE, 0) ?: 0
         @Suppress("DEPRECATION")
         val data: Intent? = if (Build.VERSION.SDK_INT >= 33) {
             intent?.getParcelableExtra(EXTRA_RESULT_DATA, Intent::class.java)
-        } else {
-            intent?.getParcelableExtra(EXTRA_RESULT_DATA)
-        }
+        } else intent?.getParcelableExtra(EXTRA_RESULT_DATA)
         if (code != RESULT_OK || data == null) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
         }
@@ -77,7 +62,8 @@ class ScreenCaptureService : Service() {
         return try {
             beginCapture(code, data)
             START_NOT_STICKY
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            ScreenVideoStore.clear()
             stopCapture()
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
@@ -97,16 +83,14 @@ class ScreenCaptureService : Service() {
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_menu_view)
             .setContentTitle("RKRemote screen sharing is active")
-            .setContentText("Your screen is being shared on the local network.")
+            .setContentText("Live screen video is being shared on the local network.")
             .setContentIntent(open)
             .setOngoing(true)
             .addAction(0, "Stop sharing", stop)
             .build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
+        } else startForeground(NOTIFICATION_ID, notification)
     }
 
     private fun beginCapture(resultCode: Int, data: Intent) {
@@ -114,23 +98,29 @@ class ScreenCaptureService : Service() {
         val mediaProjection = manager.getMediaProjection(resultCode, data)
         projection = mediaProjection
         val metrics = resources.displayMetrics
-        val sourceWidth = metrics.widthPixels.coerceAtLeast(1)
-        val sourceHeight = metrics.heightPixels.coerceAtLeast(1)
-        // Limit snapshot resolution to keep CPU, memory, and LAN traffic modest.
-        val scale = minOf(1f, MAX_CAPTURE_DIMENSION.toFloat() / maxOf(sourceWidth, sourceHeight))
-        val width = (sourceWidth * scale).toInt().coerceAtLeast(1)
-        val height = (sourceHeight * scale).toInt().coerceAtLeast(1)
-        val density = metrics.densityDpi
-        val imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
-        reader = imageReader
-        val thread = HandlerThread("RKRemote-ScreenCapture").apply { start() }
+        val sourceWidth = metrics.widthPixels.coerceAtLeast(2)
+        val sourceHeight = metrics.heightPixels.coerceAtLeast(2)
+        val scale = minOf(1f, MAX_DIMENSION.toFloat() / maxOf(sourceWidth, sourceHeight))
+        val width = ((sourceWidth * scale).toInt() / 2 * 2).coerceAtLeast(2)
+        val height = ((sourceHeight * scale).toInt() / 2 * 2).coerceAtLeast(2)
+        val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height).apply {
+            setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
+            setInteger(MediaFormat.KEY_BIT_RATE, BIT_RATE)
+            setInteger(MediaFormat.KEY_FRAME_RATE, TARGET_FPS)
+            setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
+            if (Build.VERSION.SDK_INT >= 29) setInteger(MediaFormat.KEY_MAX_B_FRAMES, 0)
+        }
+        val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+        encoder = codec
+        codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+        val inputSurface = codec.createInputSurface()
+        codec.start()
+        val thread = HandlerThread("RKRemote-H264").apply { start() }
         worker = thread
         val handler = Handler(thread.looper)
         active.set(true)
         mediaProjection.registerCallback(object : MediaProjection.Callback() {
             override fun onStop() {
-                // stopCapture() nulls projection before calling stop(), so its own
-                // cleanup callback cannot recursively stop a newly-started session.
                 if (projection === mediaProjection) {
                     stopCapture()
                     stopForeground(STOP_FOREGROUND_REMOVE)
@@ -138,56 +128,74 @@ class ScreenCaptureService : Service() {
                 }
             }
         }, handler)
-        imageReader.setOnImageAvailableListener({ source ->
-            if (!active.get()) return@setOnImageAvailableListener
-            val now = SystemClock.elapsedRealtime()
-            if (now - lastFrameAt < 700) {
-                source.acquireLatestImage()?.close()
-                return@setOnImageAvailableListener
-            }
-            val image = source.acquireLatestImage() ?: return@setOnImageAvailableListener
-            lastFrameAt = now
-            runCatching { ScreenFrameStore.publish(imageToJpeg(image)) }
-            image.close()
-        }, handler)
         display = mediaProjection.createVirtualDisplay(
-            "RKRemote-screen", width, height, density,
-            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-            imageReader.surface, null, handler
+            "RKRemote-live-video", width, height, metrics.densityDpi,
+            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, inputSurface, null, handler
         )
+        thread.startCodecDrain(codec)
     }
 
-    private fun imageToJpeg(image: Image): ByteArray {
-        val plane = image.planes[0]
-        val buffer: ByteBuffer = plane.buffer
-        val pixelStride = plane.pixelStride
-        val rowStride = plane.rowStride
-        val rowPadding = rowStride - pixelStride * image.width
-        val paddedWidth = image.width + rowPadding / pixelStride
-        val padded = Bitmap.createBitmap(paddedWidth, image.height, Bitmap.Config.ARGB_8888)
-        buffer.rewind()
-        padded.copyPixelsFromBuffer(buffer)
-        val cropped = Bitmap.createBitmap(padded, 0, 0, image.width, image.height)
-        val output = ByteArrayOutputStream()
-        cropped.compress(Bitmap.CompressFormat.JPEG, 55, output)
-        padded.recycle()
-        if (cropped !== padded) cropped.recycle()
-        return output.toByteArray()
+    private fun HandlerThread.startCodecDrain(codec: MediaCodec) {
+        Thread({
+            val info = MediaCodec.BufferInfo()
+            while (active.get()) {
+                try {
+                    when (val index = codec.dequeueOutputBuffer(info, 10_000)) {
+                        MediaCodec.INFO_TRY_AGAIN_LATER -> Unit
+                        MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                            val outputFormat = codec.outputFormat
+                            val csd0 = outputFormat.getByteBuffer("csd-0")?.copyRemaining() ?: ByteArray(0)
+                            val csd1 = outputFormat.getByteBuffer("csd-1")?.copyRemaining() ?: ByteArray(0)
+                            ScreenVideoStore.configure(
+                                outputFormat.getInteger(MediaFormat.KEY_WIDTH),
+                                outputFormat.getInteger(MediaFormat.KEY_HEIGHT), csd0, csd1
+                            )
+                        }
+                        else -> if (index >= 0) {
+                            val outputBuffer = codec.getOutputBuffer(index)
+                            if (outputBuffer != null && info.size > 0 &&
+                                info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0) {
+                                val duplicate = outputBuffer.duplicate()
+                                duplicate.position(info.offset)
+                                duplicate.limit(info.offset + info.size)
+                                val bytes = ByteArray(info.size)
+                                duplicate.get(bytes)
+                                ScreenVideoStore.publish(info.presentationTimeUs, info.flags, bytes)
+                            }
+                            codec.releaseOutputBuffer(index, false)
+                        }
+                    }
+                } catch (_: IllegalStateException) {
+                    break
+                } catch (_: Exception) {
+                    // A transient encoder output issue must not crash the process.
+                }
+            }
+        }, "RKRemote-H264-Drain").apply { isDaemon = true; start() }
+    }
+
+    private fun ByteBuffer.copyRemaining(): ByteArray {
+        val copy = duplicate()
+        val bytes = ByteArray(copy.remaining())
+        copy.get(bytes)
+        return bytes
     }
 
     private fun stopCapture() {
         active.set(false)
         runCatching { display?.release() }
         display = null
-        runCatching { reader?.setOnImageAvailableListener(null, null) }
-        runCatching { reader?.close() }
-        reader = null
         val oldProjection = projection
         projection = null
         runCatching { oldProjection?.stop() }
+        val oldEncoder = encoder
+        encoder = null
+        runCatching { oldEncoder?.signalEndOfInputStream() }
+        runCatching { oldEncoder?.stop() }
+        runCatching { oldEncoder?.release() }
         worker?.quitSafely()
         worker = null
-        ScreenFrameStore.clear()
+        ScreenVideoStore.clear()
     }
 
     override fun onDestroy() {
@@ -204,6 +212,8 @@ class ScreenCaptureService : Service() {
         private const val RESULT_OK = -1
         private const val CHANNEL = "rkremote_screen_share"
         private const val NOTIFICATION_ID = 4202
-        private const val MAX_CAPTURE_DIMENSION = 1600
+        private const val MAX_DIMENSION = 480
+        private const val TARGET_FPS = 10
+        private const val BIT_RATE = 350_000
     }
 }
