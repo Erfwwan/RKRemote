@@ -483,7 +483,8 @@ class LanAgentServer(
         val rootId = DocumentsContract.getTreeDocumentId(tree)
         if (documentId == rootId) return true
         val documentUri = DocumentsContract.buildDocumentUriUsingTree(tree, documentId)
-        return DocumentsContract.isChildDocument(context.contentResolver, tree, documentUri)
+        val rootUri = DocumentsContract.buildDocumentUriUsingTree(tree, rootId)
+        return DocumentsContract.isChildDocument(context.contentResolver, rootUri, documentUri)
     }
 
     private fun openSelectedFile(documentId: String): OpenedTargetFile {
