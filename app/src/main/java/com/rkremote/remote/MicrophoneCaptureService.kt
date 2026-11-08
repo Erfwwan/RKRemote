@@ -26,10 +26,14 @@ import java.util.concurrent.atomic.AtomicReference
 object MicrophoneChunkStore {
     private val latest = AtomicReference<ByteArray?>(null)
     @Volatile private var capturing = false
+    @Synchronized
     fun publish(bytes: ByteArray) { if (capturing) latest.set(bytes.copyOf()) }
+    @Synchronized
     fun take(): ByteArray? = latest.getAndSet(null)
+    @Synchronized
     fun setCapturing(value: Boolean) { capturing = value; if (!value) latest.set(null) }
     fun isCapturing(): Boolean = capturing
+    @Synchronized
     fun clear() { latest.set(null); capturing = false }
 }
 
