@@ -102,6 +102,7 @@ internal class SecureRelayFrameCodec(
                     require(!inflater.needsDictionary() && !inflater.needsInput()) {
                         "Compressed relay payload is incomplete or requires a dictionary"
                     }
+                    throw IllegalArgumentException("Compressed relay decoder made no progress")
                 }
                 offset += count
             }
