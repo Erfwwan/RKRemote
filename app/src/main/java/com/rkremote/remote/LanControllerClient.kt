@@ -11,7 +11,7 @@ import java.net.Socket
  */
 object LanControllerClient {
     fun request(ip: String, token: String, endpoint: String): String {
-        require(ip.matches(Regex("""(?:\\d{1,3}\\.){3}\\d{1,3}"""))) { "Enter the target phone's IPv4 address" }
+        require(ip.matches(Regex("""(?:\d{1,3}\.){3}\d{1,3}"""))) { "Enter the target phone's IPv4 address" }
         require(token.length >= 24) { "Invalid session token" }
         require(endpoint == "/health" || endpoint == "/files")
         val socket = Socket()
