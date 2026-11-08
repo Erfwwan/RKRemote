@@ -29,11 +29,11 @@ data class RemoteMessage(
         const val MAX_MESSAGE_BYTES = 64 * 1024
 
         private val allowedTypes = setOf(
-            "hello", "pair.request", "pair.approve", "pair.reject",
+            "hello", "pair.request", "pair.approve", "pair.reject", "secure.ping", "secure.pong", "diagnostics.request", "diagnostics.result",
             "session.start", "session.stop", "heartbeat", "ack",
             "capability.request", "capability.result", "notification.event",
-            "file.list.request", "file.list.result", "file.transfer.request",
-            "screen.start.request", "screen.stop", "camera.start.request",
+            "file.list.request", "file.list.result", "file.transfer.request", "file.download.request", "file.upload.begin", "file.transfer.chunk", "file.transfer.complete",
+            "screen.start.request", "screen.snapshot.request", "screen.snapshot.result", "screen.input", "screen.stop", "camera.start.request",
             "camera.stop", "audio.start.request", "audio.stop",
             "ptt.start", "ptt.stop", "error"
         )
@@ -57,6 +57,7 @@ data class RemoteMessage(
             require(sequence >= 0)
             val sentAt = json.getLong("sentAt")
             val payload = json.optJSONObject("payload") ?: JSONObject()
+            require(payload.toString().toByteArray(Charsets.UTF_8).size <= MAX_MESSAGE_BYTES) { "Payload exceeds protocol limit" }
             return RemoteMessage(type, sessionId, messageId, sequence, sentAt, payload, version)
         }
     }
