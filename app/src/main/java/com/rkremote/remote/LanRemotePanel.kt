@@ -314,7 +314,7 @@ fun LanRemotePanel() {
                 val y1 = tapY.toFloatOrNull()
                 val x2 = swipeEndX.toFloatOrNull()
                 val y2 = swipeEndY.toFloatOrNull()
-                if (listOf(x1, y1, x2, y2).any { it == null || it !in 0f..1f }) {
+                if (x1 == null || y1 == null || x2 == null || y2 == null ||\n                    x1 !in 0f..1f || y1 !in 0f..1f || x2 !in 0f..1f || y2 !in 0f..1f) {
                     output = "Swipe coordinates must be numbers between 0.0 and 1.0."
                 } else {
                     busy = true
