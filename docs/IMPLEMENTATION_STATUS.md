@@ -277,3 +277,17 @@ Validation for this pass: source and JVM tests were committed, but no Gradle bui
 - Cancellation does not delete completed files. The target still limits operations to the owner-selected SAF tree, disables overwrite, caps transfers at 50 MiB and verifies SHA-256 before accepting an upload or publishing a download.
 - Protocol allow-list and JVM authorization tests cover the new cancellation command.
 - CI for the latest commit is pending. No two-device, disconnect-during-transfer, or physical Android validation has been performed. Cancellation is best-effort if the connection has already failed; disconnect cleanup remains in place.
+
+
+## Current source-level hardening and navigation · 2026-11-08
+
+This section supersedes older milestone notes above where they describe Internet features as not yet integrated. The current branch includes secure Internet signaling, Noise XX identity binding, WebRTC DataChannel transport, owner-approved screen viewing/input, notification sync, SAF file browsing and transfer, camera snapshots, microphone streaming, and push-to-talk source integrations. These are source integrations, not proof of successful two-device operation.
+
+- Main screen now uses a top-left hamburger navigation drawer. Home, secure Internet, LAN control, pairing, Android permissions, notification history, and owner-selected file access are presented as separate pages. Feature panels remain composed while navigating so a page switch alone does not tear down an active connection.
+- Noise handshake state violations are now terminal. A duplicate or out-of-order handshake frame received after establishment closes and invalidates the transport instead of only throwing an exception while leaving the session usable. A JVM regression test covers this fail-closed behavior.
+- Cloudflare signaling URL validation now rejects embedded URL credentials and non-root custom paths, in addition to requiring WSS, no query/fragment, a valid host, and a 256-bit lowercase-hex room ID. JVM tests cover accepted Worker origins and rejected URL/room configurations.
+- CI run for the hamburger navigation commit `95de1b9` completed successfully, including unit tests and debug APK assembly.
+- CI run for the Noise fail-closed regression commit `e71a8eb` completed successfully, including unit tests and debug APK assembly.
+- The combined Cloudflare URL-validation and current source changes are being checked by GitHub Actions; see the branch's latest Android build workflow before treating this exact revision as build-verified.
+- Deployment of the Cloudflare Worker, TURN provisioning, and two-device testing are intentionally deferred. The final validation stage must include installation on both devices, owner-permission review, SAS/peer identity comparison, direct ICE/STUN connection, TURN fallback, network switching/reconnect, and real file/media/notification tests.
+- No independent cryptographic/security audit has been performed. The Torann Noise implementation and the full application remain subject to independent review before production use.
