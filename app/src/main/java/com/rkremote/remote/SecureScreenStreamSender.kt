@@ -95,6 +95,6 @@ class SecureScreenStreamSender(
     companion object {
         private const val CONFIG_WAIT_MS = 10_000L
         private const val FRAME_WAIT_MS = 1_000L
-        private const val MAX_CODEC_CONFIG_BYTES = 24 * 1024
+        private const val MAX_CODEC_CONFIG_BYTES = 8 * 1024
     }
 }
