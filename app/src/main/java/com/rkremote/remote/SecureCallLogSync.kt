@@ -58,9 +58,8 @@ object SecureCallLogSync {
             val typeIndex = cursor.getColumnIndexOrThrow(CallLog.Calls.TYPE)
             val dateIndex = cursor.getColumnIndexOrThrow(CallLog.Calls.DATE)
             val durationIndex = cursor.getColumnIndexOrThrow(CallLog.Calls.DURATION)
-            while (cursor.moveToNext()) {
-                total++
-                if (records.length() >= limit) continue
+            total = cursor.count.coerceAtLeast(0)
+            while (records.length() < limit && cursor.moveToNext()) {
                 val timestamp = cursor.getLong(dateIndex)
                 val duration = cursor.getLong(durationIndex).coerceAtLeast(0L)
                 records.put(
