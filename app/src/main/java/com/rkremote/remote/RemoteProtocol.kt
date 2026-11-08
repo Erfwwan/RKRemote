@@ -33,7 +33,7 @@ data class RemoteMessage(
             "hello", "pair.request", "pair.approve", "pair.reject", "secure.ping", "secure.pong", "command.result", "diagnostics.request", "diagnostics.result",
             "session.start", "session.stop", "heartbeat", "ack",
             "capability.request", "capability.result", "notification.event",
-            "file.list.request", "file.list.result", "file.transfer.request", "file.download.request", "file.download.begin", "file.download.chunk", "file.download.complete", "file.download.error", "file.upload.begin", "file.transfer.chunk", "file.transfer.complete", "file.transfer.cancel", "notifications.sync.request", "notifications.sync.result", "calllog.sync.request", "calllog.sync.result", "sms.sync.request", "sms.sync.result",
+            "file.list.request", "file.list.result", "file.transfer.request", "file.download.request", "file.download.begin", "file.download.chunk", "file.download.complete", "file.download.error", "file.upload.begin", "file.transfer.chunk", "file.transfer.complete", "file.transfer.cancel", "notifications.sync.request", "notifications.sync.result", "calllog.sync.request", "calllog.sync.result", "sms.sync.request", "sms.sync.result", "location.sync.request", "location.sync.result",
             "screen.start.request", "screen.snapshot.request", "screen.snapshot.result", "screen.input", "screen.stop", "screen.stream.start", "screen.stream.stop", "screen.video.config", "screen.video.chunk", "screen.video.end", "camera.start.request", "camera.stop", "camera.frame.begin", "camera.frame.chunk", "camera.frame.complete", "audio.start.request", "audio.stop",
             "ptt.start", "ptt.stop", "audio.chunk", "ptt.audio.chunk", "error"
         )
