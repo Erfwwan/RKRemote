@@ -971,6 +971,19 @@ fun SecureInternetPanel() {
                         status.value = "Disconnected locally"
                     }
                 ) { Text("Stop") }
+                OutlinedButton(
+                    enabled = session.value != null && peerId.value != null,
+                    onClick = {
+                        val requested = runCatching {
+                            session.value?.requestNetworkRecovery() == true
+                        }.getOrDefault(false)
+                        status.value = if (requested) {
+                            "Network recovery requested · waiting for ICE restart"
+                        } else {
+                            "Recovery request unavailable · wait briefly or start a fresh secure session"
+                        }
+                    }
+                ) { Text("Repair connection") }
             }
 
             if (Build.VERSION.SDK_INT < 33) {
