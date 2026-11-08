@@ -30,28 +30,31 @@ import com.rkremote.MainActivity
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** Latest owner-approved camera frame; kept in memory only. */
+/** One owner-approved still photo, kept in memory until replaced or cleared. */
 object CameraFrameStore {
     @Volatile var latestFrame: ByteArray? = null
         private set
     @Volatile var latestMimeType: String = "image/jpeg"
         private set
     @Volatile private var capturing = false
-    val latestJpeg: ByteArray? get() = latestFrame
+
     @Synchronized
     fun setCapturing(value: Boolean) {
         capturing = value
-        if (!value) {
+        if (value) {
             latestFrame = null
             latestMimeType = "image/jpeg"
         }
     }
+
     @Synchronized
     fun publish(bytes: ByteArray, mimeType: String = "image/jpeg") {
         if (!capturing) return
         latestFrame = bytes
         latestMimeType = mimeType
+        capturing = false
     }
+
     @Synchronized
     fun clear() {
         capturing = false
@@ -60,54 +63,52 @@ object CameraFrameStore {
     }
 }
 
-/**
- * Camera capture starts only from a visible user action after CAMERA permission.
- * The foreground notification remains visible and offers a stop action.
- */
+/** Captures exactly one still image after a visible local action. */
 class CameraCaptureService : Service() {
     private val active = AtomicBoolean(false)
     private var camera: CameraDevice? = null
     private var session: CameraCaptureSession? = null
     private var reader: ImageReader? = null
     private var thread: HandlerThread? = null
-    @Volatile private var lastFrameAt = 0L
-    @Volatile private var activeLensFacing = CameraCharacteristics.LENS_FACING_BACK
     @Volatile private var cameraGeneration = 0
+    @Volatile private var photoSaved = false
 
     override fun onCreate() {
         super.onCreate()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             getSystemService(NotificationManager::class.java).createNotificationChannel(
-                NotificationChannel(CHANNEL, "RKRemote camera", NotificationManager.IMPORTANCE_LOW)
+                NotificationChannel(CHANNEL, "RKRemote photo capture", NotificationManager.IMPORTANCE_LOW)
             )
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
-            stopCamera()
+            stopCapture(clearPhoto = true)
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
         }
-        val requestedFacing = intent?.getIntExtra(EXTRA_LENS_FACING, CameraCharacteristics.LENS_FACING_BACK)
+        val facing = intent?.getIntExtra(EXTRA_LENS_FACING, CameraCharacteristics.LENS_FACING_BACK)
             ?: CameraCharacteristics.LENS_FACING_BACK
-        if (requestedFacing != CameraCharacteristics.LENS_FACING_BACK && requestedFacing != CameraCharacteristics.LENS_FACING_FRONT) return START_NOT_STICKY
+        if (facing != CameraCharacteristics.LENS_FACING_BACK && facing != CameraCharacteristics.LENS_FACING_FRONT) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        if (active.get()) return START_NOT_STICKY
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            stopCamera()
             stopSelfResult(startId)
             return START_NOT_STICKY
         }
-        if (active.get()) {
-            if (activeLensFacing == requestedFacing) return START_NOT_STICKY
-            stopCamera()
-        }
         return try {
+            photoSaved = false
+            CameraFrameStore.setCapturing(true)
+            active.set(true)
             startAsForeground()
-            startCamera(requestedFacing)
+            openCameraAndCapture(facing)
             START_NOT_STICKY
         } catch (_: Exception) {
-            stopCamera()
+            stopCapture(clearPhoto = true)
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             START_NOT_STICKY
@@ -125,59 +126,50 @@ class CameraCaptureService : Service() {
         )
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_menu_camera)
-            .setContentTitle("RKRemote camera is active")
-            .setContentText("Camera frames may be viewed by your paired local controller.")
+            .setContentTitle("RKRemote is taking one photo")
+            .setContentText("The camera stops automatically after one image.")
             .setContentIntent(open)
             .setOngoing(true)
-            .addAction(0, "Stop camera", stop)
+            .addAction(0, "Cancel", stop)
             .build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA)
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
+        } else startForeground(NOTIFICATION_ID, notification)
     }
 
-    private fun startCamera(lensFacing: Int) {
-        val generation = cameraGeneration
+    private fun openCameraAndCapture(lensFacing: Int) {
+        val generation = ++cameraGeneration
         val manager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
         val cameraId = manager.cameraIdList.firstOrNull { id ->
             manager.getCameraCharacteristics(id).get(CameraCharacteristics.LENS_FACING) == lensFacing
-        } ?: error(if (lensFacing == CameraCharacteristics.LENS_FACING_FRONT) "Front camera is not available" else "Rear camera is not available")
-        activeLensFacing = lensFacing
+        } ?: error("Requested camera is not available")
         val characteristics = manager.getCameraCharacteristics(cameraId)
         val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
             ?: error("Camera output configuration is unavailable")
         val sizes = map.getOutputSizes(ImageFormat.JPEG)?.toList().orEmpty()
-        val size: Size = sizes.filter { it.width <= 1280 && it.height <= 720 }
-            .maxByOrNull { it.width.toLong() * it.height } ?: sizes.minByOrNull {
-                it.width.toLong() * it.height
-            } ?: error("Camera does not support JPEG output")
-
-        val captureThread = HandlerThread("RKRemote-Camera").apply { start() }
+        val size: Size = sizes.filter { it.width <= 1920 && it.height <= 1080 }
+            .maxByOrNull { it.width.toLong() * it.height }
+            ?: sizes.minByOrNull { it.width.toLong() * it.height }
+            ?: error("Camera does not support JPEG output")
+        val captureThread = HandlerThread("RKRemote-OneShotCamera").apply { start() }
         thread = captureThread
         val handler = Handler(captureThread.looper)
         val imageReader = ImageReader.newInstance(size.width, size.height, ImageFormat.JPEG, 2)
         reader = imageReader
-        active.set(true)
-        CameraFrameStore.setCapturing(true)
         imageReader.setOnImageAvailableListener({ source ->
-            if (!active.get() || generation != cameraGeneration) return@setOnImageAvailableListener
-            val now = android.os.SystemClock.elapsedRealtime()
-            if (now - lastFrameAt < 500) {
-                source.acquireLatestImage()?.close()
-                return@setOnImageAvailableListener
-            }
-            val image = source.acquireLatestImage() ?: return@setOnImageAvailableListener
-            lastFrameAt = now
+            if (!active.get() || generation != cameraGeneration || photoSaved) return@setOnImageAvailableListener
+            val image = source.acquireNextImage() ?: return@setOnImageAvailableListener
             try {
                 val buffer = image.planes[0].buffer
                 val bytes = ByteArray(buffer.remaining())
                 buffer.get(bytes)
-                val (encoded, mimeType) = compressForTransfer(bytes)
-                if (active.get() && generation == cameraGeneration) {
-                    CameraFrameStore.publish(encoded, mimeType)
-                }
+                CameraFrameStore.publish(compressForTransfer(bytes), "image/jpeg")
+                photoSaved = true
+                finishAfterPhoto(generation)
+            } catch (_: Exception) {
+                stopCapture(clearPhoto = true)
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
             } finally {
                 image.close()
             }
@@ -201,72 +193,94 @@ class CameraCaptureService : Service() {
                                 }
                                 session = configured
                                 try {
-                                    val request = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
+                                    val request = device.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
                                         addTarget(imageReader.surface)
                                         set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
-                                        val ranges = characteristics.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
-                                        val slowRange = ranges?.firstOrNull { it.upper <= 10 }
-                                        if (slowRange != null) set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, slowRange)
+                                        set(CaptureRequest.JPEG_QUALITY, 88.toByte())
                                     }.build()
-                                    configured.setRepeatingRequest(request, null, handler)
+                                    configured.capture(request, object : CameraCaptureSession.CaptureCallback() {
+                                        override fun onCaptureFailed(
+                                            session: CameraCaptureSession,
+                                            request: CaptureRequest,
+                                            failure: android.hardware.camera2.CaptureFailure
+                                        ) {
+                                            if (generation == cameraGeneration) {
+                                                stopCapture(clearPhoto = true)
+                                                stopForeground(STOP_FOREGROUND_REMOVE)
+                                                stopSelf()
+                                            }
+                                        }
+                                    }, handler)
                                 } catch (_: Exception) {
-                                    if (generation == cameraGeneration) stopSelf()
+                                    stopCapture(clearPhoto = true)
+                                    stopForeground(STOP_FOREGROUND_REMOVE)
+                                    stopSelf()
                                 }
                             }
                             override fun onConfigureFailed(failed: CameraCaptureSession) {
                                 failed.close()
-                                if (generation == cameraGeneration) stopSelf()
+                                if (generation == cameraGeneration) {
+                                    stopCapture(clearPhoto = true)
+                                    stopForeground(STOP_FOREGROUND_REMOVE)
+                                    stopSelf()
+                                }
                             }
                         },
                         handler
                     )
                 } catch (_: Exception) {
-                    if (generation == cameraGeneration) stopSelf()
+                    stopCapture(clearPhoto = true)
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
                 }
             }
 
             override fun onDisconnected(device: CameraDevice) {
                 device.close()
-                val wasCurrentCamera = camera === device
-                if (wasCurrentCamera) camera = null
-                if (wasCurrentCamera && active.get()) stopSelf()
+                if (camera === device && active.get()) {
+                    stopCapture(clearPhoto = true)
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                }
             }
 
             override fun onError(device: CameraDevice, error: Int) {
                 device.close()
-                val wasCurrentCamera = camera === device
-                if (wasCurrentCamera) camera = null
-                if (wasCurrentCamera && active.get()) stopSelf()
+                if (camera === device && active.get()) {
+                    stopCapture(clearPhoto = true)
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                }
             }
         }, handler)
     }
 
-    /**
-     * Telegram-style photo compression: keep the camera's already bounded
-     * dimensions, then re-encode as JPEG at quality 82 to reduce transfer size.
-     * If decoding or encoding fails, preserve and send the original camera JPEG.
-     */
-    private fun compressForTransfer(jpeg: ByteArray): Pair<ByteArray, String> {
-        val bitmap = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size)
-            ?: return jpeg to "image/jpeg"
+    private fun finishAfterPhoto(generation: Int) {
+        if (generation != cameraGeneration) return
+        stopCapture(clearPhoto = false)
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
+    private fun compressForTransfer(jpeg: ByteArray): ByteArray {
+        val bitmap = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size) ?: return jpeg
         return try {
             val output = ByteArrayOutputStream()
-            val encoded = bitmap.compress(Bitmap.CompressFormat.JPEG, TRANSFER_JPEG_QUALITY, output)
-            val compressed = output.toByteArray()
-            if (encoded && compressed.isNotEmpty()) compressed to "image/jpeg"
-            else jpeg to "image/jpeg"
+            if (bitmap.compress(Bitmap.CompressFormat.JPEG, 84, output) && output.size() > 0) output.toByteArray()
+            else jpeg
         } catch (_: Exception) {
-            jpeg to "image/jpeg"
+            jpeg
         } finally {
             bitmap.recycle()
         }
     }
 
-    private fun stopCamera() {
+    private fun stopCapture(clearPhoto: Boolean) {
         cameraGeneration += 1
         active.set(false)
-        CameraFrameStore.clear()
+        if (clearPhoto) CameraFrameStore.clear() else CameraFrameStore.setCapturing(false)
         runCatching { session?.stopRepeating() }
+        runCatching { session?.abortCaptures() }
         runCatching { session?.close() }
         session = null
         runCatching { camera?.close() }
@@ -279,7 +293,7 @@ class CameraCaptureService : Service() {
     }
 
     override fun onDestroy() {
-        stopCamera()
+        stopCapture(clearPhoto = !photoSaved)
         super.onDestroy()
     }
 
@@ -290,6 +304,5 @@ class CameraCaptureService : Service() {
         const val EXTRA_LENS_FACING = "camera_lens_facing"
         private const val CHANNEL = "rkremote_camera_capture"
         private const val NOTIFICATION_ID = 4203
-        private const val TRANSFER_JPEG_QUALITY = 82
     }
 }
