@@ -26,6 +26,7 @@ class SessionForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        serviceInstance = this
         createChannel()
     }
 
@@ -145,6 +146,7 @@ class SessionForegroundService : Service() {
         stopInternetPeer()
         lanServer?.stop()
         lanServer = null
+        if (serviceInstance === this) serviceInstance = null
         super.onDestroy()
     }
 
@@ -203,6 +205,7 @@ class SessionForegroundService : Service() {
         private const val CHANNEL_ID = "rkremote_active_session"
         private const val NOTIFICATION_ID = 4201
         private const val TAG = "RKRemoteSession"
+        @Volatile private var serviceInstance: SessionForegroundService? = null
         @Volatile private var pendingInternetPeer: SecureInternetPeer? = null
 
         /** Called only from the explicit Connect button after local owner action. */
@@ -223,9 +226,23 @@ class SessionForegroundService : Service() {
 
         /** Stop the Internet transport without revoking a separately active LAN session. */
         fun stopInternetSession(context: Context) {
-            context.applicationContext.startService(
-                Intent(context, SessionForegroundService::class.java).setAction(ACTION_STOP_INTERNET)
-            )
+            val running = serviceInstance
+            if (running == null) {
+                context.applicationContext.stopService(
+                    Intent(context, SessionForegroundService::class.java)
+                )
+                return
+            }
+            running.stopInternetPeer()
+            if (running.lanServer == null) {
+                running.stopForeground(STOP_FOREGROUND_REMOVE)
+                running.stopSelf()
+            } else {
+                running.getSystemService(NotificationManager::class.java).notify(
+                    NOTIFICATION_ID,
+                    running.buildNotification("LAN remote session remains active")
+                )
+            }
         }
     }
 }
