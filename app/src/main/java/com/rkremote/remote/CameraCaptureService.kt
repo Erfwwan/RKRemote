@@ -292,8 +292,9 @@ class CameraCaptureService : Service() {
                 if (quality > 54) {
                     quality -= 10
                 } else {
-                    val nextWidth = (working.width * 3 / 4).coerceAtLeast(320)
-                    val nextHeight = (working.height * 3 / 4).coerceAtLeast(320)
+                    // Scale both axes by the same ratio; do not distort portrait/landscape photos.
+                    val nextWidth = (working.width * 3 / 4).coerceAtLeast(1)
+                    val nextHeight = (working.height * 3 / 4).coerceAtLeast(1)
                     check(nextWidth < working.width || nextHeight < working.height) {
                         "Photo cannot be reduced below the secure 2 MiB transfer limit"
                     }
