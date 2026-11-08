@@ -192,6 +192,13 @@ object LocationSessionBridge {
     }
 
     private fun authorizedPeer(context: Context): SecureInternetPeer? {
+        val hasLocationPermission =
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!hasLocationPermission) return null
+        if (Build.VERSION.SDK_INT >= 29 &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED
+        ) return null
         val peer = activePeer.get() ?: return null
         val peerId = peer.authenticatedPeerId() ?: return null
         val remembered = runCatching {
