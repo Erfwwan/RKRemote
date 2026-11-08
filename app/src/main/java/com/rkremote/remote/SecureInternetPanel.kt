@@ -246,6 +246,31 @@ fun SecureInternetPanel() {
     fun sendInput(type: String, payload: JSONObject): Boolean =
         session.value?.sendMessage(type, payload.put("requestId", UUID.randomUUID().toString())) == true
 
+    fun resumePendingDownloadAfterReconnect() {
+        val transferId = pendingDownloadId.value ?: return
+        val documentId = pendingDownloadDocumentId.value ?: return
+        if (!downloadReceiver.hasPendingTransfer() ||
+            downloadReceiver.pendingTransferId() != transferId ||
+            transferActive.get()
+        ) return
+        if (!transferActive.compareAndSet(false, true)) return
+        activeTransferId.set(transferId)
+        val offset = downloadReceiver.pendingOffset()
+        val sent = session.value?.sendMessage(
+            "file.download.request",
+            JSONObject().put("requestId", transferId)
+                .put("documentId", documentId)
+                .put("offset", offset)
+        ) == true
+        if (!sent) {
+            transferActive.set(false)
+            activeTransferId.compareAndSet(transferId, null)
+            fileDownloadStatus.value = "Download is saved; resume will retry when the connection is ready"
+        } else {
+            fileDownloadStatus.value = "Automatically resuming download from $offset bytes"
+        }
+    }
+
     Card {
         Column(
             modifier = Modifier.fillMaxWidth().padding(14.dp),
@@ -660,6 +685,7 @@ fun SecureInternetPanel() {
                                             if (activePeerRef.get() !== activePeer) return@post
                                             dataChannelConnected.value = true
                                             status.value = "WebRTC DataChannel connected (DTLS)"
+                                            resumePendingDownloadAfterReconnect()
                                         }
                                     }
                                     override fun onData(payload: ByteArray) = Unit
