@@ -1818,7 +1818,6 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 ) { Text("Stop") }
             }
 
-            }
             if (Build.VERSION.SDK_INT < 33) {
                 Text("SecureLink requires Android 13 (API 33) or later in this build.")
             }
