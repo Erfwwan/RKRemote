@@ -19,7 +19,9 @@ RKRemote does not implement covert camera/microphone capture, hidden persistence
 
 **Available in the current development branch:** an owner-started, visible read-only LAN agent and same-app controller. On a trusted Wi-Fi network, the controller can test the target phone connection and list names/metadata from a folder explicitly selected on that phone. This is an early runnable milestone, not full remote control.
 
-**Still not implemented:** internet relay, secure TLS LAN transport, screen sharing/input, camera/audio streaming, file content transfer, contacts/call-log transfer, and two-way walkie-talkie.
+**Screen-sharing prototype added:** the target phone can request Android MediaProjection consent, start a visible foreground capture session, and expose the latest JPEG screen snapshot to the authenticated controller on the same trusted Wi-Fi. The controller can request and display a snapshot. This is not continuous video, remote touch/input, or a secure internet transport.
+
+**Still not implemented:** internet relay, secure TLS LAN transport, continuous screen video/input, camera/audio streaming, file content transfer, contacts/call-log transfer, and two-way walkie-talkie.
 
 ## Build
 
@@ -34,7 +36,7 @@ Open the repository in Android Studio and run the app configuration on an Androi
 
 1. Local permission and capability setup (current).
 2. Authenticated device pairing and encrypted transport.
-3. User-approved screen sharing with Android MediaProjection and visible session controls.
+3. User-approved screen sharing with Android MediaProjection and visible session controls (initial JPEG snapshot path added; continuous video and input remain).
 4. User-started camera/microphone sessions with foreground-service indicators.
 5. Scoped file/gallery browsing, contacts and call-history access.
 6. Notification history forwarding after explicit pairing and user opt-in.
@@ -74,6 +76,6 @@ See [implementation status](docs/IMPLEMENTATION_STATUS.md) for the exact boundar
 4. In **Part 1 · Local Wi-Fi connection**, tap **Start agent**. Keep RKRemote open; the foreground notification indicates the active session.
 5. Share the target phone's local IPv4 address and temporary token with the controller phone.
 6. On the controller phone, enter that IP and token, tap **Test connection**, then **List selected folder**.
-7. Tap **Stop** on the target phone or use **Stop session** in its notification to end access.
+7. Use **Stop** on the target phone or **Stop session** in its notification to end the LAN agent. For screen capture, use **Stop screen** or the screen-sharing notification's stop action. To share a screen, tap **Share this screen** on the target and approve Android's capture dialog; on the controller, tap **View screen snapshot**. The screen snapshot endpoint is authenticated with the same temporary token.
 
-This first milestone is read-only. It lists file names and metadata; it does not download, edit, or delete files. The token is transmitted without TLS, so do not use public Wi-Fi, untrusted networks, or port forwarding. Never expose TCP port 18765 to the internet.
+The LAN file browser remains read-only and lists names and metadata only. Screen sharing sends JPEG snapshots of the target display only after Android consent; it does not allow remote touch/input. The token is transmitted without TLS, so do not use public Wi-Fi, untrusted networks, or port forwarding. Never expose TCP port 18765 to the internet.
