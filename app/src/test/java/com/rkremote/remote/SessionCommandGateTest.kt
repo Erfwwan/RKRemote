@@ -13,6 +13,16 @@ class SessionCommandGateTest {
         assertTrue(gate.authorize("peer", 2, RemoteCapability.NOTIFICATIONS).allowed)
     }
 
+    @Test fun incrementalGrantPreservesSequenceAndExistingCapabilities() {
+        val gate = SessionCommandGate()
+        gate.beginOwnerApprovedSession("peer", setOf(RemoteCapability.SCREEN_VIEW))
+        assertTrue(gate.authorize("peer", 5, RemoteCapability.SCREEN_VIEW).allowed)
+        gate.grantCapabilities(setOf(RemoteCapability.SCREEN_INPUT))
+        assertTrue(gate.authorize("peer", 6, RemoteCapability.SCREEN_INPUT).allowed)
+        assertTrue(gate.authorize("peer", 7, RemoteCapability.SCREEN_VIEW).allowed)
+        assertFalse(gate.authorize("peer", 5, RemoteCapability.SCREEN_INPUT).allowed)
+    }
+
     @Test fun rejectsWrongPeerReplayAndCommandsAfterStop() {
         val gate = SessionCommandGate()
         gate.beginOwnerApprovedSession("owner-approved-peer", setOf(RemoteCapability.FILES))
