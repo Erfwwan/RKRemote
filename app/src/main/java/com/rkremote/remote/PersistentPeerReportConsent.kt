@@ -144,10 +144,10 @@ class PersistentPeerReportConsent(context: Context) {
         require(isValidPeerId(peerId)) { "Invalid authenticated peer identity" }
     }
 
-    internal fun isValidPeerId(peerId: String): Boolean =
-        peerId.matches(Regex("[0-9a-f]{64}"))
-
     companion object {
+        internal fun isValidPeerId(peerId: String): Boolean =
+            peerId.matches(Regex("[0-9a-f]{64}"))
+
         private const val PREFS_NAME = "rkremote_persistent_peer_report_consent"
         private const val ENCRYPTED_RECORDS = "encrypted_records"
         private const val ANDROID_KEY_STORE = "AndroidKeyStore"
