@@ -6,7 +6,7 @@ This section provides independent camera viewing and microphone listening from t
 
 ## Target-side controls
 
-- **Start camera** requests Android's CAMERA runtime permission if needed, then starts `CameraCaptureService` from a visible user action.
+- **Start rear camera** and **Start front camera** are separate target-side buttons. Each selects the requested lens; tapping the other button switches the active lens. The first use requests Android's CAMERA runtime permission; later use reuses the granted permission unless the owner revokes it.
 - **Stop camera** stops only camera capture.
 - **Start microphone** requests Android's RECORD_AUDIO runtime permission if needed, then starts `MicrophoneCaptureService` from a visible user action.
 - **Stop microphone** stops only microphone capture.
@@ -15,7 +15,8 @@ This section provides independent camera viewing and microphone listening from t
 
 ## Controller-side controls
 
-- **View camera** polls the authenticated `GET /camera.jpg` endpoint while the preview is active. The camera service selects a JPEG output no larger than 1280×720 where the device exposes a suitable size and limits publication to about two frames per second.
+- **View camera** polls the authenticated `GET /camera.jpg` endpoint while the preview is active. The selected camera uses a JPEG output no larger than 1280×720 where available and publishes about two frames per second.
+- **Image packing:** on Android 11+, each captured JPEG is decoded and encoded as lossless WebP. The service compares byte sizes and sends WebP only when it is smaller; otherwise it sends the original JPEG unchanged. This adds no further pixel loss relative to the decoded camera JPEG. On older Android versions, the original JPEG is sent. The camera's initial JPEG capture itself remains subject to the camera encoder's normal JPEG compression.
 - **Listen to microphone** polls authenticated `GET /audio/chunk` and plays mono PCM through `AudioTrack`.
 - Audio format is 16,000 samples/second, mono, signed 16-bit PCM. Chunks are kept in memory only. The target microphone service holds only the latest chunk, so old audio may be dropped when the network/controller is slower; this is a bounded-latency prototype, not lossless streaming.
 - Stopping the controller preview/listener stops only the controller's playback/request loop. The target owner remains in control of the sensor service and can stop it independently.
@@ -23,14 +24,14 @@ This section provides independent camera viewing and microphone listening from t
 ## Authorization and privacy boundaries
 
 - Network endpoints only read frames/chunks that an already-running target-side foreground service has published. They do not start either sensor.
-- The target owner must physically start each sensor locally and accept the corresponding Android runtime permission.
+- The target owner must physically start each sensor locally and accept the corresponding Android runtime permission. The camera can be switched between front and rear using the two separate local buttons; a network read request cannot activate or switch a sensor.
 - Camera frames and microphone chunks are memory-only and cleared when their service stops.
 - The current bearer-token LAN transport is plaintext. Use trusted private Wi-Fi only; do not expose TCP port 18765 to the public internet or untrusted networks until encrypted transport is integrated.
 
 ## Manual acceptance test
 
 1. Install the same debug APK on two Android devices on the same trusted private Wi-Fi.
-2. On the target, start the LAN agent. Start camera locally and accept CAMERA permission.
+2. On the target, start the LAN agent. Tap **Start rear camera** and accept CAMERA permission; then tap **Start front camera** and verify the lens changes.
 3. Confirm the persistent camera notification and Android camera privacy indicator appear.
 4. On the controller, enter the target address and session token, tap **View camera**, and confirm frames arrive.
 5. Stop camera from the target notification; verify the controller no longer receives frames. Stop the controller preview.
