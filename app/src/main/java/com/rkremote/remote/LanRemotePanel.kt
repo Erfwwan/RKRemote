@@ -4,6 +4,8 @@ import android.Manifest
 import android.content.Intent
 import android.app.Activity
 import android.graphics.Bitmap
+import android.net.Uri
+import android.provider.OpenableColumns
 import android.graphics.BitmapFactory
 import android.media.projection.MediaProjectionManager
 import android.content.pm.PackageManager
@@ -49,8 +51,13 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import org.json.JSONArray
 import java.security.SecureRandom
 import java.util.Base64
+
+private const val MAX_UI_TRANSFER_BYTES = 8 * 1024 * 1024
+
+private data class RemoteFileItem(val id: String, val name: String, val size: Long, val directory: Boolean, val mimeType: String)
 
 @Composable
 fun LanRemotePanel() {
@@ -69,6 +76,9 @@ fun LanRemotePanel() {
     var swipeEndX by remember { mutableStateOf("0.8") }
     var swipeEndY by remember { mutableStateOf("0.5") }
     var remoteText by remember { mutableStateOf("") }
+    var remoteFileItems by remember { mutableStateOf(emptyList<RemoteFileItem>()) }
+    var pendingDownloadId by remember { mutableStateOf("") }
+    var pendingDownloadName by remember { mutableStateOf("download.bin") }
     DisposableEffect(Unit) { onDispose { previewJob?.cancel() } }
     val projectionManager = remember { context.getSystemService(MediaProjectionManager::class.java) }
     val screenConsentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
