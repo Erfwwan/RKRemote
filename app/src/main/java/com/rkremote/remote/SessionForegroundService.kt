@@ -37,7 +37,7 @@ class SessionForegroundService : Service() {
 
         val token = when (intent?.action) {
             ACTION_START_LAN -> intent.getStringExtra(EXTRA_TOKEN)
-            null -> SessionCredentialStore.activeToken(this)
+            ACTION_RESTORE_LAN, null -> SessionCredentialStore.activeToken(this)
             else -> null
         }?.takeIf { it.length >= 24 }
 
@@ -56,14 +56,22 @@ class SessionForegroundService : Service() {
         }
 
         val notification = buildNotification()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        val foregroundStarted = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        }.isSuccess
+        if (!foregroundStarted) {
+            // Keep the encrypted owner session for a later manual retry, but do not
+            // leave a partially started service running without its foreground state.
+            stopSelf(startId)
+            return START_NOT_STICKY
         }
 
         lanServer?.stop()
@@ -74,9 +82,10 @@ class SessionForegroundService : Service() {
             )
         }.also { it.start() }
 
-        // Android can redeliver the explicit start intent after reclaiming this process.
-        // A null-intent sticky recreation can also recover the encrypted active token.
-        return START_REDELIVER_INTENT
+        // Do not ask Android to retain/redeliver the start Intent: it contains the
+        // bearer token. START_STICKY recreates with a null Intent and restores only
+        // from the Android-Keystore-encrypted session store.
+        return START_STICKY
     }
 
     override fun onDestroy() {
@@ -126,6 +135,7 @@ class SessionForegroundService : Service() {
     companion object {
         const val ACTION_STOP = "com.rkremote.action.STOP_SESSION"
         const val ACTION_START_LAN = "com.rkremote.action.START_LAN"
+        const val ACTION_RESTORE_LAN = "com.rkremote.action.RESTORE_LAN"
         const val EXTRA_TOKEN = "session_token"
         private const val CHANNEL_ID = "rkremote_active_session"
         private const val NOTIFICATION_ID = 4201
