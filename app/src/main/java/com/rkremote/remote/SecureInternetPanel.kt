@@ -1764,7 +1764,8 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     }
                 }
             }
-            if (role.value == CloudflareSignalingClient.Role.TARGET)
+            Text(
+                if (role.value == CloudflareSignalingClient.Role.TARGET)
                     "این گوشی نقش مقصد را دارد. با شروع اتصال، لینک دعوت گوشی کنترل‌کننده ساخته می‌شود."
                 else "دعوت‌نامه دریافت شد؛ برنامه نقش کنترل‌کننده و اتاق اتصال را به‌صورت خودکار تنظیم کرده است.",
                 style = MaterialTheme.typography.bodySmall,
