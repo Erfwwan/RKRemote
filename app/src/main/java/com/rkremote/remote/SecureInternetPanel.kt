@@ -1933,8 +1933,12 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                             Telephony.Sms.MESSAGE_TYPE_QUEUED -> "در انتظار ارسال"
                             else -> "نامشخص"
                         }
-                        Card(modifier = Modifier.fillMaxWidth()) {
-                            Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth().animateContentSize(),
+                            shape = RoundedCornerShape(18.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                        ) {
+                            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                                 Text(item.optString("name").ifBlank { item.optString("address").ifBlank { "شماره ناشناس" } }, fontWeight = FontWeight.SemiBold)
                                 if (item.optString("name").isNotBlank() && item.optString("address").isNotBlank()) {
                                     Text(item.optString("address"), style = MaterialTheme.typography.bodySmall)
@@ -2078,8 +2082,12 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     }
                     Text(locationStatus.value, style = MaterialTheme.typography.bodySmall)
                     if (latest != null) {
-                        Card(modifier = Modifier.fillMaxWidth()) {
-                            Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth().animateContentSize(),
+                            shape = RoundedCornerShape(20.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                        ) {
+                            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Text(if (latest.locationEnabled) "وضعیت موقعیت: روشن" else "وضعیت موقعیت: خاموش", fontWeight = FontWeight.SemiBold)
                                 Text("زمان ثبت وضعیت: " + DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(latest.recordedAtMillis)), style = MaterialTheme.typography.bodySmall)
                                 latest.fixTimeMillis?.let { Text("زمان آخرین مختصات معتبر: " + DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it)), style = MaterialTheme.typography.bodySmall) }
@@ -2125,9 +2133,15 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 ) { Text("Selected root") }
                 Text(fileStatus.value, style = MaterialTheme.typography.bodySmall)
                 fileItems.value.take(40).forEach { item ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth().animateContentSize(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
                     ) {
                         Text(
                             (if (item.optBoolean("directory")) "📁 " else "📄 ") + item.optString("name"),
@@ -2171,6 +2185,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                 }
                             }) { Text("Download") }
                         }
+                    }
                     }
                 }
                 Text(fileDownloadStatus.value, style = MaterialTheme.typography.bodySmall)
