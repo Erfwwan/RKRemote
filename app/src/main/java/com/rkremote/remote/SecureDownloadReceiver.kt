@@ -97,12 +97,13 @@ class SecureDownloadReceiver(context: Context) : AutoCloseable {
         val bytes = Base64.getDecoder().decode(encoded)
         require(bytes.isNotEmpty() && bytes.size <= SecureSafTransferBridge.MAX_CHUNK_BYTES)
         require(nextOffset + bytes.size <= expectedBytes) { "Download exceeds announced file size" }
-        output?.write(bytes)
+        val stream = output ?: error("Download output stream is not open")
+        stream.write(bytes)
+        // FileOutputStream.flush() does not force a storage sync; the final sync
+        // occurs at completion. Keep each bounded chunk write inexpensive.
+        stream.flush()
         digest.update(bytes)
         nextOffset += bytes.size
-        // The part file length is the authoritative checkpoint; metadata is committed
-        // after the bytes have been written so a crash can never advance the offset.
-        output?.flush()
     }
 
     @Synchronized
