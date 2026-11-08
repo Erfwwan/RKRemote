@@ -75,9 +75,11 @@ class SecureScreenVideoRenderer(
                 }
             }
             "screen.video.chunk" -> {
-                val completed = frameCodec.accept(message.payload) ?: return
-                if (completed.streamId != activeStreamId) return
-                handler.post { render(completed) }
+                handler.post {
+                    val completed = frameCodec.accept(message.payload) ?: return@post
+                    if (completed.streamId != activeStreamId) return@post
+                    render(completed)
+                }
             }
             "screen.video.end" -> {
                 val streamId = message.payload.optString("streamId")
