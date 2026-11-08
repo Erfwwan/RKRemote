@@ -67,7 +67,10 @@ class SecureLinkHandshake(
 
     @Synchronized
     fun receive(frame: ByteArray): StepResult {
-        require(frame.isNotEmpty() && frame.size <= MAX_FRAME_BYTES) { "Invalid Noise frame size" }
+        if (frame.isEmpty() || frame.size > MAX_FRAME_BYTES) {
+            fail()
+            throw IllegalArgumentException("Invalid Noise frame size")
+        }
         check(state == State.WAITING_FOR_SECOND || state == State.WAITING_FOR_THIRD) {
             "Unexpected Noise handshake frame"
         }
@@ -158,8 +161,9 @@ class SecureLinkHandshake(
     @Synchronized
     fun decrypt(ciphertext: ByteArray): ByteArray {
         check(approved && state == State.COMPLETE) { "Peer has not been locally approved" }
-        require(ciphertext.isNotEmpty() && ciphertext.size <= MAX_FRAME_BYTES) {
-            "Invalid SecureLink ciphertext size"
+        if (ciphertext.isEmpty() || ciphertext.size > MAX_FRAME_BYTES) {
+            fail()
+            throw IllegalArgumentException("Invalid SecureLink ciphertext size")
         }
         return try {
             transport?.readMessage(ciphertext) ?: error("Noise transport is unavailable")
