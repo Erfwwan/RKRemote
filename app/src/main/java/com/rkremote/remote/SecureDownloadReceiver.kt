@@ -152,6 +152,20 @@ class SecureDownloadReceiver(context: Context) : AutoCloseable {
         ?.takeIf { partFile(it).isFile }
 
     @Synchronized
+    fun receivedBytes(): Long = if (transferId != null) nextOffset else pendingOffset()
+
+    @Synchronized
+    fun totalBytes(): Long = if (transferId != null) expectedBytes else pendingMetadata()?.totalBytes ?: 0L
+
+    @Synchronized
+    fun progressPercent(): Int {
+        val total = totalBytes()
+        val received = receivedBytes()
+        if (total <= 0L) return if (transferId != null && total == 0L) 100 else 0
+        return ((received.coerceIn(0L, total) * 100L) / total).toInt()
+    }
+
+    @Synchronized
     fun pendingOffset(): Long {
         val metadata = readPersistedMetadata() ?: return 0L
         val file = partFile(metadata.first)
