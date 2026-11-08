@@ -928,6 +928,10 @@ fun SecureInternetPanel() {
                             createdSession = created
                             activePeerRef.set(created)
                             session.value = created
+                            status.value = "Starting visible foreground session service"
+                            // The service owns the active peer while the app is backgrounded.
+                            // Android cannot reconstruct a live WebRTC/Noise session after process death.
+                            SessionForegroundService.startInternetSession(context, created)
                             status.value = "Connecting to Cloudflare rendezvous"
                             created.connect()
                         } catch (failure: Throwable) {
@@ -960,6 +964,7 @@ fun SecureInternetPanel() {
                         streamSender.value = null
                         val stoppingSession = session.value
                         activePeerRef.compareAndSet(stoppingSession, null)
+                        SessionForegroundService.stopInternetSession(context)
                         stoppingSession?.revokeOwnerApprovedCommands()
                         stoppingSession?.close()
                         session.value = null
