@@ -196,11 +196,11 @@ object SecureLocationSync {
             runCatching { manager.isProviderEnabled(it) }.getOrDefault(false)
         }
         val previous = store.latestValidFix()
-        fun respond(location: Location?) {
+        fun respond(location: Location?, freshFix: Boolean = location != null) {
             val now = System.currentTimeMillis()
             val snapshot = if (location != null) {
                 LocationSnapshot(now, enabled, location.latitude, location.longitude,
-                    if (location.hasAccuracy()) location.accuracy else null, location.time, true)
+                    if (location.hasAccuracy()) location.accuracy else null, location.time, freshFix)
             } else {
                 LocationSnapshot(now, enabled, previous?.latitude, previous?.longitude,
                     previous?.accuracyMeters, previous?.fixTimeMillis, false)
@@ -223,7 +223,7 @@ object SecureLocationSync {
             }.onFailure { respond(null) }
         } else {
             @Suppress("DEPRECATION")
-            respond(runCatching { manager.getLastKnownLocation(provider) }.getOrNull())
+            respond(runCatching { manager.getLastKnownLocation(provider) }.getOrNull(), freshFix = false)
         }
     }
 
