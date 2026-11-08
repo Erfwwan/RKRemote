@@ -26,6 +26,9 @@ android {
     compileSdk = 35
 
     defaultConfig {
+        val cloudflareOAuthClientId = providers.gradleProperty("CLOUDFLARE_OAUTH_CLIENT_ID").orElse("").get()
+        buildConfigField("String", "CLOUDFLARE_OAUTH_CLIENT_ID", "\"${cloudflareOAuthClientId.replace("\\", "\\\\").replace("\"", "\\\"")}\"")
+        manifestPlaceholders["appAuthRedirectScheme"] = "com.rkremote.app"
         applicationId = "com.rkremote"
         minSdk = 26
         targetSdk = 35
@@ -53,6 +56,10 @@ android {
         }
     }
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -74,6 +81,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.work:work-runtime-ktx:2.10.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("net.openid:appauth:0.11.1")
     // Noise XX handshake engine; secure P2P is runtime-gated to Android 13+ (API 33).
     implementation("com.stonygrey:torann:0.3.1")
     // Native WebRTC engine for ICE, DTLS-SRTP and ordered data channels.
