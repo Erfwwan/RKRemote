@@ -22,7 +22,7 @@ The Worker subdirectory is self-contained: it includes src/index.ts, wrangler.to
 - Only binary frames from 1 byte through 12 KiB are accepted from clients. Text client frames are rejected.
 - The Worker forwards binary frames opaquely; it does not parse, log, persist, or interpret their bytes.
 - Small Worker-generated lifecycle events (peer-joined, peer-left, peer-not-ready) are plain control messages and contain no app content.
-- A room expires after 10 minutes without traffic. Valid encrypted app frames refresh the inactivity lease.
+- A room expires after 10 minutes without traffic. Valid encrypted app frames and a tiny encrypted heartbeat every 60 seconds refresh the inactivity lease once both owners have approved.
 - Each room has at most two connected devices.
 
 ## Encryption and privacy
