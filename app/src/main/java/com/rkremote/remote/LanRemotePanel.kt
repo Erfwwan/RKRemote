@@ -1,6 +1,9 @@
 package com.rkremote.remote
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -40,7 +43,7 @@ fun LanRemotePanel() {
     var targetToken by remember { mutableStateOf("") }
     var output by remember { mutableStateOf("No request yet.") }
     var busy by remember { mutableStateOf(false) }
-    val localIp = remember { LanControllerClient.localIpv4() ?: "Wi-Fi address unavailable" }
+    val localIp = remember { LanControllerClient.localIpv4() ?: "Wi-Fi address unavailable" }\n    val notificationsAllowed = Build.VERSION.SDK_INT < 33 ||\n        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
     Card {
         Column(
@@ -68,7 +71,7 @@ fun LanRemotePanel() {
                     token = ""
                 }) { Text("Stop") }
             }
-            if (token.isNotBlank()) {
+            if (!notificationsAllowed) {\n                Text("Grant notification permission in Android permissions above before starting the visible session.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)\n            }\n            if (token.isNotBlank()) {
                 Text("Temporary access token (share only with your controller phone):", style = MaterialTheme.typography.bodySmall)
                 Text(token, fontWeight = FontWeight.Bold)
                 Text("Port: ${LanAgentServer.DEFAULT_PORT} · Read-only · Stop from notification or here.", style = MaterialTheme.typography.bodySmall)
