@@ -48,8 +48,12 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
+enum class SecureFeatureSection {
+    CONNECTION, SCREEN, CAMERA, AUDIO, FILES, NOTIFICATIONS, SESSION_PERMISSIONS
+}
+
 @Composable
-fun SecureInternetPanel() {
+fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CONNECTION) {
     val context = LocalContext.current
     val initialNetworkProfile = remember(context) {
         runCatching {
@@ -308,6 +312,7 @@ fun SecureInternetPanel() {
             modifier = Modifier.fillMaxWidth().padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            if (feature == SecureFeatureSection.CONNECTION) {
             Text("Secure Internet P2P", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
                 "Noise XX identity verification + WebRTC DTLS DataChannel. Cloudflare is used only for encrypted rendezvous signaling.",
@@ -1210,10 +1215,11 @@ fun SecureInternetPanel() {
                 ) { Text("Repair connection") }
             }
 
+            }
             if (Build.VERSION.SDK_INT < 33) {
                 Text("SecureLink requires Android 13 (API 33) or later in this build.")
             }
-            if (role.value == CloudflareSignalingClient.Role.TARGET) {
+            if (role.value == CloudflareSignalingClient.Role.TARGET && feature == SecureFeatureSection.SESSION_PERMISSIONS) {
                 Text("Owner controls", style = MaterialTheme.typography.titleSmall)
                 Text(
                     "Screen capture, Notification Access, and Accessibility must each be enabled locally first. Every remote capability below is granted separately for this session.",
@@ -1288,8 +1294,9 @@ fun SecureInternetPanel() {
                     "Start Android screen sharing locally before allowing screen viewing. Remote commands never start screen, camera or microphone capture.",
                     style = MaterialTheme.typography.bodySmall
                 )
-            } else {
+            } else if (role.value == CloudflareSignalingClient.Role.CONTROLLER) {
                 Text("Controller", style = MaterialTheme.typography.titleSmall)
+                if (feature == SecureFeatureSection.CAMERA) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(enabled = session.value != null && dataChannelConnected.value && !cameraTransferActive.get(), onClick = {
                         cameraStatus.value = if (sendInput("camera.start.request", JSONObject()))
@@ -1311,6 +1318,8 @@ fun SecureInternetPanel() {
                         contentScale = ContentScale.Fit
                     )
                 }
+                }
+                if (feature == SecureFeatureSection.SCREEN) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(enabled = session.value != null && dataChannelConnected.value, onClick = {
                         streamStatus.value = if (sendInput("screen.stream.start", JSONObject()))
@@ -1335,6 +1344,8 @@ fun SecureInternetPanel() {
                         JSONObject().put("action", "text").put("text", remoteText.value)
                     )) "Text insertion requested" else "Could not send text"
                 }) { Text("Insert text on target") }
+                }
+                if (feature == SecureFeatureSection.AUDIO) {
                 Card(
                     modifier = Modifier.fillMaxWidth().pointerInput(session.value, dataChannelConnected.value, role.value) {
                         detectTapGestures(onPress = {
@@ -1404,12 +1415,15 @@ fun SecureInternetPanel() {
                     }) { Text("Stop listening") }
                 }
                 Text(audioStatus.value, style = MaterialTheme.typography.bodySmall)
+                }
+                if (feature == SecureFeatureSection.NOTIFICATIONS) {
                 OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
                     notificationSummary.value = if (sendInput("notifications.sync.request", JSONObject()))
                         "Notification sync requested" else "Could not request notification sync"
                 }) { Text("Fetch recent notifications") }
                 Text(notificationSummary.value, style = MaterialTheme.typography.bodySmall)
-
+                }
+                if (feature == SecureFeatureSection.FILES) {
                 OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
                     fileStatus.value = if (sendInput("file.list.request", JSONObject()))
                         "Folder listing requested" else "Could not request folder listing"
@@ -1540,8 +1554,8 @@ fun SecureInternetPanel() {
                     ) { Text("Cancel transfers") }
                 }
                 Text(fileUploadStatus.value, style = MaterialTheme.typography.bodySmall)
-            }
-
+                }
+                if (feature == SecureFeatureSection.SCREEN) {
             val screenModifier = Modifier.fillMaxWidth().height(240.dp)
                 .pointerInput(session.value) {
                     val viewWidth = size.width.coerceAtLeast(1)
@@ -1599,6 +1613,23 @@ fun SecureInternetPanel() {
                 }
             )
             Text(streamStatus.value, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            if (role.value == CloudflareSignalingClient.Role.TARGET &&
+                feature != SecureFeatureSection.CONNECTION &&
+                feature != SecureFeatureSection.SESSION_PERMISSIONS
+            ) {
+                Text(
+                    "این دستگاه در نقش Target است. برای واگذاری دسترسی همین نشست، وارد بخش «مجوزهای نشست» شو. ضبط صفحه، دوربین و میکروفن همچنان باید روی خود دستگاه و با تأیید صاحب آن شروع شوند.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (role.value == CloudflareSignalingClient.Role.CONTROLLER &&
+                feature == SecureFeatureSection.SESSION_PERMISSIONS
+            ) {
+                Text("این صفحه برای تأیید مجوزها روی دستگاه Target است؛ کنترلر فقط می‌تواند درخواست‌های مجاز را ارسال کند.")
+            }
             peerId.value?.let { Text("Peer ID: $it", style = MaterialTheme.typography.bodySmall) }
             sas.value?.let {
                 Text("Verification code: " + it.chunked(3).joinToString(" "), style = MaterialTheme.typography.headlineSmall)
