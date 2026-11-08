@@ -125,41 +125,11 @@ private fun LocalSetupScreen() {
                 "Required only during an explicitly started audio or walkie-talkie session.",
                 listOf(Manifest.permission.RECORD_AUDIO)
             ))
-            add(PermissionItem(
-                "Contacts",
-                "Allows reading contacts on this device after permission is granted.",
-                listOf(Manifest.permission.READ_CONTACTS)
-            ))
-            add(PermissionItem(
-                "Call history",
-                "Allows reading call-log records where Android and device policy permit it.",
-                listOf(Manifest.permission.READ_CALL_LOG)
-            ))
-            add(PermissionItem(
-                "Location",
-                "Foreground location permission. Background location is not requested in this build.",
-                listOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION)
-            ))
             if (Build.VERSION.SDK_INT >= 33) {
-                add(PermissionItem(
-                    "Photos and videos",
-                    "Requests access to media. Android may offer selected-media access.",
-                    buildList {
-                        add(Manifest.permission.READ_MEDIA_IMAGES)
-                        add(Manifest.permission.READ_MEDIA_VIDEO)
-                        if (Build.VERSION.SDK_INT >= 34) add(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
-                    }
-                ))
                 add(PermissionItem(
                     "Notifications",
                     "Runtime notification permission. Reading other apps' notifications requires the separate Notification Access switch.",
                     listOf(Manifest.permission.POST_NOTIFICATIONS)
-                ))
-            } else {
-                add(PermissionItem(
-                    "Photos and videos",
-                    "Legacy shared-storage read permission. Folder access is separately granted below.",
-                    listOf(Manifest.permission.READ_EXTERNAL_STORAGE)
                 ))
             }
         }
