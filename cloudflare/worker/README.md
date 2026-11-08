@@ -6,12 +6,14 @@ This Worker is the **transport relay**, not just a signaling rendezvous. Both An
 
 ## Deploy
 
-There are two supported paths:
+1. Open the **Deploy to Cloudflare** button above and sign in to your own Cloudflare account.
+2. Review the Worker project and deploy it. Approve the `SignalRoom` Durable Object configuration/migration when Cloudflare requests it.
+3. Copy the resulting `workers.dev` address and enter it in RKRemote as `wss://...`.
+4. Normal relay use does not require an API Token. If you later want RKRemote to update the existing Worker source from inside the app, create a separate API Token with **Workers Editor** access scoped only to the existing `rkremote-signaling` Worker. Enter that token and your Account ID in the app. The app does not need your Cloudflare password or Global API Key.
 
-1. **Automatic from RKRemote:** configure the Cloudflare OAuth mobile Client ID once in the Android build, tap "ورود به Cloudflare و ساخت خودکار Worker", authorize the account in the browser, and let the app upload the Worker module, create the Durable Object migration/binding, enable workers.dev and save the resulting WSS URL. See [OAuth setup](../../docs/CLOUDFLARE_OAUTH_SETUP.md).
-2. **Manual Deploy button:** open the button above, sign in to Cloudflare, approve the Durable Object configuration and deploy. Copy the assigned workers.dev origin into RKRemote.
+The app's token update action only uploads the current Worker module to an already-existing script named `rkremote-signaling`; it does not create accounts, enumerate accounts, or change account-level workers.dev subdomains. If you only need the relay, leave the API Token field empty.
 
-The Worker subdirectory is self-contained: it includes src/index.ts, src/index.js, wrangler.toml, and package.json. The Deploy button can create a GitHub copy and configure Workers Builds. Alternatively, deploy manually from this directory with npx wrangler deploy.
+The Worker subdirectory is self-contained: it includes src/index.ts, src/index.js, wrangler.toml, and package.json. Alternatively, deploy manually from this directory with `npx wrangler deploy`.
 
 ## Wire behavior
 
