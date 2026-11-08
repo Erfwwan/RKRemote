@@ -11,7 +11,7 @@ import java.util.LinkedHashMap
  */
 internal class SecureDataChannelFramer(
     private val maxFrameBytes: Int = 12 * 1024,
-    private val maxMessageBytes: Int = 4 * 1024 * 1024,
+    private val maxMessageBytes: Int = RemoteMessage.MAX_MESSAGE_BYTES,
     private val maxInFlightMessages: Int = 4,
     private val maxAgeMillis: Long = 30_000L
 ) {
