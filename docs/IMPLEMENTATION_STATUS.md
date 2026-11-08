@@ -103,3 +103,12 @@ Validation for this pass: source and JVM tests were committed, but no Gradle bui
 - The Android client is not yet connected to the Compose pairing UI; no WebRTC PeerConnection is implemented.
 - The Worker has not been deployed to a Cloudflare account. No Android build, Worker deployment, WebSocket integration test, or physical two-device internet test is verified.
 - Existing LAN TCP 18765 remains plaintext and LAN-only. Do not expose it publicly.
+
+
+## RK-SecureLink v1 · encrypted signaling design and binary worker scaffold
+
+- Added `docs/RK_SECURELINK_V1.md` specifying Noise XX / X25519 / ChaCha20-Poly1305 / SHA-256, P-256 identity binding, explicit first-pair approval, session freshness, replay/idempotency framing, WebRTC DTLS/SRTP separation, and direct-path-first latency policy.
+- Changed the Cloudflare Durable Object to accept client binary frames only, enforce a 12 KiB bound, and forward opaque bytes unchanged. Client text/JSON messages are rejected; only server-generated room lifecycle events remain textual.
+- Changed the Android WSS client to send/receive bounded binary frames without parsing payloads and to accept only known room lifecycle events as text.
+- **Not implemented:** a Noise cryptographic engine, persistent X25519 static-key store and P-256 binding verifier, authenticated WebRTC fingerprint exchange, WebRTC PeerConnection, or encrypted migration of existing app capabilities.
+- This is not yet end-to-end encrypted remote access. WSS protects only each hop; do not deploy as a working secure session or expose the plaintext LAN TCP server. No Android build, Worker deployment, Noise vector, integration, or physical-device test has been verified.
