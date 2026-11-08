@@ -73,9 +73,8 @@ object SecureSmsSync {
             val bodyIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.BODY)
             val dateIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.DATE)
             val typeIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.TYPE)
-            while (cursor.moveToNext()) {
-                total++
-                if (records.length() >= limit) continue
+            total = cursor.count.coerceAtLeast(0)
+            while (records.length() < limit && cursor.moveToNext()) {
                 val address = cursor.getString(addressIndex).orEmpty().take(MAX_ADDRESS_CHARS)
                 records.put(
                     JSONObject()
