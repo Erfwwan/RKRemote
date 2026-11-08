@@ -279,12 +279,10 @@ class LanAgentServer(
                 return
             }
             if (parts[0] == "GET" && endpoint == "/notifications") {
-                val sharingEnabled = context.getSharedPreferences("rkremote_setup", Context.MODE_PRIVATE)
-                    .getBoolean("notification_sharing_enabled", false)
-                if (!sharingEnabled || !hasNotificationListenerAccess()) {
+                if (!hasNotificationListenerAccess()) {
                     respond(output, 403, JSONObject().put(
                         "error",
-                        "Notification sharing is disabled locally or Notification Access is unavailable"
+                        "Android Notification Access is not enabled on the target"
                     ))
                     return
                 }
@@ -294,6 +292,7 @@ class LanAgentServer(
                 for (index in start until stored.length()) {
                     val event = stored.optJSONObject(index) ?: continue
                     exported.put(JSONObject()
+                        .put("eventId", event.optLong("eventId", 0L))
                         .put("type", event.optString("type", "posted"))
                         .put("package", event.optString("package", ""))
                         .put("title", event.optString("title", "").take(MAX_NOTIFICATION_FIELD_CHARS))
@@ -307,6 +306,7 @@ class LanAgentServer(
                 respond(output, 200, JSONObject()
                     .put("items", exported)
                     .put("count", exported.length())
+                    .put("retainedLimit", MAX_NOTIFICATION_EVENTS)
                     .put("truncated", start > 0))
                 return
             }
@@ -693,7 +693,7 @@ class LanAgentServer(
         private const val MAX_HEADER_BYTES = 8192
         private const val MAX_INPUT_BODY_BYTES = 16 * 1024
         private const val MAX_REMOTE_TEXT_LENGTH = 4096
-        private const val MAX_NOTIFICATION_EVENTS = 100
+        private const val MAX_NOTIFICATION_EVENTS = 500
         private const val MAX_NOTIFICATION_FIELD_CHARS = 2000
     }
 }
