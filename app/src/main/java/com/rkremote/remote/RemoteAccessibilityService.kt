@@ -42,7 +42,7 @@ class RemoteAccessibilityService : AccessibilityService() {
         val maxY = (metrics.heightPixels - 1).coerceAtLeast(1)
         val path = Path().apply {
             moveTo(startX * maxX, startY * maxY)
-            lineTo(endX * maxX, endY * maxY)
+            if (startX != endX || startY != endY) lineTo(endX * maxX, endY * maxY)
         }
         val gesture = GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0, durationMs))
