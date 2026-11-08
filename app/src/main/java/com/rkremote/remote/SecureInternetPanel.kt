@@ -385,6 +385,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     SecureFeatureSection.NOTIFICATIONS -> "همگام‌سازی اعلان‌ها"
                     SecureFeatureSection.CALL_LOGS -> "گزارش تاریخچه تماس‌ها"
                     SecureFeatureSection.SMS_MESSAGES -> "گزارش پیامک‌ها"
+                    SecureFeatureSection.LOCATION -> "موقعیت مکانی زنده"
                     SecureFeatureSection.SESSION_PERMISSIONS -> "مجوزهای نشست"
                     SecureFeatureSection.CONNECTION -> "اتصال و روش‌ها"
                 }
