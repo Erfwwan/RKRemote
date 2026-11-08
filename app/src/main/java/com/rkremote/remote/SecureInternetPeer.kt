@@ -26,6 +26,7 @@ class SecureInternetPeer(
     handshake: SecureLinkHandshake,
     identityStore: P2pIdentityStore,
     turnServers: List<SecureWebRtcPeer.TurnServer> = emptyList(),
+    private val forceTurnRelay: Boolean = false,
     private val commandRouter: SecureRemoteCommandRouter? = null,
     private val listener: Listener
 ) : AutoCloseable {
@@ -80,6 +81,7 @@ class SecureInternetPeer(
                             if (role == CloudflareSignalingClient.Role.CONTROLLER)
                                 SecureWebRtcPeer.Role.CONTROLLER else SecureWebRtcPeer.Role.TARGET,
                             turnConfig,
+                            forceTurnRelay,
                             object : SecureWebRtcPeer.Listener {
                                 override fun onConnecting() = listener.onWebRtcConnecting()
                                 override fun onConnected() = listener.onWebRtcConnected()
