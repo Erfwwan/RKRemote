@@ -71,6 +71,10 @@ fun SecureInternetPanel() {
     val safBridge = remember(context) { SecureSafTransferBridge(context) }
     val transferExecutor = remember { Executors.newSingleThreadExecutor() }
     val transferActive = remember { AtomicBoolean(false) }
+    val audioRelayActive = remember { AtomicBoolean(false) }
+    val audioExecutor = remember { Executors.newSingleThreadExecutor() }
+    val audioPlayback = remember(context) { SecureAudioPlayback() }
+    val audioStatus = remember { mutableStateOf("Microphone stream idle") }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
 
     val uploadPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
@@ -165,6 +169,9 @@ fun SecureInternetPanel() {
     DisposableEffect(Unit) {
         onDispose {
             transferActive.set(false)
+            audioRelayActive.set(false)
+            audioPlayback.close()
+            audioExecutor.shutdownNow()
             streamSender.value?.close()
             streamSender.value = null
             session.value?.revokeOwnerApprovedCommands()
@@ -363,6 +370,39 @@ fun SecureInternetPanel() {
                                         streamSender.value = null
                                         null
                                     }
+                                    register("audio.start.request", RemoteCapability.MICROPHONE) {
+                                        check(MicrophoneChunkStore.isCapturing()) {
+                                            "Start microphone capture locally on the target first"
+                                        }
+                                        check(audioRelayActive.compareAndSet(false, true)) {
+                                            "Microphone stream is already active"
+                                        }
+                                        audioExecutor.execute {
+                                            try {
+                                                while (audioRelayActive.get() && MicrophoneChunkStore.isCapturing()) {
+                                                    val chunk = MicrophoneChunkStore.take()
+                                                    if (chunk == null) {
+                                                        Thread.sleep(12)
+                                                        continue
+                                                    }
+                                                    val sent = activePeer?.sendMessage(
+                                                        "audio.chunk",
+                                                        JSONObject().put("data", Base64.getEncoder().encodeToString(chunk))
+                                                    ) == true
+                                                    if (!sent) break
+                                                }
+                                            } catch (_: InterruptedException) {
+                                                Thread.currentThread().interrupt()
+                                            } finally {
+                                                audioRelayActive.set(false)
+                                            }
+                                        }
+                                        null
+                                    }
+                                    register("audio.stop", RemoteCapability.MICROPHONE) {
+                                        audioRelayActive.set(false)
+                                        null
+                                    }
                                     register("notifications.sync.request", RemoteCapability.NOTIFICATIONS) { message ->
                                         val response = SecureNotificationSync.buildLatestResponse(
                                             context,
@@ -424,6 +464,20 @@ fun SecureInternetPanel() {
                                     override fun onData(payload: ByteArray) = Unit
                                     override fun onRemoteMessage(message: RemoteMessage) {
                                         when (message.type) {
+                                            "audio.chunk" -> {
+                                                if (role.value == CloudflareSignalingClient.Role.CONTROLLER) {
+                                                    runCatching {
+                                                        val bytes = Base64.getDecoder().decode(message.payload.getString("data"))
+                                                        check(bytes.size in 2..SecureAudioPlayback.MAX_CHUNK_BYTES && bytes.size % 2 == 0)
+                                                        audioPlayback.start()
+                                                        check(audioPlayback.offer(bytes)) { "Secure audio playback queue is unavailable" }
+                                                    }.onFailure { failure ->
+                                                        mainHandler.post { audioStatus.value = failure.message ?: "Audio chunk rejected" }
+                                                    }.onSuccess {
+                                                        mainHandler.post { audioStatus.value = "Receiving secure microphone audio" }
+                                                    }
+                                                }
+                                            }
                                             "file.list.result" -> {
                                                 val result = message.payload.optJSONObject("result")
                                                 val array = result?.optJSONArray("items")
@@ -537,6 +591,8 @@ fun SecureInternetPanel() {
                                     }
                                     override fun onDisconnected(reason: String) {
                                         transferActive.set(false)
+                                        audioRelayActive.set(false)
+                                        audioPlayback.close()
                                         safBridge.abortUpload()
                                         streamSender.value?.close()
                                         streamSender.value = null
@@ -547,6 +603,8 @@ fun SecureInternetPanel() {
                                     }
                                     override fun onFailure(failure: Throwable) {
                                         transferActive.set(false)
+                                        audioRelayActive.set(false)
+                                        audioPlayback.close()
                                         safBridge.abortUpload()
                                         streamSender.value?.close()
                                         streamSender.value = null
@@ -617,6 +675,15 @@ fun SecureInternetPanel() {
                         .onFailure { error.value = it.message ?: "Could not grant notification access" }
                 }) { Text("Allow notification sharing") }
                 OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
+                    runCatching {
+                        check(MicrophoneChunkStore.isCapturing()) {
+                            "Start microphone capture locally on the target first"
+                        }
+                        session.value?.grantOwnerApprovedCapabilities(setOf(RemoteCapability.MICROPHONE))
+                    }.onSuccess { status.value = "Secure microphone streaming allowed for this session" }
+                        .onFailure { error.value = it.message ?: "Could not grant microphone access" }
+                }) { Text("Allow microphone streaming") }
+                OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
                     runCatching { session.value?.grantOwnerApprovedCapabilities(setOf(RemoteCapability.FILES)) }
                         .onSuccess { status.value = "Secure file access allowed for this session" }
                         .onFailure { error.value = it.message ?: "Could not grant file access" }
@@ -658,6 +725,18 @@ fun SecureInternetPanel() {
                         JSONObject().put("action", "text").put("text", remoteText.value)
                     )) "Text insertion requested" else "Could not send text"
                 }) { Text("Insert text on target") }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
+                        audioStatus.value = if (sendInput("audio.start.request", JSONObject()))
+                            "Microphone stream requested" else "Could not request microphone stream"
+                    }) { Text("Listen to target microphone") }
+                    OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
+                        audioStatus.value = if (sendInput("audio.stop", JSONObject()))
+                            "Microphone stream stop requested" else "Could not stop microphone stream"
+                        audioPlayback.close()
+                    }) { Text("Stop listening") }
+                }
+                Text(audioStatus.value, style = MaterialTheme.typography.bodySmall)
                 OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
                     notificationSummary.value = if (sendInput("notifications.sync.request", JSONObject()))
                         "Notification sync requested" else "Could not request notification sync"
