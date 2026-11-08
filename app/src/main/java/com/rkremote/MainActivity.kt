@@ -51,13 +51,20 @@ import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.rememberDrawerState
 import kotlinx.coroutines.launch
 import com.rkremote.remote.ConnectionHubPanel
+import com.rkremote.remote.SecureFeatureSection
 
 private enum class AppPage(val title: String) {
     HOME("خانه"),
     CONNECTIONS("اتصال و روش‌ها"),
+    SCREEN("نمایش و کنترل گوشی"),
+    CAMERA("دوربین"),
+    AUDIO("میکروفن و واکی‌تاکی"),
+    REMOTE_FILES("مدیریت فایل‌ها"),
+    REMOTE_NOTIFICATIONS("همگام‌سازی اعلان‌ها"),
+    SESSION_PERMISSIONS("مجوزهای نشست"),
     PERMISSIONS("مجوزهای اندروید"),
     NOTIFICATIONS("تاریخچه اعلان‌ها"),
-    FILES("دسترسی به فایل‌ها")
+    FILES("پوشه مجاز فایل‌ها")
 }
 
 class MainActivity : ComponentActivity() {
@@ -219,9 +226,26 @@ private fun LocalSetupScreen() {
                     }
                 }
 
-                Box(Modifier.fillMaxSize().offset(x = if (currentPage == AppPage.CONNECTIONS) 0.dp else 2000.dp)) {
+                Box(Modifier.fillMaxSize().offset(
+                    x = if (currentPage in setOf(
+                        AppPage.CONNECTIONS, AppPage.SCREEN, AppPage.CAMERA, AppPage.AUDIO,
+                        AppPage.REMOTE_FILES, AppPage.REMOTE_NOTIFICATIONS, AppPage.SESSION_PERMISSIONS
+                    )) 0.dp else 2000.dp
+                )) {
                     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        item { ConnectionHubPanel() }
+                        item {
+                            ConnectionHubPanel(
+                                feature = when (currentPage) {
+                                    AppPage.SCREEN -> SecureFeatureSection.SCREEN
+                                    AppPage.CAMERA -> SecureFeatureSection.CAMERA
+                                    AppPage.AUDIO -> SecureFeatureSection.AUDIO
+                                    AppPage.REMOTE_FILES -> SecureFeatureSection.FILES
+                                    AppPage.REMOTE_NOTIFICATIONS -> SecureFeatureSection.NOTIFICATIONS
+                                    AppPage.SESSION_PERMISSIONS -> SecureFeatureSection.SESSION_PERMISSIONS
+                                    else -> SecureFeatureSection.CONNECTION
+                                }
+                            )
+                        }
                     }
                 }
 
