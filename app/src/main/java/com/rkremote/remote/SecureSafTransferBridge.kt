@@ -195,7 +195,7 @@ class SecureSafTransferBridge(context: Context) {
         check(pendingUpload == null) { "Another upload is already active" }
         val name = sanitizeUploadName(rawName)
         val mime = rawMimeType.takeIf {
-            it.matches(Regex("[A-Za-z0-9!#it.matches(Regex("[A-Za-z0-9!#    private fun selectedTree(): Uri {^_.+-]+/[A-Za-z0-9!#    private fun selectedTree(): Uri {^_.+-]+"))^_.+-]+/[A-Za-z0-9!#it.matches(Regex("[A-Za-z0-9!#    private fun selectedTree(): Uri {^_.+-]+/[A-Za-z0-9!#    private fun selectedTree(): Uri {^_.+-]+"))^_.+-]+"))
+            it.count { ch -> ch == '/' } == 1 && it.all { ch -> ch.isLetterOrDigit() || ch in "!#&^_.+-/" }
         } ?: "application/octet-stream"
         val tree = selectedTree()
         val rootId = DocumentsContract.getTreeDocumentId(tree)
