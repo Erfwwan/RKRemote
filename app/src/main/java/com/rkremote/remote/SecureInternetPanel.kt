@@ -150,6 +150,13 @@ fun SecureInternetPanel() {
             if (Build.VERSION.SDK_INT < 33) {
                 Text("SecureLink requires Android 13 (API 33) or later in this build.")
             }
+            OutlinedButton(
+                enabled = session.value != null && status.value.contains("DataChannel connected"),
+                onClick = {
+                    val sent = session.value?.send("RKREMOTE_SECURE_CHANNEL_TEST".toByteArray()) == true
+                    status.value = if (sent) "Test frame sent · check the other phone" else "DataChannel is not open"
+                }
+            ) { Text("Send test frame") }
             peerId.value?.let {
                 Text("Peer ID: $it", style = MaterialTheme.typography.bodySmall)
             }
