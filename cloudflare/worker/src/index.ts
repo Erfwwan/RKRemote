@@ -35,8 +35,7 @@ export default {
 type Role = "target" | "controller";
 type SocketMeta = { role: Role; connectedAt: number };
 
-const ALLOWED_TYPES = new Set(["offer", "answer", "ice", "ready", "reject", "bye"]);
-const MAX_MESSAGE_BYTES = 12 * 1024;
+const MAX_FRAME_BYTES = 12 * 1024;
 const ROOM_TTL_MS = 10 * 60 * 1000;
 
 export class SignalRoom extends DurableObject<Env> {
@@ -84,36 +83,27 @@ export class SignalRoom extends DurableObject<Env> {
   }
 
   async webSocketMessage(socket: WebSocket, message: string | ArrayBuffer): Promise<void> {
-    if (typeof message !== "string" || new TextEncoder().encode(message).byteLength > MAX_MESSAGE_BYTES) {
-      socket.close(1009, "Invalid or oversized message");
+    // Client-to-worker application messages are binary Noise frames only.
+    // Text messages are rejected so SDP/ICE JSON cannot accidentally leak.
+    if (typeof message === "string") {
+      socket.close(1003, "Binary encrypted frames required");
+      return;
+    }
+    if (message.byteLength < 1 || message.byteLength > MAX_FRAME_BYTES) {
+      socket.close(1009, "Invalid or oversized encrypted frame");
       return;
     }
 
-    let parsed: { v?: number; type?: string; payload?: unknown };
-    try {
-      parsed = JSON.parse(message);
-    } catch {
-      socket.close(1007, "Invalid JSON");
-      return;
-    }
-
-    if (parsed.v !== 1 || typeof parsed.type !== "string" || !ALLOWED_TYPES.has(parsed.type)) {
-      socket.close(1008, "Unsupported signaling message");
-      return;
-    }
-
-    const peers = this.ctx.getWebSockets().filter((peer) => peer !== socket && peer.readyState === WebSocket.OPEN);
+    const peers = this.ctx.getWebSockets().filter(
+      (peer) => peer !== socket && peer.readyState === WebSocket.OPEN
+    );
     if (peers.length !== 1) {
       socket.send(JSON.stringify({ v: 1, type: "peer-not-ready", payload: {} }));
       return;
     }
 
-    const forwarded = JSON.stringify({
-      v: 1,
-      type: parsed.type,
-      payload: parsed.payload ?? {},
-    });
-    peers[0].send(forwarded);
+    // Opaque forwarding: no parsing, logging, storage, or interpretation of frame bytes.
+    peers[0].send(message);
   }
 
   async webSocketClose(socket: WebSocket, code: number, reason: string): Promise<void> {
