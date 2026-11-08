@@ -6,6 +6,8 @@ import android.os.Looper
 import android.view.SurfaceView
 import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -23,6 +25,8 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -141,6 +145,26 @@ fun SecureInternetPanel() {
                                     register("screen.stream.stop", RemoteCapability.SCREEN_VIEW) {
                                         streamSenderState.value?.close()
                                         streamSenderState.value = null
+                                        null
+                                    }
+                                    register("screen.input", RemoteCapability.SCREEN_INPUT) { message ->
+                                        val payload = message.payload
+                                        val accepted = when (payload.getString("action")) {
+                                            "gesture" -> RemoteAccessibilityService.dispatchGestureNormalized(
+                                                payload.getDouble("startX").toFloat(),
+                                                payload.getDouble("startY").toFloat(),
+                                                payload.getDouble("endX").toFloat(),
+                                                payload.getDouble("endY").toFloat(),
+                                                payload.getLong("durationMs")
+                                            )
+                                            "text" -> RemoteAccessibilityService.setFocusedText(
+                                                payload.getString("text")
+                                            )
+                                            else -> error("Unsupported screen input action")
+                                        }
+                                        check(accepted) {
+                                            "Android Accessibility is unavailable or rejected this action"
+                                        }
                                         null
                                     }
                                 }
@@ -281,6 +305,21 @@ fun SecureInternetPanel() {
                         status.value = "All remote command permissions revoked for this session"
                     }
                 ) { Text("Revoke remote control permissions") }
+                OutlinedButton(
+                    enabled = session.value != null && dataChannelConnected.value,
+                    onClick = {
+                        runCatching {
+                            check(RemoteAccessibilityService.isActive()) {
+                                "Enable RKRemote in Android Accessibility settings on the target first"
+                            }
+                            session.value?.grantOwnerApprovedCapabilities(setOf(RemoteCapability.SCREEN_INPUT))
+                        }.onSuccess {
+                            status.value = "Remote touch and text input permission granted for this session"
+                        }.onFailure {
+                            error.value = it.message ?: "Could not grant remote input permission"
+                        }
+                    }
+                ) { Text("Allow remote touch and text input") }
                 Text(
                     "Start Android screen sharing locally first. This permission does not start MediaProjection; the target must already be visibly sharing its screen.",
                     style = MaterialTheme.typography.bodySmall
@@ -311,7 +350,47 @@ fun SecureInternetPanel() {
             }
             Text(streamStatus.value, style = MaterialTheme.typography.bodySmall)
             AndroidView(
-                modifier = Modifier.fillMaxWidth().height(240.dp),
+                modifier = Modifier.fillMaxWidth().height(240.dp)
+                    .pointerInput(session.value) {
+                        detectTapGestures { point ->
+                            val x = (point.x / size.width.coerceAtLeast(1)).coerceIn(0f, 1f)
+                            val y = (point.y / size.height.coerceAtLeast(1)).coerceIn(0f, 1f)
+                            session.value?.sendMessage(
+                                "screen.input",
+                                JSONObject()
+                                    .put("requestId", java.util.UUID.randomUUID().toString())
+                                    .put("action", "gesture")
+                                    .put("startX", x).put("startY", y)
+                                    .put("endX", x).put("endY", y)
+                                    .put("durationMs", 80)
+                            )
+                        }
+                    }
+                    .pointerInput(session.value) {
+                        var dragStart = Offset.Zero
+                        var dragEnd = Offset.Zero
+                        detectDragGestures(
+                            onDragStart = { point -> dragStart = point; dragEnd = point },
+                            onDrag = { change, _ -> dragEnd = change.position; change.consume() },
+                            onDragEnd = {
+                                val x1 = (dragStart.x / size.width.coerceAtLeast(1)).coerceIn(0f, 1f)
+                                val y1 = (dragStart.y / size.height.coerceAtLeast(1)).coerceIn(0f, 1f)
+                                val x2 = (dragEnd.x / size.width.coerceAtLeast(1)).coerceIn(0f, 1f)
+                                val y2 = (dragEnd.y / size.height.coerceAtLeast(1)).coerceIn(0f, 1f)
+                                if (kotlin.math.abs(x2 - x1) + kotlin.math.abs(y2 - y1) > 0.005f) {
+                                    session.value?.sendMessage(
+                                        "screen.input",
+                                        JSONObject()
+                                            .put("requestId", java.util.UUID.randomUUID().toString())
+                                            .put("action", "gesture")
+                                            .put("startX", x1).put("startY", y1)
+                                            .put("endX", x2).put("endY", y2)
+                                            .put("durationMs", 350)
+                                    )
+                                }
+                            }
+                        )
+                    },
                 factory = { viewContext ->
                     SurfaceView(viewContext).also { surface ->
                         renderer.value = SecureScreenVideoRenderer(surface) { message ->
