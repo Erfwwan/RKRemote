@@ -312,6 +312,23 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
             modifier = Modifier.fillMaxWidth().padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            if (feature != SecureFeatureSection.CONNECTION) {
+                val sectionTitle = when (feature) {
+                    SecureFeatureSection.SCREEN -> "نمایش و کنترل گوشی"
+                    SecureFeatureSection.CAMERA -> "دوربین زنده"
+                    SecureFeatureSection.AUDIO -> "میکروفن و واکی‌تاکی"
+                    SecureFeatureSection.FILES -> "مدیریت و انتقال فایل‌ها"
+                    SecureFeatureSection.NOTIFICATIONS -> "همگام‌سازی اعلان‌ها"
+                    SecureFeatureSection.SESSION_PERMISSIONS -> "مجوزهای نشست"
+                    SecureFeatureSection.CONNECTION -> "اتصال و روش‌ها"
+                }
+                Text(sectionTitle, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text(
+                    "این قابلیت مستقل از بخش‌های دیگر مدیریت می‌شود؛ اتصال امن باید برقرار و تأیید دوطرفه انجام شده باشد.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             if (feature == SecureFeatureSection.CONNECTION) {
             Text("Secure Internet P2P", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
