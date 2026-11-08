@@ -1,8 +1,10 @@
 package com.rkremote.remote
 
 import android.Manifest
+import android.app.Activity
 import android.content.Intent
 import android.hardware.camera2.CameraCharacteristics
+import android.media.projection.MediaProjectionManager
 import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Settings
@@ -154,6 +156,9 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
     val cameraStatus = remember { mutableStateOf("Camera snapshot idle") }
     val pendingCameraFacing = remember { mutableStateOf(CameraCharacteristics.LENS_FACING_BACK) }
     val cameraCapturePending = remember { mutableStateOf(false) }
+    val screenCapturePending = remember { mutableStateOf(false) }
+    val localScreenStatus = remember { mutableStateOf("اشتراک صفحه هنوز شروع نشده است") }
+    val localAudioStatus = remember { mutableStateOf("میکروفن و بلندگوی واکی‌تاکی خاموش هستند") }
     val imageAssembler = remember { SecureImageFrameAssembler() }
     val cameraTransferActive = remember { AtomicBoolean(false) }
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
@@ -245,6 +250,129 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
             }
             cameraCapturePending.value = false
             cameraStatus.value = "ثبت عکس در زمان مجاز کامل نشد؛ دوربین را دوباره امتحان کن."
+        }
+    }
+
+    fun launchLocalMicrophoneCapture() {
+        runCatching {
+            ContextCompat.startForegroundService(
+                context,
+                Intent(context, MicrophoneCaptureService::class.java)
+            )
+        }.onSuccess {
+            localAudioStatus.value = "درخواست فعال‌سازی میکروفن ثبت شد؛ اعلان توقف اندروید نمایش داده می‌شود."
+        }.onFailure {
+            localAudioStatus.value = "شروع میکروفن ناموفق بود: ${it.message}"
+        }
+    }
+
+    val microphonePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) launchLocalMicrophoneCapture()
+        else localAudioStatus.value = "مجوز میکروفن داده نشد؛ ضبطی انجام نمی‌شود."
+    }
+
+    fun requestLocalMicrophoneCapture() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+        ) launchLocalMicrophoneCapture()
+        else microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+    }
+
+    val screenProjectionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val data = result.data
+        if (result.resultCode == Activity.RESULT_OK && data != null) {
+            runCatching {
+                val serviceIntent = Intent(context, ScreenCaptureService::class.java)
+                    .putExtra(ScreenCaptureService.EXTRA_RESULT_CODE, result.resultCode)
+                    .putExtra(ScreenCaptureService.EXTRA_RESULT_DATA, data)
+                ContextCompat.startForegroundService(context, serviceIntent)
+            }.onSuccess {
+                screenCapturePending.value = true
+                localScreenStatus.value = "در حال آماده‌سازی اشتراک صفحه؛ اعلان توقف اندروید نمایش داده می‌شود."
+            }.onFailure {
+                screenCapturePending.value = false
+                localScreenStatus.value = "شروع اشتراک صفحه ناموفق بود: ${it.message}"
+            }
+        } else {
+            screenCapturePending.value = false
+            localScreenStatus.value = "درخواست اشتراک صفحه لغو شد."
+        }
+    }
+
+    fun requestLocalScreenCapture() {
+        runCatching {
+            val manager = context.getSystemService(MediaProjectionManager::class.java)
+                ?: error("Android screen-capture service is unavailable")
+            screenProjectionLauncher.launch(manager.createScreenCaptureIntent())
+        }.onFailure {
+            localScreenStatus.value = "بازکردن درخواست اشتراک صفحه ناموفق بود: ${it.message}"
+        }
+    }
+
+    fun stopLocalMicrophoneCapture() {
+        runCatching {
+            context.startService(
+                Intent(context, MicrophoneCaptureService::class.java)
+                    .setAction(MicrophoneCaptureService.ACTION_STOP)
+            )
+        }
+    }
+
+    fun startLocalPttSpeaker() {
+        runCatching {
+            ContextCompat.startForegroundService(
+                context,
+                Intent(context, PttPlaybackService::class.java)
+            )
+        }.onFailure {
+            localAudioStatus.value = "فعال‌سازی بلندگوی واکی‌تاکی ناموفق بود: ${it.message}"
+        }
+    }
+
+    fun stopLocalPttSpeaker() {
+        runCatching {
+            context.startService(
+                Intent(context, PttPlaybackService::class.java)
+                    .setAction(PttPlaybackService.ACTION_STOP)
+            )
+        }
+    }
+
+    LaunchedEffect(feature, role.value, screenCapturePending.value) {
+        if (feature == SecureFeatureSection.SCREEN &&
+            role.value == CloudflareSignalingClient.Role.TARGET &&
+            screenCapturePending.value
+        ) {
+            repeat(40) {
+                if (ScreenVideoStore.hasConfig()) {
+                    screenCapturePending.value = false
+                    localScreenStatus.value = "اشتراک صفحه فعال است؛ فقط نشست تأییدشده می‌تواند تصویر را دریافت کند."
+                    return@LaunchedEffect
+                }
+                delay(500)
+            }
+            screenCapturePending.value = false
+            localScreenStatus.value = "اشتراک صفحه در زمان مجاز آماده نشد؛ دوباره امتحان کن."
+        }
+    }
+
+    LaunchedEffect(feature, role.value) {
+        if (feature == SecureFeatureSection.AUDIO) {
+            while (true) {
+                val mic = MicrophoneChunkStore.isCapturing()
+                val speaker = PttAudioQueue.isEnabled()
+                localAudioStatus.value = when {
+                    mic && speaker -> "میکروفن و بلندگوی واکی‌تاکی فعال هستند."
+                    mic -> "میکروفن فعال است."
+                    speaker -> "بلندگوی واکی‌تاکی فعال است."
+                    else -> "میکروفن و بلندگوی واکی‌تاکی خاموش هستند."
+                }
+                delay(500)
+            }
         }
     }
 
@@ -1697,7 +1825,10 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                         .onFailure { error.value = it.message ?: "Could not grant camera access" }
                 }) { Text("Allow camera snapshots") }
                 OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
-                    runCatching { session.value?.grantOwnerApprovedCapabilities(setOf(RemoteCapability.SCREEN_VIEW)) }
+                    runCatching {
+                        check(ScreenVideoStore.hasConfig()) { "Start screen sharing locally on the target first" }
+                        session.value?.grantOwnerApprovedCapabilities(setOf(RemoteCapability.SCREEN_VIEW))
+                    }
                         .onSuccess { status.value = "Screen viewing allowed for this session" }
                         .onFailure { error.value = it.message ?: "Could not grant screen viewing" }
                 }) { Text("Allow screen viewing") }
@@ -1861,9 +1992,68 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     "برای ارسال عکس، ابتدا در بخش «مجوزهای نشست» دسترسی دوربین را برای همین اتصال تأیید کن.",
                     style = MaterialTheme.typography.bodySmall
                 )
+            } else if (role.value == CloudflareSignalingClient.Role.TARGET && feature == SecureFeatureSection.SCREEN) {
+                Text("اشتراک صفحه روی همین گوشی", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "برای شروع، دکمه زیر را لمس و مجوز ضبط صفحه را در پنجره رسمی اندروید تأیید کن. این مجوز برای هر بار شروع باید دوباره تأیید شود.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        enabled = !screenCapturePending.value && !ScreenVideoStore.hasConfig(),
+                        onClick = { requestLocalScreenCapture() }
+                    ) { Text("شروع اشتراک صفحه") }
+                    OutlinedButton(
+                        enabled = ScreenVideoStore.hasConfig() || screenCapturePending.value,
+                        onClick = {
+                            context.startService(
+                                Intent(context, ScreenCaptureService::class.java)
+                                    .setAction(ScreenCaptureService.ACTION_STOP)
+                            )
+                            screenCapturePending.value = false
+                            localScreenStatus.value = "اشتراک صفحه روی این گوشی متوقف شد."
+                        }
+                    ) { Text("توقف اشتراک صفحه") }
+                }
+                Text(localScreenStatus.value, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    "پس از شروع محلی، در بخش «مجوزهای نشست» دسترسی نمایش صفحه را برای همین اتصال تأیید کن.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            } else if (role.value == CloudflareSignalingClient.Role.TARGET && feature == SecureFeatureSection.AUDIO) {
+                Text("کنترل صوتی محلی", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "ضبط میکروفن و فعال‌سازی بلندگوی واکی‌تاکی فقط با لمس همین گوشی انجام می‌شود؛ کنترل‌کننده نمی‌تواند حسگر صوتی را از راه دور روشن کند.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        enabled = !MicrophoneChunkStore.isCapturing(),
+                        onClick = { requestLocalMicrophoneCapture() }
+                    ) { Text("روشن‌کردن میکروفن") }
+                    OutlinedButton(
+                        enabled = MicrophoneChunkStore.isCapturing(),
+                        onClick = { stopLocalMicrophoneCapture() }
+                    ) { Text("خاموش‌کردن میکروفن") }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        enabled = !PttAudioQueue.isEnabled(),
+                        onClick = { startLocalPttSpeaker() }
+                    ) { Text("فعال‌کردن بلندگوی واکی‌تاکی") }
+                    OutlinedButton(
+                        enabled = PttAudioQueue.isEnabled(),
+                        onClick = { stopLocalPttSpeaker() }
+                    ) { Text("غیرفعال‌کردن بلندگو") }
+                }
+                Text(localAudioStatus.value, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    "برای دریافت صدای میکروفن یا واکی‌تاکی، مجوز مربوطه را در «مجوزهای نشست» جداگانه تأیید کن.",
+                    style = MaterialTheme.typography.bodySmall
+                )
             } else {
                 Text(
-                    "Start Android screen sharing locally before allowing screen viewing. Remote commands never start screen, camera or microphone capture.",
+                    "این قابلیت برای نقش فعلی در دسترس نیست.",
                     style = MaterialTheme.typography.bodySmall
                 )
             }
@@ -1919,6 +2109,18 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 }) { Text("Insert text on target") }
                 }
                 if (feature == SecureFeatureSection.AUDIO) {
+                Text("میکروفن همین گوشی", style = MaterialTheme.typography.titleSmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        enabled = !MicrophoneChunkStore.isCapturing(),
+                        onClick = { requestLocalMicrophoneCapture() }
+                    ) { Text("روشن‌کردن میکروفن محلی") }
+                    OutlinedButton(
+                        enabled = MicrophoneChunkStore.isCapturing(),
+                        onClick = { stopLocalMicrophoneCapture() }
+                    ) { Text("خاموش‌کردن میکروفن محلی") }
+                }
+                Text(localAudioStatus.value, style = MaterialTheme.typography.bodySmall)
                 Card(
                     modifier = Modifier.fillMaxWidth().animateContentSize()
                         .pointerInput(session.value, secureRelayConnected.value, role.value) {
