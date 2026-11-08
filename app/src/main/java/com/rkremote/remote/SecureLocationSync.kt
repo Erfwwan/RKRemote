@@ -321,9 +321,20 @@ class LocationCaptureWorker(
 
     @Suppress("DEPRECATION")
     private suspend fun obtainCurrentLocation(manager: LocationManager): Location? {
-        val provider = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
-            .firstOrNull { runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) }
-            ?: return null
+        val hasFinePermission = ContextCompat.checkSelfPermission(
+            applicationContext,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        // Coarse-only grants must not select GPS_PROVIDER: Android requires
+        // fine location for GPS and that failure would prevent trying network location.
+        val allowedProviders = if (hasFinePermission) {
+            listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+        } else {
+            listOf(LocationManager.NETWORK_PROVIDER)
+        }
+        val provider = allowedProviders.firstOrNull {
+            runCatching { manager.isProviderEnabled(it) }.getOrDefault(false)
+        } ?: return null
 
         return withTimeoutOrNull(20_000L) {
             if (Build.VERSION.SDK_INT >= 30) {
