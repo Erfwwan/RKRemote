@@ -247,16 +247,15 @@ class LanAgentServer(
                 return
             }
             if (parts[0] == "POST" && endpoint == "/file/upload") {
-                val length = headers["content-length"]?.toIntOrNull()
-                if (length == null || length !in 1..MAX_TRANSFER_BYTES) {
-                    respond(output, 400, JSONObject().put("error", "Upload must be 1 byte to 8 MiB"))
+                val length = headers["content-length"]?.toLongOrNull()
+                if (length == null || length < 0L) {
+                    respond(output, 400, JSONObject().put("error", "A valid Content-Length is required"))
                     return
                 }
-                val encodedName = headers["x-file-name"] ?: ""
                 val fileName = runCatching {
-                    String(Base64.getUrlDecoder().decode(encodedName), Charsets.UTF_8)
+                    String(Base64.getUrlDecoder().decode(headers["x-file-name"] ?: ""), Charsets.UTF_8)
                 }.getOrNull()?.takeIf {
-                    it.isNotBlank() && it.length <= 180 && it != "." && it != ".." &&
+                    it.isNotBlank() && it.length <= 255 && it != "." && it != ".." &&
                         it.none { ch -> ch == '/' || ch == '\\' || ch.code < 32 }
                 }
                 if (fileName == null) {
@@ -266,17 +265,15 @@ class LanAgentServer(
                 val mime = headers["content-type"]?.substringBefore(';')
                     ?.takeIf { it.matches(Regex("[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+")) }
                     ?: "application/octet-stream"
-                val bytes = readExact(input, length)
-                    ?: run {
-                        respond(output, 400, JSONObject().put("error", "Incomplete upload"))
-                        return
-                    }
-                val result = runCatching { saveUploadedFile(fileName, mime, bytes) }
+                val parentId = runCatching {
+                    String(Base64.getUrlDecoder().decode(headers["x-target-directory"] ?: ""), Charsets.UTF_8)
+                }.getOrDefault("")
+                val result = runCatching { saveUploadedFile(fileName, mime, input, output, length, parentId) }
                 if (result.isFailure) {
-                    respond(output, 400, JSONObject().put("error", result.exceptionOrNull()?.message ?: "Upload failed"))
+                    if (!client.isClosed) respond(output, 400, JSONObject().put("error", result.exceptionOrNull()?.message ?: "Upload failed"))
                 } else {
                     respond(output, 201, JSONObject().put("uploaded", true)
-                        .put("name", fileName).put("size", bytes.size))
+                        .put("name", fileName).put("size", length))
                 }
                 return
             }
@@ -322,12 +319,12 @@ class LanAgentServer(
                     respond(output, 400, JSONObject().put("error", "Missing document id"))
                     return
                 }
-                val downloaded = runCatching { readSelectedFile(documentId) }
-                if (downloaded.isFailure) {
-                    respond(output, 404, JSONObject().put("error", downloaded.exceptionOrNull()?.message ?: "File unavailable"))
+                val opened = runCatching { openSelectedFile(documentId) }
+                if (opened.isFailure) {
+                    respond(output, 404, JSONObject().put("error", opened.exceptionOrNull()?.message ?: "File unavailable"))
                 } else {
-                    val (name, mime, bytes) = downloaded.getOrThrow()
-                    respondFileBytes(output, bytes, name, mime)
+                    val file = opened.getOrThrow()
+                    file.input.use { input -> respondFileStream(output, input, file.name, file.mimeType, file.sizeBytes) }
                 }
                 return
             }
@@ -358,7 +355,7 @@ class LanAgentServer(
                     .put("activeClients", clientSockets.size)
                     .put("queuedClients", clients.queue.size)
                     .put("lastError", lastError ?: JSONObject.NULL)
-                "/files" -> listSelectedFolder()
+                "/files" -> listSelectedFolder(queryParameter(parts[1], "parent"))
                 else -> {
                     respond(output, 404, JSONObject().put("error", "Not found"))
                     return
@@ -465,73 +462,156 @@ class LanAgentServer(
             else null
         }
 
-    private fun readSelectedFile(documentId: String): Triple<String, String, ByteArray> {
-        val tree = selectedTree()
-        val child = tree.listFiles().firstOrNull { file ->
-            runCatching { DocumentsContract.getDocumentId(file.uri) == documentId }.getOrDefault(false)
-        } ?: throw SecurityException("File is not a direct child of the selected folder")
-        if (!child.isFile || !child.canRead()) throw SecurityException("Selected item is not a readable file")
-        if (child.length() > MAX_TRANSFER_BYTES) throw java.io.IOException("File exceeds 8 MiB transfer limit")
-        val bytes = context.contentResolver.openInputStream(child.uri)?.use { input ->
-            val output = java.io.ByteArrayOutputStream()
-            val buffer = ByteArray(8192)
-            var total = 0
-            while (true) {
-                val count = input.read(buffer)
-                if (count < 0) break
-                total += count
-                if (total > MAX_TRANSFER_BYTES) throw java.io.IOException("File exceeds 8 MiB transfer limit")
-                output.write(buffer, 0, count)
-            }
-            output.toByteArray()
-        } ?: throw java.io.IOException("Unable to read selected file")
-        return Triple(child.name ?: "download.bin", child.type ?: "application/octet-stream", bytes)
+    private data class OpenedTargetFile(
+        val input: InputStream,
+        val name: String,
+        val mimeType: String,
+        val sizeBytes: Long
+    )
+
+    private fun treeUri(): Uri {
+        val raw = context.getSharedPreferences("rkremote_setup", Context.MODE_PRIVATE)
+            .getString("selected_tree_uri", null) ?: throw SecurityException("No owner-selected folder")
+        val uri = Uri.parse(raw)
+        if (!DocumentFile.fromTreeUri(context, uri).let { it?.canRead() == true }) {
+            throw SecurityException("Selected folder permission is unavailable")
+        }
+        return uri
     }
 
-    private fun saveUploadedFile(name: String, mime: String, bytes: ByteArray) {
-        val tree = selectedTree()
-        if (!tree.canWrite()) throw SecurityException("Selected folder is not writable")
-        if (tree.findFile(name) != null) throw java.io.IOException("A file with this name already exists")
-        val created = tree.createFile(mime, name) ?: throw java.io.IOException("Unable to create file in selected folder")
+    private fun isInsideSelectedTree(tree: Uri, documentId: String): Boolean {
+        val rootId = DocumentsContract.getTreeDocumentId(tree)
+        if (documentId == rootId) return true
+        val documentUri = DocumentsContract.buildDocumentUriUsingTree(tree, documentId)
+        return DocumentsContract.isChildDocument(context.contentResolver, tree, documentUri)
+    }
+
+    private fun openSelectedFile(documentId: String): OpenedTargetFile {
+        val tree = treeUri()
+        if (!isInsideSelectedTree(tree, documentId)) throw SecurityException("File is outside the owner-selected folder")
+        val uri = DocumentsContract.buildDocumentUriUsingTree(tree, documentId)
+        val projection = arrayOf(
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE,
+            DocumentsContract.Document.COLUMN_SIZE
+        )
+        val row = context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+            if (!cursor.moveToFirst()) null else Triple(
+                cursor.getString(0) ?: "download.bin",
+                cursor.getString(1) ?: "application/octet-stream",
+                if (cursor.isNull(2)) -1L else cursor.getLong(2)
+            )
+        } ?: throw java.io.IOException("Document is unavailable")
+        if (row.second == DocumentsContract.Document.MIME_TYPE_DIR) throw java.io.IOException("Selected item is a folder")
+        val input = context.contentResolver.openInputStream(uri) ?: throw java.io.IOException("Unable to open document")
+        return OpenedTargetFile(input, row.first, row.second, row.third)
+    }
+
+    private fun saveUploadedFile(
+        name: String,
+        mime: String,
+        input: InputStream,
+        output: OutputStream,
+        length: Long,
+        parentId: String
+    ) {
+        val tree = treeUri()
+        val rootId = DocumentsContract.getTreeDocumentId(tree)
+        val parent = if (parentId.isBlank()) rootId else parentId
+        if (!isInsideSelectedTree(tree, parent)) throw SecurityException("Destination folder is outside the selected tree")
+        val parentUri = DocumentsContract.buildDocumentUriUsingTree(tree, parent)
+        val parentType = context.contentResolver.query(
+            parentUri, arrayOf(DocumentsContract.Document.COLUMN_MIME_TYPE), null, null, null
+        )?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+        if (parentType != DocumentsContract.Document.MIME_TYPE_DIR) throw java.io.IOException("Destination is not a folder")
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parent)
+        val exists = context.contentResolver.query(
+            childrenUri, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null
+        )?.use { cursor ->
+            var found = false
+            while (cursor.moveToNext()) if (cursor.getString(0) == name) found = true
+            found
+        } ?: false
+        if (exists) throw java.io.IOException("A file with this name already exists")
+        val created = DocumentsContract.createDocument(context.contentResolver, parentUri, mime, name)
+            ?: throw java.io.IOException("Unable to create destination file")
         try {
-            context.contentResolver.openOutputStream(created.uri, "w")?.use { it.write(bytes) }
-                ?: throw java.io.IOException("Unable to open destination file")
+            context.contentResolver.openOutputStream(created, "w")?.use { destination ->
+                val buffer = ByteArray(64 * 1024)
+                var remaining = length
+                while (remaining > 0L) {
+                    val count = input.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
+                    if (count < 0) throw java.io.IOException("Upload ended before all bytes arrived")
+                    destination.write(buffer, 0, count)
+                    remaining -= count.toLong()
+                }
+                destination.flush()
+            } ?: throw java.io.IOException("Unable to open destination file")
         } catch (error: Exception) {
-            runCatching { created.delete() }
+            runCatching { DocumentsContract.deleteDocument(context.contentResolver, created) }
             throw error
         }
     }
 
-    private fun respondFileBytes(output: OutputStream, bytes: ByteArray, name: String, mime: String) {
+    private fun respondFileStream(output: OutputStream, input: InputStream, name: String, mime: String, size: Long) {
         val safeName = Base64.getUrlEncoder().withoutPadding().encodeToString(name.toByteArray(Charsets.UTF_8))
-        val header = "HTTP/1.1 200 OK\r\n" +
-            "Content-Type: $mime\r\n" +
-            "Content-Length: ${bytes.size}\r\n" +
-            "X-File-Name: $safeName\r\n" +
-            "Connection: close\r\nCache-Control: no-store\r\n\r\n"
+        val header = "HTTP/1.1 200 OK\\r\\n" +
+            "Content-Type: $mime\\r\\n" +
+            (if (size >= 0L) "Content-Length: $size\\r\\n" else "") +
+            "X-File-Name: $safeName\\r\\n" +
+            "Connection: close\\r\\nCache-Control: no-store\\r\\n\\r\\n"
         output.write(header.toByteArray(Charsets.US_ASCII))
-        output.write(bytes)
+        val buffer = ByteArray(64 * 1024)
+        while (true) {
+            val count = input.read(buffer)
+            if (count < 0) break
+            output.write(buffer, 0, count)
+        }
         output.flush()
     }
 
-    private fun listSelectedFolder(): JSONObject {
-        val raw = context.getSharedPreferences("rkremote_setup", Context.MODE_PRIVATE)
-            .getString("selected_tree_uri", null)
-            ?: return JSONObject().put("error", "No owner-selected folder").put("items", JSONArray())
-        val tree = DocumentFile.fromTreeUri(context, Uri.parse(raw))
-            ?: return JSONObject().put("error", "Folder unavailable").put("items", JSONArray())
-        if (!tree.canRead()) return JSONObject().put("error", "Folder permission unavailable")
-        val items = JSONArray()
-        val children = tree.listFiles()
-        children.take(MAX_LIST_ITEMS).forEach { file ->
-            items.put(JSONObject()
-                .put("id", runCatching { DocumentsContract.getDocumentId(file.uri) }.getOrDefault(""))
-                .put("name", file.name ?: "unnamed")
-                .put("directory", file.isDirectory)
-                .put("size", if (file.isFile) file.length() else JSONObject.NULL)
-                .put("mimeType", file.type ?: JSONObject.NULL))
+    private fun copyExactly(input: InputStream, output: OutputStream, length: Long) {
+        val buffer = ByteArray(64 * 1024)
+        var remaining = length
+        while (remaining > 0L) {
+            val count = input.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
+            if (count < 0) throw java.io.IOException("Incomplete file body")
+            output.write(buffer, 0, count)
+            remaining -= count.toLong()
         }
-        return JSONObject().put("items", items).put("truncated", children.size > MAX_LIST_ITEMS)
+        output.flush()
+    }
+
+    private fun listSelectedFolder(parentId: String?): JSONObject {
+        val tree = treeUri()
+        val parent = parentId?.takeIf { it.isNotBlank() } ?: DocumentsContract.getTreeDocumentId(tree)
+        if (!isInsideSelectedTree(tree, parent)) throw SecurityException("Folder is outside the owner-selected tree")
+        val parentUri = DocumentsContract.buildDocumentUriUsingTree(tree, parent)
+        val parentType = context.contentResolver.query(
+            parentUri, arrayOf(DocumentsContract.Document.COLUMN_MIME_TYPE), null, null, null
+        )?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+        if (parentType != DocumentsContract.Document.MIME_TYPE_DIR) throw java.io.IOException("Selected item is not a folder")
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parent)
+        val projection = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE,
+            DocumentsContract.Document.COLUMN_SIZE
+        )
+        val items = JSONArray()
+        context.contentResolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
+            while (cursor.moveToNext()) {
+                val id = cursor.getString(0) ?: continue
+                val mime = cursor.getString(2) ?: "application/octet-stream"
+                items.put(JSONObject()
+                    .put("id", id)
+                    .put("name", cursor.getString(1) ?: "unnamed")
+                    .put("directory", mime == DocumentsContract.Document.MIME_TYPE_DIR)
+                    .put("size", if (cursor.isNull(3)) JSONObject.NULL else cursor.getLong(3))
+                    .put("mimeType", mime))
+            }
+        } ?: throw java.io.IOException("Unable to list folder contents")
+        return JSONObject().put("items", items).put("parentId", parent)
     }
 
     private fun respondBytes(output: OutputStream, bytes: ByteArray) {
@@ -598,7 +678,6 @@ class LanAgentServer(
         private const val MAX_HEADER_BYTES = 8192
         private const val MAX_INPUT_BODY_BYTES = 16 * 1024
         private const val MAX_REMOTE_TEXT_LENGTH = 4096
-        private const val MAX_TRANSFER_BYTES = 8 * 1024 * 1024
         private const val MAX_NOTIFICATION_EVENTS = 100
         private const val MAX_NOTIFICATION_FIELD_CHARS = 2000
     }
