@@ -41,6 +41,9 @@ class PersistentPeerReportConsent(context: Context) {
             "Only contacts, SMS, call-history and location grants can be remembered"
         }
         val records = readAll()
+        check(peerId in records || records.size < MAX_REMEMBERED_PEERS) {
+            "The remembered peer limit has been reached; revoke an old peer first"
+        }
         val grants = records.getOrPut(peerId) { mutableSetOf() }
         grants.add(capability.name)
         writeAll(records)
@@ -71,7 +74,7 @@ class PersistentPeerReportConsent(context: Context) {
         val keys = json.keys()
         while (keys.hasNext()) {
             val peerId = keys.next()
-            if (peerId.isBlank() || peerId.length > MAX_PEER_ID_LENGTH) continue
+            if (!isValidPeerId(peerId)) continue
             val array = json.optJSONArray(peerId) ?: continue
             val names = mutableSetOf<String>()
             for (index in 0 until array.length()) {
@@ -138,10 +141,11 @@ class PersistentPeerReportConsent(context: Context) {
         }
 
     private fun validatePeerId(peerId: String) {
-        require(peerId.isNotBlank() && peerId.length <= MAX_PEER_ID_LENGTH) {
-            "Invalid authenticated peer identity"
-        }
+        require(isValidPeerId(peerId)) { "Invalid authenticated peer identity" }
     }
+
+    internal fun isValidPeerId(peerId: String): Boolean =
+        peerId.matches(Regex("[0-9a-f]{64}"))
 
     companion object {
         private const val PREFS_NAME = "rkremote_persistent_peer_report_consent"
@@ -151,7 +155,7 @@ class PersistentPeerReportConsent(context: Context) {
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
         private const val GCM_IV_BYTES = 12
         private const val GCM_TAG_BITS = 128
-        private const val MAX_PEER_ID_LENGTH = 128
+        private const val MAX_REMEMBERED_PEERS = 100
         private val AAD = "RKRemote|peer-report-consent|v1".toByteArray(Charsets.UTF_8)
         private val PERSISTABLE_CAPABILITIES = setOf(
             RemoteCapability.CONTACTS,
