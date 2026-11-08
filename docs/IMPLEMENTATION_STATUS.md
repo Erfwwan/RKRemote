@@ -321,3 +321,8 @@ This section supersedes older milestone notes above where they describe Internet
 - In this version, transport loss closes the entire secure Internet session, clears pending signaling, ends the target command-router session, and drops the authenticated peer identity. The target's per-session capability grants therefore do not remain active after a dead DataChannel.
 - Automatic ICE restart/reconnect is deliberately not attempted yet. The user must establish a fresh session, compare SAS/peer identity again, and re-grant capabilities locally. Reconnect behavior remains a later hardening task.
 - This is source-integrated and awaiting the latest GitHub Actions run; no real network-loss test has been performed on devices.
+
+
+## Latest transport hardening
+
+At commit `34cc4a6`, WebRTC DataChannel sends serialize concurrent writers and preflight the byte size of every fragment in a logical RKD1 message against the 2 MiB outbound-buffer ceiling. Congested sends are rejected before the first fragment, avoiding partial messages caused by a known-full buffer. An unexpected mid-send channel close/rejection tears down the peer. This is fail-fast backpressure; no background queue or automatic retransmission is claimed. CI verification for this commit is pending.
