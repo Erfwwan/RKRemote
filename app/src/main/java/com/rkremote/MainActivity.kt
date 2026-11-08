@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.rkremote.remote.PairingPanel
 import com.rkremote.remote.LanRemotePanel
+import com.rkremote.remote.SecureInternetPanel
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -165,6 +166,7 @@ private fun LocalSetupScreen() {
             }
         }
         item { PairingPanel() }
+        item { SecureInternetPanel() }
         item { LanRemotePanel() }
         item {
             Text("Android permissions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
