@@ -155,6 +155,13 @@ class SecureLinkCloudflareSession internal constructor(
         notifyReadyIfComplete()
     }
 
+    /** Sends a tiny encrypted heartbeat to keep the Durable Object room lease alive. */
+    @Synchronized
+    fun sendHeartbeat(): Boolean {
+        if (closed || !isReady()) return false
+        return channel.send(handshake.encrypt(byteArrayOf(HEARTBEAT_MESSAGE)))
+    }
+
     /** Sends an application payload only after both device owners have approved the pairing. */
     @Synchronized
     fun sendApplication(payload: ByteArray): Boolean {
@@ -178,6 +185,9 @@ class SecureLinkCloudflareSession internal constructor(
             APP_MESSAGE -> {
                 require(isReady()) { "Application data arrived before mutual approval" }
                 listener.onApplicationFrame(clear.copyOfRange(1, clear.size))
+            }
+            HEARTBEAT_MESSAGE -> {
+                require(clear.size == 1) { "Malformed SecureLink heartbeat" }
             }
             else -> error("Unknown SecureLink application frame type")
         }
@@ -226,6 +236,7 @@ class SecureLinkCloudflareSession internal constructor(
     companion object {
         private const val READY_MESSAGE: Byte = 0
         private const val APP_MESSAGE: Byte = 1
+        private const val HEARTBEAT_MESSAGE: Byte = 2
         private const val MAX_PENDING_FRAMES = 8
 
         /**
