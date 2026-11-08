@@ -6,7 +6,7 @@
 - Cloudflare accepts bounded binary WebSocket frames only. It cannot parse SDP or ICE and forwards the Noise frames unchanged.
 - Noise XX authenticates the long-lived P-256 peer identities through the signed X25519 static-key binding. Both owners must compare the six-digit SAS and approve the other peer ID.
 - Application signaling is blocked until both sides have approved. WebRTC offer, answer, and trickled ICE candidates are carried as Noise-encrypted application messages.
-- The SDP's SHA-256 DTLS fingerprint is checked against the fingerprint field inside the authenticated Noise message. libwebrtc then validates the remote DTLS certificate against the SDP fingerprint during the DTLS handshake.
+- Every SHA-256 fingerprint attribute in SDP is parsed strictly as exactly 32 hexadecimal octets; malformed attributes or inconsistent fingerprints are rejected. The normalized SDP fingerprint is compared in constant time with the fingerprint field inside the authenticated Noise message. libwebrtc then validates the remote DTLS certificate against the SDP fingerprint during the DTLS handshake.
 - A WebRTC ordered binary DataChannel is created by the controller and accepted by the target. DataChannel payloads are protected by DTLS. The code does not double-encrypt every DataChannel packet with Noise.
 - DataChannel application messages use a bounded RKD1 fragment format: up to 4 MiB per logical message, 12 KiB transport frames, 4 incomplete messages, 30-second assembly lifetime, and strict duplicate/length/index checks. This allows large file/video protocol frames to be carried later without exceeding the per-frame cap; it does not itself migrate those features.
 - ICE uses a public STUN server by default. Optional TURN configuration is accepted by the transport class; TURN credentials are not hard-coded or sent to Cloudflare.
@@ -33,7 +33,7 @@ For reliable use across restrictive networks, provision a separately operated TU
 
 ## Current limits
 
-- The current DataChannel is a transport foundation and test panel. Keep RKRemote open while testing: the Internet session is not yet owned by a persistent foreground service and will not survive app-process termination. Live screen, remote input, notification snapshot sync, and owner-scoped file browsing/download are integrated at source level; camera, microphone and PTT are not yet migrated.
+- Keep RKRemote open while testing: the Internet session is not yet owned by a persistent foreground service and will not survive app-process termination. Live screen, remote input, notification sync, owner-scoped file browsing/upload/download, camera snapshots, microphone monitoring, and half-duplex PTT are integrated at source level; live camera video and WebRTC media tracks are not implemented.
 - No media tracks are added yet; live screen/camera video and audio need separate explicit owner-started capture and WebRTC track integration.
 - There is no persistent trusted-peer registry, revocation UI, or key-rotation workflow beyond the existing local key stores.
 - No automatic TURN provisioning, DHT peer discovery, multi-path racing, relay fallback service, or session rekey/reconnect exists.
@@ -46,6 +46,7 @@ For reliable use across restrictive networks, provision a separately operated TU
 - [ ] Deploy Worker and confirm target-first/controller-second room join.
 - [ ] Verify both phones display the same SAS and different peer IDs.
 - [ ] Reject a mismatched SAS on either phone and confirm no DataChannel opens.
+- [ ] Confirm malformed, missing, inconsistent, and mismatched SDP DTLS fingerprints are rejected by the strict parser.
 - [ ] Approve both phones and confirm DataChannel connects on the same Wi-Fi.
 - [ ] Repeat on separate networks with direct UDP available.
 - [ ] Repeat with TURN configured and direct UDP blocked; confirm relay candidate selected.
