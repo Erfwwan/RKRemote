@@ -62,6 +62,8 @@ data class P2pPeerRecord(
         .put("addresses", JSONArray(addresses))
         .put("signature", signatureBase64)
 
+    internal fun signingBytes(): ByteArray = canonicalBytes()
+
     private fun canonicalBytes(): ByteArray = JSONObject()
         .put("recordVersion", RECORD_VERSION)
         .put("peerId", peerId)
