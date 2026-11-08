@@ -973,7 +973,13 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                         }
                                                     }
                                                     "command.result" -> {
-                                                        if (message.payload.optString("commandType") == "contacts.sync.request" && !message.payload.optBoolean("accepted")) {
+                                                        if (message.payload.optString("commandType") == "camera.snapshot.request" && !message.payload.optBoolean("accepted")) {
+                                                             mainHandler.post {
+                                                                 if (activePeerRef.get() !== activePeer) return@post
+                                                                 cameraStatus.value = message.payload.optString("reason", "دریافت عکس توسط دستگاه مقصد تأیید نشد")
+                                                             }
+                                                         }
+                                                         if (message.payload.optString("commandType") == "contacts.sync.request" && !message.payload.optBoolean("accepted")) {
                                                             mainHandler.post {
                                                                 if (activePeerRef.get() !== activePeer) return@post
                                                                 contactsStatus.value = "دریافت مخاطبین رد شد: " + message.payload.optString("reason", "دسترسی تأیید نشد")
