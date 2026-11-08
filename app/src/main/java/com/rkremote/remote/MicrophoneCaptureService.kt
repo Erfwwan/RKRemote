@@ -6,6 +6,8 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.Manifest
 import android.content.pm.ServiceInfo
 import android.media.AudioFormat
 import android.media.AudioRecord
@@ -15,6 +17,7 @@ import android.media.MediaRecorder
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.rkremote.MainActivity
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
@@ -23,7 +26,7 @@ import java.util.concurrent.atomic.AtomicReference
 object MicrophoneChunkStore {
     private val latest = AtomicReference<ByteArray?>(null)
     @Volatile private var capturing = false
-    fun publish(bytes: ByteArray) { latest.set(bytes) }
+    fun publish(bytes: ByteArray) { if (capturing) latest.set(bytes.copyOf()) }
     fun take(): ByteArray? = latest.getAndSet(null)
     fun setCapturing(value: Boolean) { capturing = value; if (!value) latest.set(null) }
     fun isCapturing(): Boolean = capturing
@@ -58,6 +61,11 @@ class MicrophoneCaptureService : Service() {
             return START_NOT_STICKY
         }
         if (active.get()) return START_NOT_STICKY
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            MicrophoneChunkStore.clear()
+            stopSelfResult(startId)
+            return START_NOT_STICKY
+        }
         return try {
             startAsForeground()
             startRecording()
@@ -123,16 +131,25 @@ class MicrophoneCaptureService : Service() {
         MicrophoneChunkStore.setCapturing(true)
         val thread = Thread({
             val buffer = ByteArray(4096)
-            while (active.get()) {
-                val count = try {
-                    audio.read(buffer, 0, buffer.size, AudioRecord.READ_BLOCKING)
-                } catch (_: Exception) {
-                    -1
+            try {
+                while (active.get()) {
+                    val count = try {
+                        audio.read(buffer, 0, buffer.size, AudioRecord.READ_BLOCKING)
+                    } catch (_: Exception) {
+                        AudioRecord.ERROR_INVALID_OPERATION
+                    }
+                    if (count > 0 && active.get()) {
+                        MicrophoneChunkStore.publish(buffer.copyOf(count))
+                    } else if (count < 0) {
+                        break
+                    }
                 }
-                if (count > 0 && active.get()) {
-                    MicrophoneChunkStore.publish(buffer.copyOf(count))
-                } else if (count < 0) {
-                    break
+            } finally {
+                // An unexpected recorder error must not leave a foreground service
+                // and a stale "capturing" flag running without an audio source.
+                if (active.compareAndSet(true, false)) {
+                    MicrophoneChunkStore.clear()
+                    stopSelf()
                 }
             }
         }, "RKRemote-Microphone").apply {
