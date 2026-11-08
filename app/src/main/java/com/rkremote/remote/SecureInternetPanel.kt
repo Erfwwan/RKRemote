@@ -175,7 +175,9 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
     val callSectionTab = remember { mutableStateOf("calls") }
     val smsItems = remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     val smsStatus = remember { mutableStateOf("هنوز گزارشی بارگذاری نشده است") }
-    val locationHistory = remember(context) { mutableStateOf(LocationHistoryStore(context).readAll()) }
+    val locationHistory = remember(context, savedRole) {
+        mutableStateOf(if (savedRole == "target") LocationHistoryStore(context).readAll() else emptyList())
+    }
     val locationStatus = remember { mutableStateOf("هنوز موقعیتی دریافت نشده است") }
     val fileItems = remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     val fileStatus = remember { mutableStateOf("No folder loaded") }
@@ -2045,16 +2047,17 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     style = MaterialTheme.typography.bodySmall
                 )
             } else if (role.value == CloudflareSignalingClient.Role.TARGET && feature == SecureFeatureSection.AUDIO) {
-                Text("کنترل صوتی محلی", style = MaterialTheme.typography.titleSmall)
+                Text("واکی‌تاکی این دستگاه", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                 Text(
-                    "ضبط میکروفن و فعال‌سازی بلندگوی واکی‌تاکی فقط با لمس همین گوشی انجام می‌شود؛ کنترل‌کننده نمی‌تواند حسگر صوتی را از راه دور روشن کند.",
-                    style = MaterialTheme.typography.bodySmall
+                    "بلندگو و میکروفن فقط با اقدام صاحب همین گوشی فعال می‌شوند. برای صحبت، میکروفن را روشن کن و دکمه صحبت را تا پایان جمله نگه دار.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         enabled = !MicrophoneChunkStore.isCapturing(),
                         onClick = { requestLocalMicrophoneCapture() }
-                    ) { Text("روشن‌کردن میکروفن") }
+                    ) { Text("فعال‌کردن میکروفن") }
                     OutlinedButton(
                         enabled = MicrophoneChunkStore.isCapturing(),
                         onClick = { stopLocalMicrophoneCapture() }
@@ -2064,17 +2067,78 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     OutlinedButton(
                         enabled = !PttAudioQueue.isEnabled(),
                         onClick = { startLocalPttSpeaker() }
-                    ) { Text("فعال‌کردن بلندگوی واکی‌تاکی") }
+                    ) { Text("فعال‌کردن بلندگو") }
                     OutlinedButton(
                         enabled = PttAudioQueue.isEnabled(),
                         onClick = { stopLocalPttSpeaker() }
-                    ) { Text("غیرفعال‌کردن بلندگو") }
+                    ) { Text("خاموش‌کردن بلندگو") }
+                }
+                Card(
+                    modifier = Modifier.fillMaxWidth().animateContentSize()
+                        .pointerInput(session.value, secureRelayConnected.value, role.value, pttRelayActive.get()) {
+                            detectTapGestures(onPress = {
+                                val approved = session.value?.hasOwnerApprovedCapability(RemoteCapability.PUSH_TO_TALK) == true
+                                if (!secureRelayConnected.value) {
+                                    pttStatus.value = "ابتدا اتصال امن را برقرار کن."
+                                } else if (!approved) {
+                                    pttStatus.value = "ابتدا در «مجوزهای نشست»، واکی‌تاکی را برای این دستگاه مجاز کن."
+                                } else if (!MicrophoneChunkStore.isCapturing()) {
+                                    pttStatus.value = "ابتدا میکروفن را روی همین گوشی فعال کن."
+                                } else if (pttRelayActive.get()) {
+                                    pttStatus.value = "طرف مقابل در حال صحبت است؛ کمی صبر کن."
+                                } else if (audioRelayActive.compareAndSet(false, true)) {
+                                    pttStatus.value = "در حال ارسال صدا · برای پایان رها کن"
+                                    audioExecutor.execute {
+                                        try {
+                                            while (audioRelayActive.get() && MicrophoneChunkStore.isCapturing()) {
+                                                val chunk = MicrophoneChunkStore.take()
+                                                if (chunk == null) {
+                                                    Thread.sleep(8)
+                                                    continue
+                                                }
+                                                val sent = session.value?.sendMessage(
+                                                    "audio.chunk",
+                                                    JSONObject().put("data", Base64.getEncoder().encodeToString(chunk))
+                                                ) == true
+                                                if (!sent) {
+                                                    mainHandler.post { pttStatus.value = "اتصال واکی‌تاکی قطع شد" }
+                                                    audioRelayActive.set(false)
+                                                    break
+                                                }
+                                            }
+                                        } catch (_: InterruptedException) {
+                                            Thread.currentThread().interrupt()
+                                        } finally {
+                                            audioRelayActive.set(false)
+                                        }
+                                    }
+                                    try {
+                                        tryAwaitRelease()
+                                    } finally {
+                                        audioRelayActive.set(false)
+                                        pttStatus.value = "آماده صحبت"
+                                    }
+                                }
+                            })
+                        },
+                    shape = RoundedCornerShape(22.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                ) {
+                    Column(
+                        Modifier.fillMaxWidth().padding(vertical = 24.dp, horizontal = 18.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
+                    ) {
+                        Text("●", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
+                        Text("برای صحبت نگه دار", style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Text(pttStatus.value, style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    }
                 }
                 Text(localAudioStatus.value, style = MaterialTheme.typography.bodySmall)
-                Text(
-                    "برای دریافت صدای میکروفن یا واکی‌تاکی، مجوز مربوطه را در «مجوزهای نشست» جداگانه تأیید کن.",
-                    style = MaterialTheme.typography.bodySmall
-                )
+                Text("برای دریافت صدای کنترل‌کننده، بلندگوی واکی‌تاکی باید روشن و مجوز نشست PUSH-TO-TALK فعال باشد.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else if (role.value == CloudflareSignalingClient.Role.CONTROLLER) {
                 Text("Controller", style = MaterialTheme.typography.titleSmall)
                 if (feature == SecureFeatureSection.CAMERA) {
@@ -2140,7 +2204,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 }
                 Text(localAudioStatus.value, style = MaterialTheme.typography.bodySmall)
                 Card(
-                    modifier = Modifier.fillMaxWidth().animateContentSize()
+                    modifier = Modifier.fillMaxWidth().height(164.dp).animateContentSize()
                         .pointerInput(session.value, secureRelayConnected.value, role.value) {
                         detectTapGestures(onPress = {
                             if (role.value == CloudflareSignalingClient.Role.CONTROLLER && secureRelayConnected.value) {
@@ -2199,14 +2263,14 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                         horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
                     ) {
                         Text(
-                            if (pttRelayActive.get()) "●  TRANSMITTING" else "HOLD TO TALK",
+                            if (pttRelayActive.get()) "●  در حال صحبت" else "🎙  برای صحبت نگه دار",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.ExtraBold,
                             color = MaterialTheme.colorScheme.primary
                         )
                         Text(pttStatus.value, style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onPrimaryContainer)
-                        Text("برای ارسال صدا لمس کن و تا پایان صحبت نگه دار",
+                        Text("دکمه را نگه دار؛ با رهاکردن، ارسال صدا متوقف می‌شود.",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -2264,7 +2328,20 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                             }
                         ) { Text("نمایش پیامک‌های همین گوشی") }
                     }
-                    Text(smsStatus.value, style = MaterialTheme.typography.bodySmall)
+                    Card(
+                        modifier = Modifier.fillMaxWidth().animateContentSize(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Text("گزارش دریافتی از دستگاه مقصد", fontWeight = FontWeight.Bold)
+                            Text(smsStatus.value, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                            if (role.value == CloudflareSignalingClient.Role.CONTROLLER && smsItems.value.isEmpty()) {
+                                Text("هنوز گزارشی دریافت نشده است. پس از اتصال امن، درخواست دریافت پیامک‌ها را بفرست؛ نتیجه در همین قسمت نمایش داده می‌شود.",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
                     smsItems.value.forEach { item ->
                         val typeLabel = when (item.optInt("type")) {
                             Telephony.Sms.MESSAGE_TYPE_INBOX -> "دریافتی"
@@ -2415,7 +2492,20 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                             }
                         ) { Text("نمایش گزارش تماس‌های همین گوشی") }
                     }
-                    Text(callLogStatus.value, style = MaterialTheme.typography.bodySmall)
+                    Card(
+                        modifier = Modifier.fillMaxWidth().animateContentSize(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Text("گزارش تماس‌های دریافتی", fontWeight = FontWeight.Bold)
+                            Text(callLogStatus.value, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                            if (role.value == CloudflareSignalingClient.Role.CONTROLLER && callLogItems.value.isEmpty()) {
+                                Text("هنوز گزارشی دریافت نشده است. پس از ارسال درخواست، فهرست تماس‌ها و مدت هر تماس اینجا قرار می‌گیرد.",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
                     callLogItems.value.forEach { item ->
                         val seconds = item.optLong("durationSeconds").coerceAtLeast(0L)
                         val duration = "%d:%02d".format(seconds / 60, seconds % 60)
@@ -2529,6 +2619,20 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                         context.startActivity(Intent(Intent.ACTION_VIEW, mapUri))
                                     }) { Text("نمایش در Google Maps") }
                                 } else Text("هنوز مختصات معتبری ذخیره نشده است")
+                            }
+                        }
+                    }
+                    if (role.value == CloudflareSignalingClient.Role.CONTROLLER && locationHistory.value.isEmpty()) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth().animateContentSize(),
+                            shape = RoundedCornerShape(18.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+                        ) {
+                            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("موقعیت دستگاه مقصد", fontWeight = FontWeight.Bold)
+                                Text(locationStatus.value, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                Text("هنوز مختصاتی دریافت نشده است. درخواست موقعیت را بفرست؛ زمان ثبت، مختصات و دقت مکانی پس از پاسخ دستگاه مقصد در این قسمت ظاهر می‌شود.",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
