@@ -32,7 +32,7 @@ For reliable use across restrictive networks, provision a separately operated TU
 
 ## Current limits
 
-- The current DataChannel is a transport foundation and test panel. Existing screen, remote input, file, notification, camera, microphone and PTT code paths have **not** been migrated to it.
+- The current DataChannel is a transport foundation and test panel. Keep RKRemote open while testing: the Internet session is not yet owned by a persistent foreground service and will not survive app-process termination. Existing screen, remote input, file, notification, camera, microphone and PTT code paths have **not** been migrated to it.
 - No media tracks are added yet; live screen/camera video and audio need separate explicit owner-started capture and WebRTC track integration.
 - There is no persistent trusted-peer registry, revocation UI, or key-rotation workflow beyond the existing local key stores.
 - No automatic TURN provisioning, DHT peer discovery, multi-path racing, relay fallback service, or session rekey/reconnect exists.
