@@ -82,7 +82,9 @@ class SessionForegroundService : Service() {
             }
             stopInternetPeer()
             internetPeer = incoming
-            return START_NOT_STICKY
+            // Preserve an independently active LAN agent's existing sticky
+            // restoration behavior; never attempt to recreate a WebRTC peer.
+            return if (lanServer != null) START_STICKY else START_NOT_STICKY
         }
 
         val token = when (intent?.action) {
