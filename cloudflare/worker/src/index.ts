@@ -1,3 +1,5 @@
+import { DurableObject } from "cloudflare:workers";
+
 export interface Env {
   SIGNAL_ROOMS: DurableObjectNamespace;
 }
