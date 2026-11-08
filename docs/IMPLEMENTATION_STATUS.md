@@ -233,3 +233,12 @@ Validation for this pass: source and JVM tests were committed, but no Gradle bui
 - The controller writes downloads to a temporary app-private file, checks sequential offsets and the final SHA-256 digest, then publishes the verified result to `Download/RKRemote/Received` on Android 10+ (app-specific Downloads on older Android). Uploads use the Android document picker on the controller and write only inside the selected target SAF tree. Both directions use ordered chunks and SHA-256 validation.
 - Existing files are not overwritten. Uploads require a writable SAF grant; incomplete uploads are removed on disconnect or invalid chunks. Remote deletion, rename, move, and arbitrary path access are not implemented.
 - The target owner must explicitly grant the FILES capability for each secure session. Only one transfer runs at a time. The source integration has passed the unit-test and debug-APK CI run at commit `242ad46` before the final SAF validation fixes. The newest commits are undergoing CI again. Two-device Android validation, SAF provider behavior and real-world transfer reliability are not yet certified.
+
+
+## Secure microphone monitoring
+
+- The target-side microphone must be started locally by the owner with Android's RECORD_AUDIO permission and its persistent foreground notification.
+- The target owner separately grants the `MICROPHONE` capability for the current secure session. The controller can then request or stop a live mono 16 kHz PCM stream over the authenticated WebRTC DataChannel.
+- Audio is kept in a latest-chunk store on the target and a bounded playback queue on the controller; no audio is written to disk. If the network cannot keep up, older queued playback chunks are dropped to bound latency.
+- Remote requests never start or stop Android microphone capture. The owner can stop the local service or revoke the session capability at any time.
+- This is source-integrated and awaits the current CI run and physical two-device audio/feedback testing. Echo cancellation and noise suppression depend on device support and do not guarantee feedback-free operation.
