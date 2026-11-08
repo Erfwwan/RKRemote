@@ -56,3 +56,10 @@ A GitHub Actions workflow now runs a debug APK compilation on pushes, pull reque
 
 **Important:** the repository is not yet a complete remote-control product. The current Android application is the local capability-setup milestone. Remote pairing, authenticated network transport, remote screen interaction, camera/audio streaming, and push-to-talk remain future implementation work. Do not rely on the app for remote access until those features are implemented and tested on real devices.
 
+
+
+## Development branch
+
+The current development foundation is being prepared in [PR #1](https://github.com/Erfwwan/RKRemote/pull/1). It adds a versioned message envelope, one-time pairing-code prototype, TLS-pinned WebSocket transport, centralized capability checks, a visible session notification with a stop action, and initial JVM tests.
+
+See [implementation status](docs/IMPLEMENTATION_STATUS.md) for the exact boundary between implemented code and unfinished features. The project is not yet a complete remote-control system and should not be deployed for remote administration until the authenticated relay handshake, controller app, capability-specific operations, and device testing are completed.
