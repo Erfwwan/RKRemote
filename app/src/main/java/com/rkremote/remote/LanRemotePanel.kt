@@ -93,6 +93,64 @@ fun LanRemotePanel() {
             output = "Screen sharing permission was cancelled."
         }
     }
+    val uploadPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) {
+            busy = true
+            scope.launch {
+                output = runCatching {
+                    withContext(Dispatchers.IO) {
+                        val resolver = context.contentResolver
+                        val fileName = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                            ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+                            ?.takeIf { it.isNotBlank() } ?: "upload.bin"
+                        val mime = resolver.getType(uri) ?: "application/octet-stream"
+                        val bytes = resolver.openInputStream(uri)?.use { input ->
+                            val result = java.io.ByteArrayOutputStream()
+                            val buffer = ByteArray(8192)
+                            var total = 0
+                            while (true) {
+                                val count = input.read(buffer)
+                                if (count < 0) break
+                                total += count
+                                require(total <= MAX_UI_TRANSFER_BYTES) { "File exceeds 8 MiB transfer limit" }
+                                result.write(buffer, 0, count)
+                            }
+                            result.toByteArray()
+                        } ?: error("Unable to read selected file")
+                        LanControllerClient.uploadFile(targetIp.trim(), targetToken.trim(), fileName, mime, bytes)
+                    }
+                }.fold(
+                    onSuccess = { "Upload complete: " + it },
+                    onFailure = { "Upload failed: " + it.message }
+                )
+                busy = false
+            }
+        }
+    }
+    val downloadPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { destination: Uri? ->
+        val documentId = pendingDownloadId
+        if (destination != null && documentId.isNotBlank()) {
+            busy = true
+            scope.launch {
+                output = runCatching {
+                    withContext(Dispatchers.IO) {
+                        val bytes = LanControllerClient.downloadFile(targetIp.trim(), targetToken.trim(), documentId)
+                        require(bytes.size <= MAX_UI_TRANSFER_BYTES) { "Downloaded file exceeds 8 MiB limit" }
+                        context.contentResolver.openOutputStream(destination, "w")?.use { it.write(bytes) }
+                            ?: error("Unable to write destination file")
+                        "Downloaded " + pendingDownloadName + " (" + bytes.size + " bytes)."
+                    }
+                }.fold(
+                    onSuccess = { it },
+                    onFailure = { "Download failed: " + it.message }
+                )
+                busy = false
+            }
+        }
+    }
+
     val localIp = remember { LanControllerClient.localIpv4() ?: "Wi-Fi address unavailable" }
     val notificationsAllowed = Build.VERSION.SDK_INT < 33 ||
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
