@@ -17,7 +17,8 @@ import com.rkremote.R
  * Visible foreground indicator for an active, user-approved remote session.
  * The persistent notification provides a local stop action.
  */
-class SessionForegroundService : Service() {\n    private var lanServer: LanAgentServer? = null
+class SessionForegroundService : Service() {
+    private var lanServer: LanAgentServer? = null
     override fun onCreate() {
         super.onCreate()
         createChannel()
