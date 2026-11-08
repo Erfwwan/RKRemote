@@ -28,7 +28,7 @@ object CloudflareOAuth {
         android.net.Uri.parse("https://dash.cloudflare.com/oauth2/auth"),
         android.net.Uri.parse("https://dash.cloudflare.com/oauth2/token"),
         null,
-        android.net.Uri.parse("https://dash.cloudflare.com/oauth2/revoke")
+        null
     )
 
     fun authorizationRequest(clientId: String): AuthorizationRequest {
