@@ -91,55 +91,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
     val room = remember { mutableStateOf(setupPrefs.getString("room_id", "").orEmpty()) }
     val role = remember { mutableStateOf(if (savedRole == "controller") CloudflareSignalingClient.Role.CONTROLLER else CloudflareSignalingClient.Role.TARGET) }
     val guideExpanded = remember { mutableStateOf(false) }
-    val cloudflareApiTokenInput = remember { mutableStateOf("") }
-    val cloudflareApiTokenSaved = remember { mutableStateOf(CloudflareApiTokenStore.hasToken(context)) }
-    val cloudflareAccountId = remember { mutableStateOf(setupPrefs.getString("cloudflare_account_id", "").orEmpty()) }
-    val cloudflareDeployBusy = remember { mutableStateOf(false) }
-    val cloudflareDeployStatus = remember { mutableStateOf("") }
     val coroutineScope = rememberCoroutineScope()
-
-    fun saveCloudflareApiToken() {
-        val token = cloudflareApiTokenInput.value.trim()
-        if (token.length < 20) {
-            cloudflareDeployStatus.value = "توکن واردشده معتبر به نظر نمی‌رسد."
-            return
-        }
-        runCatching { CloudflareApiTokenStore.save(context, token) }
-            .onSuccess {
-                cloudflareApiTokenInput.value = ""
-                cloudflareApiTokenSaved.value = true
-                cloudflareDeployStatus.value = "توکن به‌صورت رمزنگاری‌شده روی همین گوشی ذخیره شد."
-            }
-            .onFailure { cloudflareDeployStatus.value = it.message ?: "ذخیره توکن ناموفق بود." }
-    }
-
-    fun updateCloudflareWorker() {
-        val accountId = cloudflareAccountId.value.trim()
-        if (!accountId.matches(Regex("[a-fA-F0-9]{32}"))) {
-            cloudflareDeployStatus.value = "شناسه ۳۲ رقمی حساب Cloudflare را وارد کن."
-            return
-        }
-        val token = CloudflareApiTokenStore.token(context)
-        if (token.isNullOrBlank()) {
-            cloudflareDeployStatus.value = "ابتدا API Token اختصاصی خودت را وارد و ذخیره کن."
-            return
-        }
-        setupPrefs.edit().putString("cloudflare_account_id", accountId).apply()
-        coroutineScope.launch {
-            cloudflareDeployBusy.value = true
-            cloudflareDeployStatus.value = "در حال به‌روزرسانی Worker موجود..."
-            try {
-                withContext(Dispatchers.IO) {
-                    CloudflareAccountApi.updateExistingWorker(context, token, accountId)
-                }
-                cloudflareDeployStatus.value = "کد Worker با موفقیت به‌روزرسانی شد. آدرس Worker را در فیلد بالا وارد یا بررسی کن."
-            } catch (failure: Throwable) {
-                cloudflareDeployStatus.value = failure.message ?: "به‌روزرسانی Worker ناموفق بود."
-            } finally {
-                cloudflareDeployBusy.value = false
-            }
-        }
-    }
     val autoConnectPending = remember { mutableStateOf(setupPrefs.getBoolean("auto_connect", false)) }
     val status = remember { mutableStateOf("Not connected") }
     val secureRelayConnected = remember { mutableStateOf(false) }
@@ -1722,72 +1674,44 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 singleLine = true,
                 enabled = session.value == null
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(enabled = session.value == null, onClick = {
-                    runCatching {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(
-                            "https://github.com/Erfwwan/RKRemote/archive/refs/heads/feature/remote-agent-foundation.zip"
-                        )))
-                    }.onFailure { error.value = it.message ?: "دانلود بسته Worker ناموفق بود." }
-                }) { Text("دانلود بسته Worker") }
-                OutlinedButton(enabled = session.value == null, onClick = {
-                    runCatching {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://dash.cloudflare.com/")))
-                    }.onFailure { error.value = it.message ?: "بازکردن داشبورد Cloudflare ناموفق بود." }
-                }) { Text("داشبورد Cloudflare") }
-                OutlinedButton(onClick = { guideExpanded.value = !guideExpanded.value }, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp)) { Text("?", fontWeight = FontWeight.Bold) }
-            }
-            OutlinedTextField(
-                value = cloudflareAccountId.value,
-                onValueChange = { cloudflareAccountId.value = it.trim() },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("شناسه حساب Cloudflare (Account ID)") },
-                placeholder = { Text("شناسه ۳۲ رقمی حساب") },
-                singleLine = true,
-                enabled = session.value == null
-            )
-            OutlinedTextField(
-                value = cloudflareApiTokenInput.value,
-                onValueChange = { cloudflareApiTokenInput.value = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text(if (cloudflareApiTokenSaved.value) "API Token جدید (توکن قبلی ذخیره است)" else "API Token اختصاصی Cloudflare") },
-                placeholder = { Text("توکن را فقط در همین گوشی وارد کن") },
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-                enabled = session.value == null
-            )
             Text(
-                "برای اتصال معمولی فقط آدرس Worker لازم است؛ API Token اختیاری است و فقط برای به‌روزرسانی Worker موجود استفاده می‌شود.",
-                style = MaterialTheme.typography.bodySmall,
+                "برای راه‌اندازی Worker دیگر لازم نیست سورس را دستی در Cloudflare آپلود کنی. انتشار از مخزن GitHub انجام می‌شود؛ حساب GitHub را به Cloudflare وصل نمی‌کنیم.",
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
-                    enabled = cloudflareApiTokenInput.value.isNotBlank() && session.value == null,
-                    onClick = { saveCloudflareApiToken() }
-                ) { Text("ذخیره امن توکن") }
-                OutlinedButton(
-                    enabled = cloudflareApiTokenSaved.value && session.value == null,
+                    enabled = session.value == null,
                     onClick = {
-                        CloudflareApiTokenStore.clear(context)
-                        cloudflareApiTokenSaved.value = false
-                        cloudflareDeployStatus.value = "توکن ذخیره‌شده از این گوشی پاک شد؛ برای بی‌اعتبارشدن واقعی، آن را در Cloudflare هم Revoke کن."
+                        runCatching {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(
+                                "https://github.com/Erfwwan/RKRemote/settings/secrets/actions"
+                            )))
+                        }.onFailure { error.value = it.message ?: "بازکردن تنظیمات GitHub ناموفق بود." }
                     }
-                ) { Text("پاک‌کردن توکن") }
+                ) { Text("تنظیم دسترسی یک‌باره") }
+                OutlinedButton(
+                    enabled = session.value == null,
+                    onClick = {
+                        runCatching {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(
+                                "https://github.com/Erfwwan/RKRemote/actions/workflows/deploy-cloudflare-worker.yml"
+                            )))
+                        }.onFailure { error.value = it.message ?: "بازکردن صفحه انتشار ناموفق بود." }
+                    }
+                ) { Text("انتشار Worker") }
             }
             OutlinedButton(
-                enabled = cloudflareApiTokenSaved.value && !cloudflareDeployBusy.value && session.value == null,
-                onClick = { updateCloudflareWorker() },
+                enabled = session.value == null,
+                onClick = {
+                    runCatching {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(
+                            "https://github.com/Erfwwan/RKRemote/blob/feature/remote-agent-foundation/docs/CLOUDFLARE_SETUP.md"
+                        )))
+                    }.onFailure { error.value = it.message ?: "بازکردن راهنما ناموفق بود." }
+                },
                 modifier = Modifier.fillMaxWidth()
-            ) { Text(if (cloudflareDeployBusy.value) "در حال به‌روزرسانی..." else "به‌روزرسانی Worker با API Token") }
-            OutlinedButton(onClick = {
-                runCatching {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://dash.cloudflare.com/profile/api-tokens")))
-                }.onFailure { cloudflareDeployStatus.value = it.message ?: "بازکردن صفحه ساخت API Token ناموفق بود." }
-            }, modifier = Modifier.fillMaxWidth()) { Text("ساخت API Token در Cloudflare") }
-            if (cloudflareDeployStatus.value.isNotBlank()) {
-                Text(cloudflareDeployStatus.value, style = MaterialTheme.typography.bodySmall)
-            }
+            ) { Text("راهنمای تصویری و مراحل کامل") }
             androidx.compose.animation.AnimatedVisibility(visible = guideExpanded.value) {
                 Card(
                     modifier = Modifier.fillMaxWidth().animateContentSize(),
@@ -1795,18 +1719,20 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
                 ) {
                     Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("راهنمای اتصال Cloudflare", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-                        Text("۱) دکمه «دانلود بسته Worker» فقط ZIP عمومی سورس را دریافت می‌کند و هیچ دسترسی GitHub ایجاد نمی‌کند.", fontSize = 11.sp, lineHeight = 15.sp)
-                        Text("۲) در Termux یا کامپیوتر، پوشه cloudflare/worker را از ZIP استخراج کن و npm install را اجرا کن.", fontSize = 11.sp, lineHeight = 15.sp)
-                        Text("۳) دستور npx wrangler login را اجرا کن و فقط حساب Cloudflare خودت را در صفحه رسمی تأیید کن؛ اتصال GitHub لازم نیست.", fontSize = 11.sp, lineHeight = 15.sp)
-                        Text("۴) دستور npx wrangler deploy را اجرا و ایجاد Durable Object را تأیید کن. آدرس Worker در پایان نمایش داده می‌شود.", fontSize = 11.sp, lineHeight = 15.sp)
-                        Text("۵) آدرس را با قالب wss://نام‌Worker.زیر‌دامنه‌تو.workers.dev در کادر بالا وارد کن.", fontSize = 11.sp, lineHeight = 15.sp)
-                        Text("۶) برای اتصال عادی API Token و Account ID لازم نیست؛ این دو فقط برای به‌روزرسانی اختیاری Worker از داخل برنامه‌اند.", fontSize = 11.sp, lineHeight = 15.sp)
-                        Text("۷) گوشی مقصد را به اتاق متصل کن و لینک دعوت را برای گوشی دوم بفرست. هر دو گوشی باید کد شش‌رقمی یکسان را بررسی و تأیید کنند.", fontSize = 11.sp, lineHeight = 15.sp)
-                        Text("نکته: Cloudflare محتوای رمزنگاری‌شده را نمی‌خواند، اما IP، زمان اتصال و حجم ترافیک را می‌بیند.", fontSize = 10.sp, lineHeight = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("راه‌اندازی یک‌باره", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                        Text("۱) در Cloudflare یک API Token با دسترسی محدود برای انتشار Workers بساز؛ از Global API Key استفاده نکن.", fontSize = 11.sp, lineHeight = 15.sp)
+                        Text("۲) در GitHub از Settings ← Secrets and variables ← Actions دو Repository Secret بساز: CLOUDFLARE_API_TOKEN و CLOUDFLARE_ACCOUNT_ID.", fontSize = 11.sp, lineHeight = 15.sp)
+                        Text("۳) در تب Actions، گزینه Deploy Cloudflare Worker را باز کن و Run workflow را بزن.", fontSize = 11.sp, lineHeight = 15.sp)
+                        Text("۴) بعد از موفقیت، آدرس Worker را از خلاصه اجرای Workflow بردار و در کادر بالای همین صفحه وارد کن؛ قالب آدرس wss://...workers.dev است.", fontSize = 11.sp, lineHeight = 15.sp)
+                        Text("۵) از دفعات بعد، هر تغییر در پوشه cloudflare/worker به‌طور خودکار منتشر می‌شود. نیازی به آپلود دستی سورس یا اتصال GitHub به Cloudflare نیست.", fontSize = 11.sp, lineHeight = 15.sp)
+                        Text("نکته امنیتی: API Token فقط در GitHub Secrets می‌ماند؛ آن را داخل برنامه، APK یا پیام برای دیگران قرار نده.", fontSize = 10.sp, lineHeight = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
+            OutlinedButton(
+                onClick = { guideExpanded.value = !guideExpanded.value },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text(if (guideExpanded.value) "بستن راهنما" else "نمایش راهنمای کوتاه") }
             Text(
                 if (role.value == CloudflareSignalingClient.Role.TARGET)
                     "این گوشی نقش مقصد را دارد. با شروع اتصال، لینک دعوت گوشی کنترل‌کننده ساخته می‌شود."
