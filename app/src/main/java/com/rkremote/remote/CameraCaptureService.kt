@@ -36,12 +36,25 @@ object CameraFrameStore {
         private set
     @Volatile var latestMimeType: String = "image/jpeg"
         private set
+    @Volatile private var capturing = false
     val latestJpeg: ByteArray? get() = latestFrame
+    @Synchronized
+    fun setCapturing(value: Boolean) {
+        capturing = value
+        if (!value) {
+            latestFrame = null
+            latestMimeType = "image/jpeg"
+        }
+    }
+    @Synchronized
     fun publish(bytes: ByteArray, mimeType: String = "image/jpeg") {
+        if (!capturing) return
         latestFrame = bytes
         latestMimeType = mimeType
     }
+    @Synchronized
     fun clear() {
+        capturing = false
         latestFrame = null
         latestMimeType = "image/jpeg"
     }
@@ -147,6 +160,7 @@ class CameraCaptureService : Service() {
         val imageReader = ImageReader.newInstance(size.width, size.height, ImageFormat.JPEG, 2)
         reader = imageReader
         active.set(true)
+        CameraFrameStore.setCapturing(true)
         imageReader.setOnImageAvailableListener({ source ->
             if (!active.get() || generation != cameraGeneration) return@setOnImageAvailableListener
             val now = android.os.SystemClock.elapsedRealtime()
@@ -161,7 +175,9 @@ class CameraCaptureService : Service() {
                 val bytes = ByteArray(buffer.remaining())
                 buffer.get(bytes)
                 val (encoded, mimeType) = compressForTransfer(bytes)
-                CameraFrameStore.publish(encoded, mimeType)
+                if (active.get() && generation == cameraGeneration) {
+                    CameraFrameStore.publish(encoded, mimeType)
+                }
             } finally {
                 image.close()
             }
