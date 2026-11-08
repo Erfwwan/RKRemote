@@ -347,19 +347,48 @@ private fun LocalSetupScreen(darkMode: Boolean, onToggleTheme: () -> Unit) {
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         item {
-                            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(30.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
-                                Box(Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(
-                                    MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.surfaceVariant
-                                ))).padding(22.dp)) {
-                                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                        Text("RKREMOTE  /  SECURE LINK", style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                                        Text("کنترل هوشمند،\nاتصال امن.", style = MaterialTheme.typography.headlineMedium,
-                                            fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                                        Text("مدیریت دستگاه‌های متصل با ارتباط رمزنگاری‌شده و کنترل دسترسی شفاف.",
-                                            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                                        Button(onClick = { currentPage = AppPage.CONNECTIONS }) { Text("ورود به بخش اتصال  ↗") }
+                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                    Text("دستگاه‌ها", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                                    Text("اتصال‌ها و ابزارهای مدیریت از راه دور",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(18.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+                                ) {
+                                    Column(
+                                        Modifier.fillMaxWidth().padding(18.dp),
+                                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                                Text("اتصال امن Cloudflare", style = MaterialTheme.typography.titleMedium,
+                                                    fontWeight = FontWeight.Bold)
+                                                Text("جفت‌سازی و مدیریت ارتباط دستگاه‌ها",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                            Surface(
+                                                shape = RoundedCornerShape(8.dp),
+                                                color = MaterialTheme.colorScheme.primaryContainer
+                                            ) {
+                                                Text("E2E", modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                        Button(
+                                            onClick = { currentPage = AppPage.CONNECTIONS },
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) { Text("تنظیم یا اتصال دستگاه") }
                                     }
                                 }
                             }
