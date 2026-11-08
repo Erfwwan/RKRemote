@@ -59,7 +59,7 @@ object LanControllerClient {
         }
         require(token.length >= 24) { "Invalid session token" }
         require(
-            (method == "GET" && (endpoint in setOf("/health", "/files", "/screen.jpg") ||
+            (method == "GET" && (endpoint in setOf("/health", "/files", "/screen.jpg", "/camera.jpg", "/audio/chunk") ||
                 endpoint.startsWith("/file/download?"))) ||
                 (method == "POST" && endpoint in setOf("/input/tap", "/input/gesture", "/input/text", "/file/upload"))
         ) { "Unsupported request" }
@@ -102,7 +102,7 @@ object LanControllerClient {
                     response[i + 2] == 13.toByte() && response[i + 3] == 10.toByte()
             } ?: throw IllegalStateException("Invalid response from target")
             val status = response.copyOfRange(0, split).toString(Charsets.US_ASCII).substringBefore("\r\n")
-            if (!status.contains(" 200 ") && !status.contains(" 201 ") && !status.contains(" 202 ")) {
+            if (!status.contains(" 200 ") && !status.contains(" 201 ") && !status.contains(" 202 ") && !status.contains(" 204 ")) {
                 val responseBody = response.copyOfRange(split + 4, response.size).toString(Charsets.UTF_8)
                 throw IllegalStateException("Target response: $status - $responseBody")
             }
