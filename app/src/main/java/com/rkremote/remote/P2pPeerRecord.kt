@@ -126,7 +126,11 @@ data class P2pPeerRecord(
             }
         }
 
-        fun parse(raw: String, nowMillis: Long = System.currentTimeMillis()): P2pPeerRecord {
+        fun parse(
+            raw: String,
+            nowMillis: Long = System.currentTimeMillis(),
+            expectedPeerId: String? = null
+        ): P2pPeerRecord {
             require(raw.toByteArray(Charsets.UTF_8).size <= MAX_RECORD_BYTES) {
                 "Peer record exceeds maximum size"
             }
@@ -146,6 +150,9 @@ data class P2pPeerRecord(
                 signatureBase64 = json.getString("signature")
             )
             require(record.verify(nowMillis)) { "Peer record signature or validity check failed" }
+            if (expectedPeerId != null) {
+                require(record.peerId == expectedPeerId) { "Peer record does not match the expected paired device" }
+            }
             return record
         }
 
