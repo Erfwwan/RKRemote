@@ -45,11 +45,7 @@ class SessionForegroundService : Service() {
             if (lanServer == null) {
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf(startId)
-            } else {
-                getSystemService(NotificationManager::class.java).notify(
-                    NOTIFICATION_ID,
-                    buildNotification("LAN remote session remains active")
-                )
+                return START_STICKY
             }
             return START_NOT_STICKY
         }
