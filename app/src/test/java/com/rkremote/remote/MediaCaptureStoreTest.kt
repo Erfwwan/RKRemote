@@ -30,6 +30,7 @@ class MediaCaptureStoreTest {
 
     @Test
     fun microphoneStoreKeepsOnlyLatestChunkAndConsumesOnce() {
+        MicrophoneChunkStore.setCapturing(true)
         MicrophoneChunkStore.publish(byteArrayOf(1, 2))
         val latest = byteArrayOf(3, 4, 5)
         MicrophoneChunkStore.publish(latest)
@@ -40,9 +41,21 @@ class MediaCaptureStoreTest {
 
     @Test
     fun microphoneStoreClearsPendingAudioWhenStopped() {
+        MicrophoneChunkStore.setCapturing(true)
         MicrophoneChunkStore.publish(byteArrayOf(8, 9))
 
         MicrophoneChunkStore.clear()
+
+        assertNull(MicrophoneChunkStore.take())
+    }
+
+    @Test
+    fun microphoneStoreRejectsLateChunkAfterStop() {
+        MicrophoneChunkStore.setCapturing(true)
+        MicrophoneChunkStore.publish(byteArrayOf(1, 2))
+        MicrophoneChunkStore.setCapturing(false)
+
+        MicrophoneChunkStore.publish(byteArrayOf(3, 4))
 
         assertNull(MicrophoneChunkStore.take())
     }
