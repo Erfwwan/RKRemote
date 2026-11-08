@@ -15,7 +15,7 @@ RKRemote does not implement covert camera/microphone capture, hidden persistence
 - User-selected persistent folder access through Android Storage Access Framework
 - Notification listener service, enabled manually in Android Notification Access settings
 - Bounded local notification event history (500 events), encrypted using AES-GCM with a non-exportable Android Keystore key
-- Notification contents are stored locally only; this milestone does not transmit them
+- Notification contents are stored locally in an encrypted bounded history. The Section 6 prototype can expose a latest-100 snapshot only after a separate local sharing switch is enabled on the target phone.
 
 **Available in the current development branch:** an owner-started, visible LAN agent and same-app controller. On a trusted Wi-Fi network, the controller can test the target phone connection and list names/metadata from a folder explicitly selected on that phone. This is an early runnable milestone, not full remote control.
 
@@ -41,7 +41,8 @@ Open the repository in Android Studio and run the app configuration on an Androi
 5. Scoped file/gallery browsing, contacts and call-history access.
 6. Notification history forwarding after explicit pairing and user opt-in.
 7. Owner-approved camera and microphone capture prototypes (low-rate JPEG and PCM chunk polling).\n8. Two-way audio prototype: target-local PTT speaker opt-in, hold-to-talk PCM transmission from controller, and existing target-microphone listen path.
-8. Connection recovery, diagnostics, and long-duration battery/stability testing.
+9. Notification history forwarding: target-local Notification Access plus a separate sharing opt-in; controller can request the latest 100 stored events.
+9. Connection recovery, diagnostics, and long-duration battery/stability testing.
 
 ## Privacy and security
 
@@ -58,7 +59,7 @@ Open the repository in Android Studio and run the app configuration on an Androi
 
 A GitHub Actions workflow now runs a debug APK compilation on pushes, pull requests, and manual dispatches. The workflow uses Gradle 8.11.1 with JDK 17.
 
-**Important:** the repository is not yet a complete remote-control product. The current Android application includes local capability setup, an authenticated LAN agent/controller, JPEG screen snapshots, and an owner-enabled single-tap prototype. Continuous screen video, encrypted media transport, low-latency/jitter-buffered voice, physical-device audio/camera validation, and secure internet access remain future work. Do not rely on the app for remote access until those features are implemented and tested on real devices.
+**Important:** the repository is not yet a complete remote-control product. The current Android application includes local capability setup, an authenticated LAN agent/controller, JPEG screen snapshots, owner-enabled remote input, two-way audio prototypes, and locally approved notification history viewing. Continuous screen video, encrypted media transport, low-latency/jitter-buffered voice, physical-device audio/camera validation, and secure internet access remain future work. Do not rely on the app for remote access until those features are implemented and tested on real devices.
 
 
 
@@ -79,3 +80,13 @@ See [implementation status](docs/IMPLEMENTATION_STATUS.md) for the exact boundar
 7. Use **Stop** on the target phone or **Stop session** in its notification to end the LAN agent. For screen capture, use **Stop screen** or the screen-sharing notification's stop action. To share a screen, tap **Share this screen** on the target and approve Android's capture dialog; on the controller, tap **Start live preview** for periodic JPEG snapshots. For the single-tap prototype, manually enable RKRemote touch control from Android Accessibility settings on the target phone, then use the X/Y normalized coordinate fields on the controller and tap **Send one tap**. The screen snapshot endpoint is authenticated with the same temporary token.
 
 The LAN file browser remains read-only and lists names and metadata only. Screen sharing sends JPEG snapshots of the target display only after Android consent; remote input supports tap, swipe, long press, and focused-field text insertion after manual Accessibility enablement. Camera and microphone require local start and Android permissions. The token is transmitted without TLS, so do not use public Wi-Fi, untrusted networks, or port forwarding. Never expose TCP port 18765 to the internet.
+
+
+## Section 6 · Notification history
+
+On the target phone:
+1. Open **Notification Access settings** and manually enable RKRemote.
+2. Return to RKRemote and enable **Allow sharing with paired controller**. This is a separate local opt-in.
+3. Keep the visible LAN agent session active.
+
+On the controller phone, enter the target IP and temporary token, then select **Load notification history**. The controller receives at most the latest 100 stored notification events. Disable the sharing switch on the target phone to block future reads; disabling Android Notification Access also blocks the endpoint. The event store remains encrypted locally, but the LAN transfer itself is still plaintext bearer-token HTTP. Use trusted private Wi-Fi only. This is an on-demand snapshot, not background push or continuous synchronization.
