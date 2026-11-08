@@ -8,6 +8,10 @@ RKRemote does not implement covert camera/microphone capture, hidden persistence
 
 ## Current status
 
+## Internet P2P migration status
+
+The decentralized internet migration has started. Stage 1 adds a non-exportable Android Keystore P-256 device identity and signed, expiring peer-advertisement records. Kademlia DHT discovery, direct NAT traversal, secure peer transport, and encrypted community-relay fallback are **not implemented yet**. The existing TCP bearer-token protocol is plaintext and LAN-only; never expose port 18765 to the public internet. Follow [the P2P migration plan](docs/INTERNET_P2P_MIGRATION.md) for stages and acceptance criteria.
+
 **Milestone 1 — Local capability setup**
 
 - Kotlin + Jetpack Compose Android app shell
