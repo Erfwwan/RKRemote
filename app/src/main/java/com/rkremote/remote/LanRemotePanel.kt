@@ -25,6 +25,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,7 +38,11 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.security.SecureRandom
@@ -53,6 +58,8 @@ fun LanRemotePanel() {
     var output by remember { mutableStateOf("No request yet.") }
     var busy by remember { mutableStateOf(false) }
     var screenBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var previewJob by remember { mutableStateOf<Job?>(null) }
+    DisposableEffect(Unit) { onDispose { previewJob?.cancel() } }
     val projectionManager = remember { context.getSystemService(MediaProjectionManager::class.java) }
     val screenConsentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val data = result.data
@@ -153,6 +160,39 @@ fun LanRemotePanel() {
                     }
                 }) { Text("List selected folder") }
             }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(enabled = !busy && previewJob == null, onClick = {
+                    val ip = targetIp.trim()
+                    val auth = targetToken.trim()
+                    previewJob = scope.launch {
+                        try {
+                            while (isActive) {
+                                val bitmap = try {
+                                    withContext(Dispatchers.IO) {
+                                        val bytes = LanControllerClient.requestBytes(ip, auth, "/screen.jpg")
+                                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: error("Invalid screen image")
+                                    }
+                                } catch (cancelled: CancellationException) {
+                                    throw cancelled
+                                } catch (error: Exception) {
+                                    output = "Live preview stopped: ${error.message}"
+                                    break
+                                }
+                                screenBitmap = bitmap
+                                output = "Preview running · JPEG snapshots about once per second."
+                                delay(1000)
+                            }
+                        } finally {
+                            previewJob = null
+                        }
+                    }
+                }) { Text("Start live preview") }
+                OutlinedButton(enabled = previewJob != null, onClick = {
+                    previewJob?.cancel()
+                    previewJob = null
+                    output = "Live preview stopped."
+                }) { Text("Stop preview") }
+            }
             OutlinedButton(enabled = !busy, onClick = {
                 busy = true
                 scope.launch {
@@ -166,14 +206,14 @@ fun LanRemotePanel() {
                     result.onFailure { output = "Screen request failed: ${it.message}" }
                     busy = false
                 }
-            }) { Text("View screen snapshot") }
+            }) { Text("Get one snapshot") }
             screenBitmap?.let { bitmap ->
                 Image(bitmap = bitmap.asImageBitmap(), contentDescription = "Remote phone screen snapshot", modifier = Modifier.fillMaxWidth(), contentScale = ContentScale.Fit)
             }
             Text("Result", fontWeight = FontWeight.SemiBold)
             Text(output, style = MaterialTheme.typography.bodySmall)
             Text(
-                "Prototype boundary: local trusted Wi-Fi only; read-only folder listing and status. No internet relay, camera, microphone or file download. Screen sharing is an owner-approved still-image snapshot, not continuous video or remote input.",
+                "Prototype boundary: local trusted Wi-Fi only; read-only folder listing and status. No internet relay, camera, microphone or file download. Screen sharing uses owner-approved JPEG snapshots; live preview polls snapshots about once per second and is not a continuous video stream or remote input.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
