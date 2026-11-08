@@ -273,9 +273,22 @@ fun LanRemotePanel() {
                                     }
                                     result.onSuccess { health ->
                                         failures = 0
-                                        connectionStatus = "Connected · uptime " +
-                                            (health.optLong("uptimeMs") / 1000L) + "s · clients " +
-                                            health.optInt("activeClients")
+                                        val listenerError = health.opt("lastError")
+                                            ?.takeUnless { it == JSONObject.NULL }
+                                            ?.toString()
+                                            ?.takeIf { it.isNotBlank() }
+                                        connectionStatus = buildString {
+                                            append("Connected · uptime ")
+                                            append(health.optLong("uptimeMs") / 1000L)
+                                            append("s · active ")
+                                            append(health.optInt("activeClients"))
+                                            append(" · queued ")
+                                            append(health.optInt("queuedClients"))
+                                            if (listenerError != null) {
+                                                append(" · agent error: ")
+                                                append(listenerError.take(80))
+                                            }
+                                        }
                                     }.onFailure { error ->
                                         failures++
                                         connectionStatus = "Disconnected · " +
@@ -299,9 +312,24 @@ fun LanRemotePanel() {
                                     ))
                                 }
                             }
-                            result.onSuccess {
-                                connectionStatus = "Connected · uptime " + (it.optLong("uptimeMs") / 1000L) + "s"
-                                output = it.toString(2)
+                            result.onSuccess { health ->
+                                val listenerError = health.opt("lastError")
+                                    ?.takeUnless { it == JSONObject.NULL }
+                                    ?.toString()
+                                    ?.takeIf { it.isNotBlank() }
+                                connectionStatus = buildString {
+                                    append("Connected · uptime ")
+                                    append(health.optLong("uptimeMs") / 1000L)
+                                    append("s · active ")
+                                    append(health.optInt("activeClients"))
+                                    append(" · queued ")
+                                    append(health.optInt("queuedClients"))
+                                    if (listenerError != null) {
+                                        append(" · agent error: ")
+                                        append(listenerError.take(80))
+                                    }
+                                }
+                                output = health.toString(2)
                             }.onFailure {
                                 connectionStatus = "Disconnected · " + it.message
                                 output = "Health check failed: " + it.message
