@@ -32,6 +32,9 @@ fun SecureInternetPanel() {
     val url = remember { mutableStateOf("") }
     val room = remember { mutableStateOf("") }
     val role = remember { mutableStateOf(CloudflareSignalingClient.Role.TARGET) }
+    val turnUrls = remember { mutableStateOf("") }
+    val turnUsername = remember { mutableStateOf("") }
+    val turnCredential = remember { mutableStateOf("") }
     val status = remember { mutableStateOf("Not connected") }
     val peerId = remember { mutableStateOf<String?>(null) }
     val sas = remember { mutableStateOf<String?>(null) }
@@ -64,6 +67,9 @@ fun SecureInternetPanel() {
                 label = { Text("64-character room ID") },
                 singleLine = true
             )
+            OutlinedTextField(value = turnUrls.value, onValueChange = { turnUrls.value = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Optional TURN URLs (comma-separated)") }, placeholder = { Text("turn:turn.example.net:3478, turns:turn.example.net:5349") }, singleLine = true)
+            OutlinedTextField(value = turnUsername.value, onValueChange = { turnUsername.value = it }, modifier = Modifier.fillMaxWidth(), label = { Text("TURN username") }, singleLine = true)
+            OutlinedTextField(value = turnCredential.value, onValueChange = { turnCredential.value = it }, modifier = Modifier.fillMaxWidth(), label = { Text("TURN credential") }, singleLine = true)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { role.value = CloudflareSignalingClient.Role.TARGET }) {
                     Text(if (role.value == CloudflareSignalingClient.Role.TARGET) "✓ Target" else "Target")
@@ -90,6 +96,10 @@ fun SecureInternetPanel() {
                                 identityStore = identityStore,
                                 staticKeyStore = SecureLinkStaticKeyStore(context)
                             )
+                            val configuredTurnServers = if (turnUrls.value.isBlank() && turnUsername.value.isBlank() && turnCredential.value.isBlank()) emptyList() else {
+                                require(turnUrls.value.isNotBlank() && turnUsername.value.isNotBlank() && turnCredential.value.isNotBlank()) { "Enter TURN URLs, username and credential together" }
+                                listOf(SecureWebRtcPeer.TurnServer(turnUrls.value.split(',').map { it.trim() }.filter { it.isNotEmpty() }, turnUsername.value, turnCredential.value))
+                            }
                             val created = SecureInternetPeer(
                                 context = context,
                                 baseWssUrl = url.value,
@@ -97,6 +107,7 @@ fun SecureInternetPanel() {
                                 role = role.value,
                                 handshake = handshake,
                                 identityStore = identityStore,
+                                turnServers = configuredTurnServers,
                                 listener = object : SecureInternetPeer.Listener {
                                     override fun onPeerVerificationRequired(id: String, code: String) {
                                         mainHandler.post {
@@ -173,7 +184,7 @@ fun SecureInternetPanel() {
             error.value?.let { Text("Error: $it", color = MaterialTheme.colorScheme.error) }
             Spacer(Modifier.height(2.dp))
             Text(
-                "Setup: deploy cloudflare/worker, enter its workers.dev WSS URL, generate one room ID on the controller, enter that same ID on the target, connect target first, then controller. For difficult NATs, add your own TURN service configuration in code; Cloudflare Worker is signaling only and does not relay media.",
+                "Setup: deploy cloudflare/worker, enter its workers.dev WSS URL, generate one room ID on the controller, enter that same ID on the target, connect target first, then controller. For difficult NATs, enter TURN URLs and short-lived credentials from a TURN service you control. Cloudflare Worker is signaling only and does not relay media.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
