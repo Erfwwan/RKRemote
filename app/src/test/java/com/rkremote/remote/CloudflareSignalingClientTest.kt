@@ -83,4 +83,22 @@ class CloudflareSignalingClientTest {
             )
         }
     }
+
+    @Test
+    fun closeIsTerminalAndIdempotent() {
+        val client = CloudflareSignalingClient(
+            "wss://rkremote.example.workers.dev",
+            "c".repeat(64),
+            CloudflareSignalingClient.Role.TARGET,
+            listener
+        )
+        client.close()
+        client.close()
+
+        assertThrows(IllegalStateException::class.java) {
+            client.connect()
+        }
+        org.junit.Assert.assertFalse(client.sendEncryptedFrame(byteArrayOf(1)))
+    }
+
 }
