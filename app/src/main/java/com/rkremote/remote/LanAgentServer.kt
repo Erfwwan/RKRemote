@@ -172,6 +172,7 @@ class LanAgentServer(
                 return
             }
             val endpoint = parts[1].substringBefore('?')
+            if (endpoint.startsWith("/file/")) client.soTimeout = 120_000
             if (parts[0] == "POST" && endpoint == "/audio/ptt") {
                 val length = headers["content-length"]?.toIntOrNull()
                 if (length == null || length !in 1..PttAudioQueue.MAX_CHUNK_BYTES) {
@@ -268,7 +269,7 @@ class LanAgentServer(
                 val parentId = runCatching {
                     String(Base64.getUrlDecoder().decode(headers["x-target-directory"] ?: ""), Charsets.UTF_8)
                 }.getOrDefault("")
-                val result = runCatching { saveUploadedFile(fileName, mime, input, output, length, parentId) }
+                val result = runCatching { saveUploadedFile(fileName, mime, input, length, parentId) }
                 if (result.isFailure) {
                     if (!client.isClosed) respond(output, 400, JSONObject().put("error", result.exceptionOrNull()?.message ?: "Upload failed"))
                 } else {
@@ -355,7 +356,8 @@ class LanAgentServer(
                     .put("activeClients", clientSockets.size)
                     .put("queuedClients", clients.queue.size)
                     .put("lastError", lastError ?: JSONObject.NULL)
-                "/files" -> listSelectedFolder(queryParameter(parts[1], "parent"))
+                "/files" -> runCatching { listSelectedFolder(queryParameter(parts[1], "parent")) }
+                    .getOrElse { JSONObject().put("error", it.message ?: "Unable to list selected folder").put("items", JSONArray()) }
                 else -> {
                     respond(output, 404, JSONObject().put("error", "Not found"))
                     return
@@ -512,7 +514,6 @@ class LanAgentServer(
         name: String,
         mime: String,
         input: InputStream,
-        output: OutputStream,
         length: Long,
         parentId: String
     ) {
@@ -567,18 +568,6 @@ class LanAgentServer(
             val count = input.read(buffer)
             if (count < 0) break
             output.write(buffer, 0, count)
-        }
-        output.flush()
-    }
-
-    private fun copyExactly(input: InputStream, output: OutputStream, length: Long) {
-        val buffer = ByteArray(64 * 1024)
-        var remaining = length
-        while (remaining > 0L) {
-            val count = input.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
-            if (count < 0) throw java.io.IOException("Incomplete file body")
-            output.write(buffer, 0, count)
-            remaining -= count.toLong()
         }
         output.flush()
     }
@@ -672,7 +661,6 @@ class LanAgentServer(
 
     companion object {
         const val DEFAULT_PORT = 18765
-        private const val MAX_LIST_ITEMS = 200
         private const val MAX_REQUEST_LINE = 2048
         private const val MAX_HEADER_LINE_BYTES = 2048
         private const val MAX_HEADERS = 24
