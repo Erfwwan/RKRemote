@@ -26,6 +26,7 @@ class SecureInternetPeer(
     handshake: SecureLinkHandshake,
     identityStore: P2pIdentityStore,
     turnServers: List<SecureWebRtcPeer.TurnServer> = emptyList(),
+    private val commandRouter: SecureRemoteCommandRouter? = null,
     private val listener: Listener
 ) : AutoCloseable {
 
@@ -36,6 +37,7 @@ class SecureInternetPeer(
         fun onWebRtcConnected()
         fun onData(payload: ByteArray)
         fun onRemoteMessage(message: RemoteMessage) {}
+        fun onCommandResult(message: RemoteMessage, result: SecureRemoteCommandRouter.Result) {}
         fun onRoomEvent(type: String, payload: JSONObject)
         fun onDisconnected(reason: String)
         fun onFailure(error: Throwable)
@@ -53,6 +55,7 @@ class SecureInternetPeer(
     private val pendingSignals = ArrayDeque<ByteArray>()
     private val lock = Any()
     private var webRtc: SecureWebRtcPeer? = null
+    @Volatile private var authenticatedPeerId: String? = null
     private lateinit var secureSession: SecureLinkCloudflareSession
 
     init {
@@ -66,6 +69,7 @@ class SecureInternetPeer(
                 override fun onSecureReady(peerId: String) {
                     try {
                         require(peerId != localPeerId) { "A device cannot connect to itself" }
+                        authenticatedPeerId = peerId
                         listener.onSecureSignalingReady(peerId)
                         val rtc = SecureWebRtcPeer(
                             appContext,
@@ -84,6 +88,17 @@ class SecureInternetPeer(
                                         val message = RemoteMessage.parse(payload.toString(Charsets.UTF_8))
                                         messageGuard.accept(message, System.currentTimeMillis())
                                         listener.onData(payload)
+                                        if (role == CloudflareSignalingClient.Role.TARGET &&
+                                            SecureRemoteCommandRouter.isCommandType(message.type)) {
+                                            val peerId = authenticatedPeerId
+                                                ?: error("Authenticated peer identity is not ready")
+                                            val result = commandRouter?.dispatch(peerId, message)
+                                                ?: SecureRemoteCommandRouter.Result(
+                                                    false,
+                                                    "Target command router is not configured"
+                                                )
+                                            listener.onCommandResult(message, result)
+                                        }
                                         listener.onRemoteMessage(message)
                                     } catch (error: Throwable) {
                                         listener.onFailure(error)
@@ -155,6 +170,26 @@ class SecureInternetPeer(
         secureSession.approvePeer(shortAuthenticationString, expectedPeerId)
     }
 
+    /**
+     * Explicitly activate the target-side command allow-list after local owner
+     * approval. Completing the Noise handshake alone grants no commands.
+     */
+    fun activateOwnerApprovedCommands(capabilities: Set<RemoteCapability>) {
+        check(!closed.get()) { "Secure internet session is closed" }
+        check(role == CloudflareSignalingClient.Role.TARGET) {
+            "Only the target device can grant remote command capabilities"
+        }
+        val peerId = authenticatedPeerId ?: error("No authenticated peer is connected")
+        require(capabilities.isNotEmpty()) { "At least one explicit capability grant is required" }
+        val router = commandRouter ?: error("No target command router is configured")
+        router.beginOwnerApprovedSession(peerId, capabilities)
+    }
+
+    /** Revoke every remote command grant without closing the encrypted link. */
+    fun revokeOwnerApprovedCommands() {
+        commandRouter?.endSession()
+    }
+
     /** Send a bounded, versioned application message over the DTLS DataChannel. */
     fun sendMessage(type: String, payload: JSONObject = JSONObject()): Boolean {
         if (closed.get()) return false
@@ -192,6 +227,8 @@ class SecureInternetPeer(
             webRtc?.close()
             webRtc = null
         }
+        commandRouter?.endSession()
+        authenticatedPeerId = null
         secureSession.close()
     }
 
