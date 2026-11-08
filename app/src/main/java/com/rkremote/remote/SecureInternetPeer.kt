@@ -46,10 +46,10 @@ class SecureInternetPeer(
     private val turnConfig = turnServers.toList()
     private val closed = AtomicBoolean(false)
     private val outboundSequence = AtomicLong(0)
-    private val messageGuard = SecureMessageGuard(sessionId)
     private val sessionId = MessageDigest.getInstance("SHA-256")
         .digest(roomId.toByteArray(Charsets.UTF_8))
         .take(16).joinToString("") { "%02x".format(it) }
+    private val messageGuard = SecureMessageGuard(sessionId)
     private val pendingSignals = ArrayDeque<ByteArray>()
     private val lock = Any()
     private var webRtc: SecureWebRtcPeer? = null
