@@ -10,22 +10,18 @@ Consent-based Android remote-device management for devices owned by the operator
 - **No ICE/STUN/TURN setup:** no direct WebRTC path is required. All application data travels through Cloudflare.
 - **Automatic pairing invitation:** the target creates a random room and shares an RKRemote invitation link; the controller opens it and receives the Worker URL, room ID and role automatically.
 
-## Cloudflare account integration
+## Deploy your Cloudflare Worker (no GitHub account linking)
 
-Each user deploys a separate Worker into their own Cloudflare account. **GitHub account linking is not required.** The old Cloudflare Deploy button used GitHub's import integration; instead, download the public source ZIP and deploy the included Worker with Wrangler CLI:
+The recommended setup uses **GitHub Actions**. You do not connect GitHub to Cloudflare, manually upload Worker source, or install Wrangler.
 
-```sh
-cd cloudflare/worker
-npm install
-npx wrangler login
-npx wrangler deploy
-```
+1. Create a Cloudflare API Token with the minimum Workers deployment permissions Wrangler needs and copy your Cloudflare Account ID.
+2. In the GitHub repository, open **Settings → Secrets and variables → Actions**.
+3. Add repository secrets named `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+4. Open **Actions → Deploy Cloudflare Worker → Run workflow** and run it on `feature/remote-agent-foundation`.
 
-Wrangler authenticates directly with Cloudflare. The Worker source is available in the [public source ZIP](https://github.com/Erfwwan/RKRemote/archive/refs/heads/feature/remote-agent-foundation.zip). On Android, the same commands can be run from Termux after installing Node.js and extracting the ZIP.
+After that first deployment, changes under `cloudflare/worker/` on this branch deploy automatically. The workflow summary reports the Worker address when Wrangler prints it. Enter the address in RKRemote in `wss://...` form.
 
-RKRemote then needs only the Worker WSS address for normal pairing and encrypted relay operation. An optional, user-owned Cloudflare API Token can be entered in the app to update the already-created `rkremote-signaling` Worker. The token is encrypted locally with AES-GCM and an Android Keystore key; it is not shared with the paired phone. The token is optional: users who only want to connect can leave it blank.
-
-Create a token only if you want in-app Worker updates. Use **Workers Editor** access scoped to the existing `rkremote-signaling` Worker only. See [Cloudflare manual setup](docs/CLOUDFLARE_SETUP.md).
+The token is stored only in GitHub Secrets. Never put it in source code, an APK, or a chat. Do not use the Cloudflare Global API Key. For exact steps, troubleshooting, and the manual fallback, see [Cloudflare setup](docs/CLOUDFLARE_SETUP.md).
 
 ## Feature boundaries
 
@@ -36,17 +32,16 @@ The app does not bypass Android permissions, silently start sensors, hide its se
 ## Important transport trade-offs
 
 - All traffic is relayed through Cloudflare. This is more predictable across restrictive NATs than direct P2P, but increases Worker bandwidth usage and can incur usage charges or limits.
-- Cloudflare can observe IP addresses, room IDs, connection timing, frame sizes and traffic volume, but not the encrypted app payloads.
+- Cloudflare can observe IP addresses, room IDs, connection timing, frame sizes and traffic volume, but cannot read the encrypted app payloads.
 - Compression is performed before encryption and only kept when it saves at least 32 bytes. Already-compressed images/audio/video generally receive little or no size reduction.
 - Noise protects app payloads end-to-end. WSS protects each phone-to-Cloudflare hop. The Worker never receives plaintext app messages.
 - The room ID is not device authentication. Peer identity verification and owner approval remain mandatory.
-- The optional user API Token is encrypted at rest using Android Keystore. Removing it from the app does not revoke it at Cloudflare; revoke it separately in Cloudflare when no longer needed.
 
 ## Build and verification
 
 Requirements: Android Studio, JDK 17, Gradle 8.11.1 and Android SDK 35.
 
-The source changes in this milestone have **not** been built or tested. API-token-based Worker update has not been run against a real Cloudflare account. Physical tests on both phones remain deferred to the final stage. A successful build would not by itself prove transport correctness or production readiness.
+The Cloudflare deployment workflow and token-based Worker update path have not yet been verified against a real Cloudflare account. Physical tests on both phones remain deferred to the final stage. A successful build or deployment does not by itself prove transport correctness or production readiness.
 
 See:
 - [Cloudflare Worker deployment](cloudflare/worker/README.md)
