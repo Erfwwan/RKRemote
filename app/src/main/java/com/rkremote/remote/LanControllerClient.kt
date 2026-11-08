@@ -77,10 +77,13 @@ object LanControllerClient {
 
         val socket = Socket()
         socket.connect(InetSocketAddress(ip, LanAgentServer.DEFAULT_PORT), if (endpoint == "/audio/ptt") 1500 else 5000)
+        socket.tcpNoDelay = true
+        socket.keepAlive = true
         socket.soTimeout = when {
             endpoint.startsWith("/file/") -> 30_000
             endpoint == "/audio/ptt" -> 1500
-            else -> 7000
+            endpoint == "/screen.jpg" || endpoint == "/camera.jpg" -> 15_000
+            else -> 7_000
         }
         socket.use { s ->
             val headers = StringBuilder()
