@@ -309,6 +309,7 @@ class LanAgentServer(
         private const val MAX_HEADER_LINE_BYTES = 2048
         private const val MAX_HEADERS = 24
         private const val MAX_HEADER_BYTES = 8192
-        private const val MAX_INPUT_BODY_BYTES = 16 * 1024\n        private const val MAX_REMOTE_TEXT_LENGTH = 4096
+        private const val MAX_INPUT_BODY_BYTES = 16 * 1024
+        private const val MAX_REMOTE_TEXT_LENGTH = 4096
     }
 }
