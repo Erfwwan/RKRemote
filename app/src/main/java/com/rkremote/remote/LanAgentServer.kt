@@ -557,11 +557,11 @@ class LanAgentServer(
 
     private fun respondFileStream(output: OutputStream, input: InputStream, name: String, mime: String, size: Long) {
         val safeName = Base64.getUrlEncoder().withoutPadding().encodeToString(name.toByteArray(Charsets.UTF_8))
-        val header = "HTTP/1.1 200 OK\\r\\n" +
-            "Content-Type: $mime\\r\\n" +
-            (if (size >= 0L) "Content-Length: $size\\r\\n" else "") +
-            "X-File-Name: $safeName\\r\\n" +
-            "Connection: close\\r\\nCache-Control: no-store\\r\\n\\r\\n"
+        val header = "HTTP/1.1 200 OK\r\n" +
+            "Content-Type: $mime\r\n" +
+            (if (size >= 0L) "Content-Length: $size\r\n" else "") +
+            "X-File-Name: $safeName\r\n" +
+            "Connection: close\r\nCache-Control: no-store\r\n\r\n"
         output.write(header.toByteArray(Charsets.US_ASCII))
         val buffer = ByteArray(64 * 1024)
         while (true) {
