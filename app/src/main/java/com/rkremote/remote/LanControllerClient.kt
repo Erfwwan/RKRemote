@@ -14,7 +14,8 @@ object LanControllerClient {
         JSONObject(requestBytes(ip, token, endpoint).toString(Charsets.UTF_8)).toString(2)
 
     fun requestBytes(ip: String, token: String, endpoint: String): ByteArray {
-        require(ip.matches(Regex("""(?:\d{1,3}\.){3}\d{1,3}"""))) { "Enter the target phone's IPv4 address" }
+        require(ip.matches(Regex("""(?:\d{1,3}\.){3}\d{1,3}""")) &&
+            ip.split(".").all { it.toIntOrNull() in 0..255 }) { "Enter a valid target IPv4 address" }
         require(token.length >= 24) { "Invalid session token" }
         require(endpoint == "/health" || endpoint == "/files" || endpoint == "/screen.jpg")
         val socket = Socket()
