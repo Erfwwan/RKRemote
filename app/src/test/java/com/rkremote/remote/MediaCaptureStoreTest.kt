@@ -2,6 +2,7 @@ package com.rkremote.remote
 
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -20,10 +21,13 @@ class MediaCaptureStoreTest {
         CameraFrameStore.publish(first)
         CameraFrameStore.publish(latest)
 
+        CameraFrameStore.publish(latest, "image/webp")
         assertArrayEquals(latest, CameraFrameStore.latestJpeg)
+        assertEquals("image/webp", CameraFrameStore.latestMimeType)
 
         CameraFrameStore.clear()
         assertNull(CameraFrameStore.latestJpeg)
+        assertEquals("image/jpeg", CameraFrameStore.latestMimeType)
     }
 
     @Test
