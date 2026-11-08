@@ -2,18 +2,23 @@
 
 This Worker is the **transport relay**, not just a signaling rendezvous. Both Android devices connect to the same Durable Object room. The Worker forwards opaque binary frames byte-for-byte. The Android clients encrypt every application frame end-to-end with the established Noise XX transport before sending it.
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Erfwwan/RKRemote/tree/feature/remote-agent-foundation/cloudflare/worker)
+## Deploy without GitHub
 
-## Deploy
+Do not use the old **Deploy to Cloudflare** button if you do not want to connect a GitHub account. That button uses Cloudflare's GitHub import integration. Downloading the public source ZIP and deploying with Wrangler does not link GitHub.
 
-1. Open the **Deploy to Cloudflare** button above and sign in to your own Cloudflare account.
-2. Review the Worker project and deploy it. Approve the `SignalRoom` Durable Object configuration/migration when Cloudflare requests it.
-3. Copy the resulting `workers.dev` address and enter it in RKRemote as `wss://...`.
-4. Normal relay use does not require an API Token. If you later want RKRemote to update the existing Worker source from inside the app, create a separate API Token with **Workers Editor** access scoped only to the existing `rkremote-signaling` Worker. Enter that token and your Account ID in the app. The app does not need your Cloudflare password or Global API Key.
+1. Download the [public RKRemote source ZIP](https://github.com/Erfwwan/RKRemote/archive/refs/heads/feature/remote-agent-foundation.zip).
+2. Open a terminal in this directory (`cloudflare/worker`).
+3. Run:
 
-The app's token update action only uploads the current Worker module to an already-existing script named `rkremote-signaling`; it does not create accounts, enumerate accounts, or change account-level workers.dev subdomains. If you only need the relay, leave the API Token field empty.
+```sh
+npm install
+npx wrangler login
+npx wrangler deploy
+```
 
-The Worker subdirectory is self-contained: it includes src/index.ts, src/index.js, wrangler.toml, and package.json. Alternatively, deploy manually from this directory with `npx wrangler deploy`.
+Wrangler opens Cloudflare's own authorization page. Sign in to Cloudflare, approve the `SignalRoom` Durable Object binding/migration, and copy the resulting `workers.dev` hostname into RKRemote as `wss://...`.
+
+On Android, these commands can be run in Termux after installing `nodejs-lts` and `unzip`, extracting the ZIP, and changing into `cloudflare/worker`.
 
 ## Wire behavior
 
