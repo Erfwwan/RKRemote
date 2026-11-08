@@ -117,7 +117,6 @@ class LanAgentServer(
         clients.shutdownNow().forEach { task ->
             if (task is ClientTask) task.close()
         }
-        runCatching { clients.awaitTermination(500, TimeUnit.MILLISECONDS) }
     }
 
     private fun handle(socket: Socket) {
