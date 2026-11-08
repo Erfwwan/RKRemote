@@ -1,5 +1,5 @@
 name = "rkremote-signaling"
-main = "src/index.ts"
+main = "src/index.js"
 compatibility_date = "2026-11-08"
 
 [[durable_objects.bindings]]
