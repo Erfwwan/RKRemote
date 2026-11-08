@@ -46,6 +46,7 @@ fun SecureInternetPanel() {
     val session = remember { mutableStateOf<SecureInternetPeer?>(null) }
     val renderer = remember { mutableStateOf<SecureScreenVideoRenderer?>(null) }
     val streamStatus = remember { mutableStateOf("Screen stream idle") }
+    val streamSenderState = remember { mutableStateOf<SecureScreenStreamSender?>(null) }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     DisposableEffect(Unit) {
         onDispose { renderer.value?.close(); renderer.value = null }
@@ -110,14 +111,13 @@ fun SecureInternetPanel() {
                                 listOf(SecureWebRtcPeer.TurnServer(turnUrls.value.split(',').map { it.trim() }.filter { it.isNotEmpty() }, turnUsername.value, turnCredential.value))
                             }
                             var activePeer: SecureInternetPeer? = null
-                            var streamSender: SecureScreenStreamSender? = null
                             val targetRouter = if (role.value == CloudflareSignalingClient.Role.TARGET) {
                                 SecureRemoteCommandRouter().apply {
                                     register("screen.stream.start", RemoteCapability.SCREEN_VIEW) {
                                         check(ScreenVideoStore.hasConfig()) {
                                             "Start screen sharing locally on the target first"
                                         }
-                                        streamSender?.close()
+                                        streamSenderState.value?.close()
                                         val sender = SecureScreenStreamSender(
                                             sendMessage = { type, payload ->
                                                 activePeer?.sendMessage(type, payload) == true
@@ -126,13 +126,13 @@ fun SecureInternetPanel() {
                                                 mainHandler.post { streamStatus.value = message }
                                             }
                                         )
-                                        streamSender = sender
+                                        streamSenderState.value = sender
                                         check(sender.start()) { "Screen stream is already running" }
                                         "screen.video.config"
                                     }
                                     register("screen.stream.stop", RemoteCapability.SCREEN_VIEW) {
-                                        streamSender?.close()
-                                        streamSender = null
+                                        streamSenderState.value?.close()
+                                        streamSenderState.value = null
                                         null
                                     }
                                 }
@@ -197,12 +197,16 @@ fun SecureInternetPanel() {
                                         mainHandler.post { status.value = "Signaling room: $type" }
                                     }
                                     override fun onDisconnected(reason: String) {
+                                        streamSenderState.value?.close()
+                                        streamSenderState.value = null
                                         mainHandler.post {
                                             dataChannelConnected.value = false
                                             status.value = reason
                                         }
                                     }
                                     override fun onFailure(failure: Throwable) {
+                                        streamSenderState.value?.close()
+                                        streamSenderState.value = null
                                         mainHandler.post {
                                             dataChannelConnected.value = false
                                             error.value = failure.message ?: "Secure connection failed"
@@ -222,6 +226,8 @@ fun SecureInternetPanel() {
                 OutlinedButton(
                     enabled = session.value != null,
                     onClick = {
+                        streamSenderState.value?.close()
+                        streamSenderState.value = null
                         session.value?.revokeOwnerApprovedCommands()
                         session.value?.close()
                         session.value = null
