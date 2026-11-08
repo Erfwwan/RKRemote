@@ -93,7 +93,7 @@ class SecureDownloadReceiver(context: Context) : AutoCloseable {
         val offset = payload.getLong("offset")
         require(offset == nextOffset) { "Download chunk is missing, duplicated or out of order" }
         val encoded = payload.getString("data")
-        require(encoded.length <= 4 * 1024 * 1024) { "Download chunk is too large" }
+        require(encoded.length <= MAX_ENCODED_CHUNK_CHARS) { "Download chunk is too large" }
         val bytes = Base64.getDecoder().decode(encoded)
         require(bytes.isNotEmpty() && bytes.size <= SecureSafTransferBridge.MAX_CHUNK_BYTES)
         require(nextOffset + bytes.size <= expectedBytes) { "Download exceeds announced file size" }
@@ -315,5 +315,7 @@ class SecureDownloadReceiver(context: Context) : AutoCloseable {
         private const val KEY_SIZE = "total_bytes"
         private const val KEY_NAME = "display_name"
         private const val KEY_MIME = "mime_type"
+        private const val MAX_ENCODED_CHUNK_CHARS =
+            4 * ((SecureSafTransferBridge.MAX_CHUNK_BYTES + 2) / 3)
     }
 }
