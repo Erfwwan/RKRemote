@@ -24,7 +24,8 @@ internal object RemoteMessageDirection {
         "screen.video.config",
         "screen.video.chunk",
         "screen.video.end",
-        "audio.chunk"
+        "audio.chunk",
+        "microphone.audio.chunk"
     )
 
     // Every command registered by SecureRemoteCommandRouter is controller-originated.
@@ -49,7 +50,9 @@ internal object RemoteMessageDirection {
         "camera.snapshot.request",
         "ptt.start",
         "ptt.stop",
-        "ptt.audio.chunk"
+        "ptt.audio.chunk",
+        "microphone.stream.start",
+        "microphone.stream.stop"
     )
 
     fun isAllowedIncoming(role: CloudflareSignalingClient.Role, messageType: String): Boolean =
