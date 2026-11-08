@@ -198,12 +198,15 @@ object LocationSessionBridge {
         activePeer.compareAndSet(peer, null)
     }
 
-    private fun authorizedPeer(context: Context): SecureInternetPeer? {
+    private fun authorizedPeer(
+        context: Context,
+        requireBackgroundLocation: Boolean
+    ): SecureInternetPeer? {
         val hasLocationPermission =
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
                 ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
         if (!hasLocationPermission) return null
-        if (Build.VERSION.SDK_INT >= 29 &&
+        if (requireBackgroundLocation && Build.VERSION.SDK_INT >= 29 &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED
         ) return null
         val peer = activePeer.get() ?: return null
@@ -218,7 +221,7 @@ object LocationSessionBridge {
     }
 
     fun sendIfOwnerApproved(context: Context, snapshot: LocationSnapshot): Boolean {
-        val peer = authorizedPeer(context) ?: return false
+        val peer = authorizedPeer(context, requireBackgroundLocation = true) ?: return false
         return peer.sendMessage(
             "location.sync.result",
             snapshot.toJson().put("requestId", "periodic-${snapshot.recordedAtMillis}")
@@ -226,7 +229,10 @@ object LocationSessionBridge {
     }
 
     fun sendHistoryIfOwnerApproved(context: Context): Boolean {
-        val peer = authorizedPeer(context) ?: return false
+        // Reconnect history is sent while the app is active; foreground location
+        // permission is sufficient. Background permission is reserved for workers
+        // and receiver-triggered collection when the app is not visible.
+        val peer = authorizedPeer(context, requireBackgroundLocation = false) ?: return false
         return peer.sendMessage(
             "location.sync.result",
             SecureLocationSync.buildLatestResponse(context, "reconnect-${System.currentTimeMillis()}")
