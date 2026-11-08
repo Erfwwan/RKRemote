@@ -1,48 +1,43 @@
-# RKRemote Cloudflare signaling Worker
+# RKRemote encrypted Cloudflare relay Worker
 
-This Worker is a rendezvous/signaling relay only. It does **not** relay screen, camera, microphone, files, commands, SDP, or ICE as plaintext. Android peers exchange Noise-encrypted signaling frames through a Durable Object room; media/control data travels directly over the WebRTC DTLS DataChannel when NAT permits.
+This Worker is the **transport relay**, not just a signaling rendezvous. Both Android devices connect to the same Durable Object room. The Worker forwards opaque binary frames byte-for-byte. The Android clients encrypt every application frame end-to-end with the established Noise XX transport before sending it.
 
-## Requirements
-
-- A Cloudflare account with Workers and Durable Objects enabled.
-- Node.js/npm and Wrangler.
-- Android clients configured with the deployed Worker WebSocket URL.
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Erfwwan/RKRemote/tree/feature/remote-agent-foundation/cloudflare/worker)
 
 ## Deploy
 
-From this directory:
+1. Open the Deploy button above and sign in to your own Cloudflare account.
+2. Confirm the Worker name and deployment settings.
+3. Approve creation of the SignalRoom Durable Object binding/migration.
+4. Deploy. Cloudflare provisions the Durable Object resource declared by wrangler.toml.
+5. Copy the assigned workers.dev origin. Enter it in RKRemote as wss://<your-worker-host>.
 
-```sh
-npm install --global wrangler
-wrangler login
-wrangler deploy
-```
+The Worker subdirectory is self-contained: it includes src/index.ts, wrangler.toml, and its own package.json. The deploy button creates a copy in your GitHub account and configures Workers Builds. Alternatively, deploy manually from this directory with npx wrangler deploy.
 
-The `wrangler.toml` file declares the `SignalRoom` SQLite-backed Durable Object migration. Deploy the Worker before connecting either Android device. Wrangler prints the deployed `workers.dev` URL; use its WebSocket form in RKRemote:
+## Wire behavior
 
-```text
-Worker origin: `wss://<your-worker-host>` (enter this origin in each phone). The app appends `/signal/<64-character-lowercase-hex-room-id>?role=target` or `?role=controller` automatically.
-```
-
-The target must connect first. The controller then joins the same room. Generate a fresh room ID in the app for each pairing attempt.
-
-## Room behavior and limits
-
+- WebSocket path: /signal/<64-character-lowercase-hex-room-id>?role=target or ?role=controller.
 - Exactly one target and one controller socket may occupy a room.
-- Only binary frames from 1 byte through 12 KiB are accepted from clients. Text application frames are rejected.
-- The Worker forwards binary frames opaquely and does not parse, log, store, or interpret their bytes.
-- A room expires after 10 minutes without signaling traffic. The inactivity alarm is refreshed on a new peer join and each valid binary frame; this is not a ten-minute maximum session lifetime.
-- A disconnected peer is notified; a new connection must rejoin using the same room ID while the room remains alive.
-- The room ID is a rendezvous identifier, **not an authentication secret**. Peer identity, Noise handshake authentication, SAS comparison, and target-owner approval remain mandatory on Android.
+- The target must connect first.
+- Only binary frames from 1 byte through 12 KiB are accepted from clients. Text client frames are rejected.
+- The Worker forwards binary frames opaquely; it does not parse, log, persist, or interpret their bytes.
+- Small Worker-generated lifecycle events (peer-joined, peer-left, peer-not-ready) are plain control messages and contain no app content.
+- A room expires after 10 minutes without traffic. Valid encrypted app frames refresh the inactivity lease.
+- Each room has at most two connected devices.
 
-## TURN
+## Encryption and privacy
 
-Cloudflare signaling is not a TURN relay. For restrictive carrier NATs or networks that block direct peer connectivity, provision a separate TURN service. Prefer short-lived, time-limited TURN credentials from your provider. Enter the TURN URL(s), username, and credential in the app on both peers. Do not commit TURN credentials to this repository or put permanent TURN secrets in a public Worker variable.
+- Noise XX authenticates the paired device identities and derives fresh session transport keys.
+- Each application message is optionally DEFLATE-compressed only when compression materially reduces its size, then fragmented to fit the 12 KiB Worker frame limit.
+- Every fragment is encrypted independently with Noise ChaCha20-Poly1305 before it reaches the Worker.
+- The Worker sees source IPs, room ID, role, connection timing, frame sizes and traffic volume. It cannot read commands, notifications, file contents, reports, location records, or media payloads.
+- The Worker does not store message bodies. Durable Object storage is used only for room lifecycle/alarm state, not app payloads.
+- The room ID is an invitation locator, not a substitute for Noise authentication or the six-digit SAS check. Both owners must compare the same SAS and approve the peer locally.
 
-The Secure Internet panel also provides **Force TURN relay (diagnostic)**. Enable it on both phones to set libwebrtc ICE transport policy to `RELAY`, which disables direct ICE candidates for that test. If the session connects in this mode, the TURN path is functioning. Turn the option off for normal direct-first sessions. TURN is optional for initial direct-connect testing, but required for networks where direct ICE cannot traverse NAT/firewalls.
+## Operational limits
 
-## Privacy and security notes
+All application traffic (including files and media) passes through the Worker. This avoids dependence on direct ICE/STUN/TURN connectivity, but consumes Workers/Durable Objects bandwidth and may be subject to Cloudflare plan limits or pricing. The relay is not an unlimited free bandwidth service.
 
-Cloudflare can observe connection IP addresses, room identifiers, connection times, and traffic volume. It forwards encrypted Noise frames and cannot decrypt them. The Worker does not make the Android session persistent: Android must keep RKRemote open for the current secure Internet session in this version. A target owner must still approve the secure pairing and each requested capability locally.
+The Android app must remain active with its visible session notification while the current session is in use. Network loss requires a fresh connection and a fresh peer approval in this source milestone.
 
-This Worker has not undergone an independent security audit. Test deployment, two-device connectivity, room expiration, reconnects, and TURN behavior before relying on it.
+This implementation has not undergone an independent security audit or physical two-device acceptance testing. Do not treat source integration as production certification.
