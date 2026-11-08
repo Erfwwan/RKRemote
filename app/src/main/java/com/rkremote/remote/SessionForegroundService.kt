@@ -17,7 +17,7 @@ import com.rkremote.MainActivity
 
 /**
  * Visible foreground owner for active LAN or secure Internet sessions.
- * A WebRTC session is kept alive while this service remains in the process;
+ * A Cloudflare encrypted relay session is kept alive while this service remains in the process;
  * it cannot be reconstructed after process death and is never silently resumed.
  */
 class SessionForegroundService : Service() {
@@ -60,7 +60,7 @@ class SessionForegroundService : Service() {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     startForeground(
                         NOTIFICATION_ID,
-                        buildNotification("Secure Internet P2P session active"),
+                        buildNotification("Secure Cloudflare relay session active"),
                         ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
                     )
                 } else {
@@ -84,7 +84,7 @@ class SessionForegroundService : Service() {
             stopInternetPeer()
             internetPeer = incoming
             // Preserve an independently active LAN agent's existing sticky
-            // restoration behavior; never attempt to recreate a WebRTC peer.
+            // restoration behavior; never attempt to recreate an encrypted relay session.
             return if (lanServer != null) START_STICKY else START_NOT_STICKY
         }
 
