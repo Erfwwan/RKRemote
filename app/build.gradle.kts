@@ -4,6 +4,23 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// Release credentials are supplied by the operator through environment variables.
+// Never store a signing key or passwords in the repository.
+val releaseStoreFile = providers.environmentVariable("RKREMOTE_RELEASE_STORE_FILE").orNull?.takeIf { it.isNotBlank() }
+val releaseStorePassword = providers.environmentVariable("RKREMOTE_RELEASE_STORE_PASSWORD").orNull?.takeIf { it.isNotBlank() }
+val releaseKeyAlias = providers.environmentVariable("RKREMOTE_RELEASE_KEY_ALIAS").orNull?.takeIf { it.isNotBlank() }
+val releaseKeyPassword = providers.environmentVariable("RKREMOTE_RELEASE_KEY_PASSWORD").orNull?.takeIf { it.isNotBlank() }
+val releaseSigningValues = listOf(releaseStoreFile, releaseStorePassword, releaseKeyAlias, releaseKeyPassword)
+val hasReleaseSigning = releaseSigningValues.all { it != null }
+require(releaseSigningValues.all { it == null } || hasReleaseSigning) {
+    "Release signing requires all four RKREMOTE_RELEASE_* environment variables."
+}
+if (hasReleaseSigning) {
+    require(file(releaseStoreFile!!).isFile) {
+        "RKREMOTE_RELEASE_STORE_FILE does not point to an existing keystore file."
+    }
+}
+
 android {
     namespace = "com.rkremote"
     compileSdk = 35
@@ -16,9 +33,23 @@ android {
         versionName = "0.1.0"
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseStoreFile!!)
+                storePassword = releaseStorePassword!!
+                keyAlias = releaseKeyAlias!!
+                keyPassword = releaseKeyPassword!!
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
