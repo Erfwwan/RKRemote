@@ -14,6 +14,7 @@ import java.net.SocketException
 import java.security.MessageDigest
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -29,6 +30,7 @@ class LanAgentServer(
     private val running = AtomicBoolean(false)
     @Volatile private var server: ServerSocket? = null
     private var worker: Thread? = null
+    private val clientSockets = ConcurrentHashMap.newKeySet<Socket>()
     private val clients = ThreadPoolExecutor(
         2, 4, 30, TimeUnit.SECONDS, ArrayBlockingQueue(16)
     ) { task, _ ->
@@ -37,8 +39,17 @@ class LanAgentServer(
     }
 
     private inner class ClientTask(private val socket: Socket) : Runnable {
-        override fun run() = handle(socket)
-        fun close() { runCatching { socket.close() } }
+        override fun run() {
+            try {
+                handle(socket)
+            } finally {
+                clientSockets.remove(socket)
+            }
+        }
+        fun close() {
+            clientSockets.remove(socket)
+            runCatching { socket.close() }
+        }
     }
 
     fun start() {
@@ -51,10 +62,12 @@ class LanAgentServer(
                     while (running.get()) {
                         try {
                             val client = socketServer.accept()
+                            clientSockets.add(client)
+                            val task = ClientTask(client)
                             try {
-                                clients.execute(ClientTask(client))
+                                clients.execute(task)
                             } catch (_: Exception) {
-                                runCatching { client.close() }
+                                task.close()
                             }
                         } catch (e: SocketException) {
                             if (running.get()) throw e
@@ -77,7 +90,11 @@ class LanAgentServer(
         runCatching { server?.close() }
         worker?.interrupt()
         worker = null
-        clients.shutdownNow()
+        clientSockets.toList().forEach { runCatching { it.close() } }
+        clientSockets.clear()
+        clients.shutdownNow().forEach { task ->
+            if (task is ClientTask) task.close()
+        }
     }
 
     private fun handle(socket: Socket) {
