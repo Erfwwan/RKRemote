@@ -562,6 +562,7 @@ class SecureWebRtcPeer(
         private const val MAX_BUFFERED_BYTES = 2L * 1024L * 1024L
         private const val MAX_PENDING_ICE = 128
         private const val DISCONNECT_GRACE_PERIOD_MS = 12_000L
+        private const val ICE_RESTART_COOLDOWN_MS = 10_000L
 
         @Volatile private var factory: PeerConnectionFactory? = null
 
