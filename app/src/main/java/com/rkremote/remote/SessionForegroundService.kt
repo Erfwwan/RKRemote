@@ -168,7 +168,7 @@ class SessionForegroundService : Service() {
 
         /** Called only from the explicit Connect action after local owner action. */
         fun startInternetSession(context: Context, peer: SecureInternetPeer) {
-            pendingInternetPeer?.close()
+            pendingInternetPeer?.stopFromOwnerAction("A newer connection attempt replaced this session")
             pendingInternetPeer = peer
             try {
                 ContextCompat.startForegroundService(
