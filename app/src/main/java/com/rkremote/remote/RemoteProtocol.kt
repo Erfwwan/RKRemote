@@ -33,7 +33,7 @@ data class RemoteMessage(
             "session.start", "session.stop", "heartbeat", "ack",
             "capability.request", "capability.result", "notification.event",
             "file.list.request", "file.list.result", "file.transfer.request", "file.download.request", "file.upload.begin", "file.transfer.chunk", "file.transfer.complete",
-            "screen.start.request", "screen.snapshot.request", "screen.snapshot.result", "screen.input", "screen.stop", "camera.start.request",
+            "screen.start.request", "screen.snapshot.request", "screen.snapshot.result", "screen.input", "screen.stop", "screen.stream.start", "screen.stream.stop", "screen.video.config", "screen.video.chunk", "screen.video.end", "camera.start.request",
             "camera.stop", "audio.start.request", "audio.stop",
             "ptt.start", "ptt.stop", "error"
         )
