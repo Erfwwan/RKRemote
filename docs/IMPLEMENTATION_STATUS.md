@@ -223,3 +223,13 @@ Validation for this pass: source and JVM tests were committed, but no Gradle bui
 - Notification access and remote input are separate Android settings and separate owner grants. Revoking session capabilities stops further requests; Android settings can also revoke either permission.
 - CI for earlier screen-input integration commits passed unit tests and APK assembly in the available runs. The latest notification-sync commits are still running through CI; no hardware test has been performed.
 - Filesystem operations, camera, microphone and PTT are not yet wired to the secure Internet command channel. SAF access remains limited to owner-selected document trees.
+
+
+## Secure Internet file browsing and downloads
+
+- The target exposes folder listing and read-only downloads over the authenticated WebRTC DataChannel only; Cloudflare remains signaling-only.
+- Every document ID is checked against the exact owner-selected Storage Access Framework tree. No raw storage paths or broader storage permissions are used.
+- Folder listings are capped at 100 entries per response. A single file transfer is limited to 50 MiB and uses ordered 24 KiB chunks with bounded DataChannel buffering.
+- The controller writes to a temporary app-private file, checks sequential offsets and the final SHA-256 digest, then publishes the verified result to `Download/RKRemote/Received` on Android 10+ (app-specific Downloads on older Android).
+- Existing files are not overwritten. Remote deletion, rename, move, and arbitrary path access are not implemented.
+- The target owner must explicitly grant the FILES capability for each secure session. Only one transfer runs at a time. This source integration still requires CI and two-device Android validation; SAF provider behavior and real-world transfer reliability are not yet certified.
