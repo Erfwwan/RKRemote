@@ -85,6 +85,8 @@ class RemoteAccessibilityService : AccessibilityService() {
             return true
         }
 
+        fun isActive(): Boolean = activeService != null
+
         fun setFocusedText(value: String): Boolean {
             if (value.length > MAX_TEXT_LENGTH) return false
             val service = activeService ?: return false
