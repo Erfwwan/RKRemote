@@ -15,7 +15,7 @@ object LanControllerClient {
 
     fun requestBytes(ip: String, token: String, endpoint: String): ByteArray {
         require(ip.matches(Regex("""(?:\d{1,3}\.){3}\d{1,3}""")) &&
-            ip.split(".").all { it.toIntOrNull() in 0..255 }) { "Enter a valid target IPv4 address" }
+            ip.split(".").all { part -> part.toIntOrNull()?.let { it in 0..255 } == true }) { "Enter a valid target IPv4 address" }
         require(token.length >= 24) { "Invalid session token" }
         require(endpoint == "/health" || endpoint == "/files" || endpoint == "/screen.jpg")
         val socket = Socket()
