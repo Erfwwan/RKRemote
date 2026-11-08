@@ -192,9 +192,7 @@ fun LanRemotePanel() {
                 }) { Text("Start live preview") }
                 OutlinedButton(enabled = previewRunning, onClick = {
                     previewJob?.cancel()
-                    previewJob = null
-                    previewRunning = false
-                    output = "Live preview stopped."
+                    output = "Stopping live preview…"
                 }) { Text("Stop preview") }
             }
             OutlinedButton(enabled = !busy, onClick = {
