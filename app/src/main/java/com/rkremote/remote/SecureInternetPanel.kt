@@ -269,12 +269,17 @@ fun SecureInternetPanel() {
                                         null
                                     }
                                     register("file.transfer.chunk", RemoteCapability.FILES) { message ->
-                                        val bytes = Base64.getDecoder().decode(message.payload.getString("data"))
-                                        safBridge.appendUploadChunk(
-                                            message.payload.getString("transferId"),
-                                            message.payload.getLong("offset"),
-                                            bytes
-                                        )
+                                        try {
+                                            val bytes = Base64.getDecoder().decode(message.payload.getString("data"))
+                                            safBridge.appendUploadChunk(
+                                                message.payload.getString("transferId"),
+                                                message.payload.getLong("offset"),
+                                                bytes
+                                            )
+                                        } catch (failure: Throwable) {
+                                            safBridge.abortUpload()
+                                            throw failure
+                                        }
                                         null
                                     }
                                     register("file.transfer.complete", RemoteCapability.FILES) { message ->
@@ -531,6 +536,7 @@ fun SecureInternetPanel() {
                                     }
                                     override fun onFailure(failure: Throwable) {
                                         transferActive.set(false)
+                                        safBridge.abortUpload()
                                         streamSender.value?.close()
                                         streamSender.value = null
                                         mainHandler.post {
