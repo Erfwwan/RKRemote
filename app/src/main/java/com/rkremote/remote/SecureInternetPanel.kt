@@ -1062,9 +1062,6 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                     if (activePeerRef.get() !== activePeer) return@post
                                                     secureRelayConnected.value = true
                                                     status.value = "اتصال رمزنگاری‌شده Cloudflare برقرار شد"
-                                                    if (role.value == CloudflareSignalingClient.Role.TARGET) {
-                                                        LocationSessionBridge.sendHistoryIfOwnerApproved(context)
-                                                    }
                                                     resumePendingDownloadAfterReconnect()
                                                 }
                                             }
@@ -1869,6 +1866,29 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                         .onSuccess { status.value = "Address book access remembered for this paired device" }
                         .onFailure { error.value = it.message ?: "Could not remember contacts permission" }
                 }) { Text("Always allow contacts for this paired device") }
+                val sessionLocationGranted =
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                        ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                val sessionBackgroundLocationGranted = Build.VERSION.SDK_INT < 29 ||
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
+                OutlinedButton(
+                    enabled = session.value != null && secureRelayConnected.value &&
+                        sessionLocationGranted && sessionBackgroundLocationGranted,
+                    onClick = {
+                        runCatching {
+                            grantRememberedReportCapability(RemoteCapability.LOCATION)
+                            LocationCaptureScheduler.start(context)
+                        }.onSuccess {
+                            status.value = "گزارش موقعیت برای این کنترل‌کننده مجاز شد؛ داده فقط در پاسخ به درخواست ارسال می‌شود."
+                        }.onFailure {
+                            error.value = it.message ?: "Could not grant location report permission"
+                        }
+                    }
+                ) { Text("اجازه گزارش موقعیت برای این کنترل‌کننده") }
+                if (!sessionLocationGranted || !sessionBackgroundLocationGranted) {
+                    Text("برای فعال‌کردن گزارش موقعیت، مجوز موقعیت و دسترسی پس‌زمینه را در بخش مجوزهای اندروید فعال کن.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
                     runCatching {
                         check(SecureNotificationSync.isNotificationAccessEnabled(context)) {
