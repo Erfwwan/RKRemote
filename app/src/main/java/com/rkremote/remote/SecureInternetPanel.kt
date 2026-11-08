@@ -230,8 +230,12 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
             PackageManager.PERMISSION_GRANTED
         ) {
             launchLocalCameraCapture(facing)
-        } else {
+        } else if (!PermissionRequestPolicy.wasRequested(context, listOf(Manifest.permission.CAMERA))) {
+            PermissionRequestPolicy.markRequested(context, listOf(Manifest.permission.CAMERA))
             cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        } else {
+            context.startActivity(PermissionRequestPolicy.appSettingsIntent(context))
+            cameraStatus.value = "این مجوز قبلاً درخواست شده؛ برای فعال‌سازی آن از تنظیمات اندروید استفاده کن."
         }
     }
 
@@ -277,7 +281,13 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
         ) launchLocalMicrophoneCapture()
-        else microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        else if (!PermissionRequestPolicy.wasRequested(context, listOf(Manifest.permission.RECORD_AUDIO))) {
+            PermissionRequestPolicy.markRequested(context, listOf(Manifest.permission.RECORD_AUDIO))
+            microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        } else {
+            context.startActivity(PermissionRequestPolicy.appSettingsIntent(context))
+            localAudioStatus.value = "این مجوز قبلاً درخواست شده؛ برای فعال‌سازی آن از تنظیمات اندروید استفاده کن."
+        }
     }
 
     val screenProjectionLauncher = rememberLauncherForActivityResult(
@@ -377,9 +387,9 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
     }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { result ->
-        locationStatus.value = if (result.values.any { it }) "مجوز موقعیت بررسی شد؛ برای ردیابی پس‌زمینه، دسترسی جداگانه را در تنظیمات فعال کن." else "مجوز موقعیت داده نشد"
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        locationStatus.value = if (granted) "مجوز موقعیت تقریبی فعال شد؛ برای ردیابی پس‌زمینه، دسترسی جداگانه را در تنظیمات فعال کن." else "مجوز موقعیت داده نشد"
     }
 
     fun refreshRememberedReportGrants() {
@@ -2452,7 +2462,15 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     } else {
                         Text("ردیابی فقط پس از فعال‌سازی توسط صاحب همین گوشی انجام می‌شود. داده‌ها در برنامه رمزنگاری و ذخیره می‌شوند.")
                         if (!fineGranted && !coarseGranted) {
-                            OutlinedButton(onClick = { locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)) }) { Text("درخواست مجوز موقعیت") }
+                            OutlinedButton(onClick = {
+                                if (!PermissionRequestPolicy.wasRequested(context, listOf(Manifest.permission.ACCESS_COARSE_LOCATION))) {
+                                    PermissionRequestPolicy.markRequested(context, listOf(Manifest.permission.ACCESS_COARSE_LOCATION))
+                                    locationPermissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+                                } else {
+                                    context.startActivity(PermissionRequestPolicy.appSettingsIntent(context))
+                                    locationStatus.value = "مجوز موقعیت قبلاً درخواست شده؛ برای فعال‌سازی آن از تنظیمات اندروید استفاده کن."
+                                }
+                            }) { Text("درخواست مجوز موقعیت تقریبی (فقط یک‌بار)") }
                         }
                         if (!backgroundGranted) {
                             Text("برای ثبت دوره‌ای در پس‌زمینه، Android دسترسی «همیشه مجاز» را جداگانه می‌خواهد.")
