@@ -927,7 +927,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                             override fun onRelayReady() {
                                                 mainHandler.post {
                                                     if (activePeerRef.get() !== activePeer) return@post
-                                                    dataChannelConnected.value = true
+                                                    secureRelayConnected.value = true
                                                     status.value = "اتصال رمزنگاری‌شده Cloudflare برقرار شد"
                                                     if (role.value == CloudflareSignalingClient.Role.TARGET) {
                                                         LocationSessionBridge.sendHistoryIfOwnerApproved(context)
@@ -1327,7 +1327,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                     SessionForegroundService.stopInternetSession(context)
                                                     activePeerRef.compareAndSet(activePeer, null)
                                                     session.value = null
-                                                    dataChannelConnected.value = false
+                                                    secureRelayConnected.value = false
                                                     peerId.value = null
                                                     sas.value = null
                                                     renderer.value?.close()
@@ -1358,7 +1358,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                     SessionForegroundService.stopInternetSession(context)
                                                     activePeerRef.compareAndSet(activePeer, null)
                                                     session.value = null
-                                                    dataChannelConnected.value = false
+                                                    secureRelayConnected.value = false
                                                     peerId.value = null
                                                     sas.value = null
                                                     renderer.value?.close()
@@ -1383,7 +1383,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                     createdSession?.close()
                                     if (session.value === createdSession) {
                                         session.value = null
-                                        dataChannelConnected.value = false
+                                        secureRelayConnected.value = false
                                         renderer.value?.close()
                                         renderer.value = null
                                     }
@@ -1628,7 +1628,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                         session.value = null
                         renderer.value?.close()
                         renderer.value = null
-                        dataChannelConnected.value = false
+                        secureRelayConnected.value = false
                         peerId.value = null
                         sas.value = null
                         status.value = "Disconnected locally"
@@ -1646,7 +1646,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     "SMS و تاریخچه تماس پس از تأیید مالک برای هویت امن همین دستگاه ذخیره می‌شوند و در اتصال‌های بعدی، پس از تأیید دوباره هویت، خودکار فعال می‌شوند. سایر دسترسی‌ها فقط برای همان نشست هستند.",
                     style = MaterialTheme.typography.bodySmall
                 )
-                OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
+                OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
                     runCatching {
                         check(CameraFrameStore.latestFrame != null) {
                             "Start the rear or front camera locally on the target first"
@@ -1655,31 +1655,31 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     }.onSuccess { status.value = "Camera snapshots allowed for this session" }
                         .onFailure { error.value = it.message ?: "Could not grant camera access" }
                 }) { Text("Allow camera snapshots") }
-                OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
+                OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
                     runCatching { session.value?.grantOwnerApprovedCapabilities(setOf(RemoteCapability.SCREEN_VIEW)) }
                         .onSuccess { status.value = "Screen viewing allowed for this session" }
                         .onFailure { error.value = it.message ?: "Could not grant screen viewing" }
                 }) { Text("Allow screen viewing") }
-                OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
+                OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
                     runCatching {
                         check(RemoteAccessibilityService.isActive()) { "Enable RKRemote in Android Accessibility settings first" }
                         session.value?.grantOwnerApprovedCapabilities(setOf(RemoteCapability.SCREEN_INPUT))
                     }.onSuccess { status.value = "Remote touch and text allowed for this session" }
                         .onFailure { error.value = it.message ?: "Could not grant remote input" }
                 }) { Text("Allow remote touch and text") }
-                OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
+                OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
                     runCatching {
                         grantRememberedReportCapability(RemoteCapability.CALL_LOG)
                     }.onSuccess { status.value = "Call-history report remembered for this paired device" }
                         .onFailure { error.value = it.message ?: "Could not remember call-history permission" }
                 }) { Text("Always allow call-history report for this paired device") }
-                OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
+                OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
                     runCatching {
                         grantRememberedReportCapability(RemoteCapability.CONTACTS)
                     }.onSuccess { status.value = "SMS report remembered for this paired device" }
                         .onFailure { error.value = it.message ?: "Could not remember SMS permission" }
                 }) { Text("Always allow SMS report for this paired device") }
-                OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
+                OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
                     runCatching {
                         check(SecureNotificationSync.isNotificationAccessEnabled(context)) {
                             "Enable RKRemote Notification Access in Android settings first"
@@ -1688,7 +1688,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     }.onSuccess { status.value = "Notification sharing allowed for this session" }
                         .onFailure { error.value = it.message ?: "Could not grant notification access" }
                 }) { Text("Allow notification sharing") }
-                OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
+                OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
                     runCatching {
                         check(MicrophoneChunkStore.isCapturing()) {
                             "Start microphone capture locally on the target first"
@@ -1697,14 +1697,14 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     }.onSuccess { status.value = "Secure microphone streaming allowed for this session" }
                         .onFailure { error.value = it.message ?: "Could not grant microphone access" }
                 }) { Text("Allow microphone streaming") }
-                OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
+                OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
                     runCatching {
                         check(PttAudioQueue.isEnabled()) { "Enable the PTT speaker locally on the target first" }
                         session.value?.grantOwnerApprovedCapabilities(setOf(RemoteCapability.PUSH_TO_TALK))
                     }.onSuccess { status.value = "Push-to-talk allowed for this session" }
                         .onFailure { error.value = it.message ?: "Could not grant push-to-talk" }
                 }) { Text("Allow push-to-talk") }
-                OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
+                OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
                     runCatching { session.value?.grantOwnerApprovedCapabilities(setOf(RemoteCapability.FILES)) }
                         .onSuccess { status.value = "Secure file access allowed for this session" }
                         .onFailure { error.value = it.message ?: "Could not grant file access" }
@@ -1753,7 +1753,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                         }
                     }
                 }
-                OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
+                OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
                     transferActive.set(false)
                     cameraTransferActive.set(false)
                     audioRelayActive.set(false)
@@ -1775,11 +1775,11 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 Text("Controller", style = MaterialTheme.typography.titleSmall)
                 if (feature == SecureFeatureSection.CAMERA) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(enabled = session.value != null && dataChannelConnected.value && !cameraTransferActive.get(), onClick = {
+                    OutlinedButton(enabled = session.value != null && secureRelayConnected.value && !cameraTransferActive.get(), onClick = {
                         cameraStatus.value = if (sendInput("camera.start.request", JSONObject()))
                             "Live camera stream requested" else "Could not start live camera stream"
                     }) { Text("Start live camera") }
-                    OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
+                    OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
                         cameraTransferActive.set(false)
                         imageAssembler.abort()
                         sendInput("camera.stop", JSONObject())
@@ -1798,11 +1798,11 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 }
                 if (feature == SecureFeatureSection.SCREEN) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(enabled = session.value != null && dataChannelConnected.value, onClick = {
+                    Button(enabled = session.value != null && secureRelayConnected.value, onClick = {
                         streamStatus.value = if (sendInput("screen.stream.start", JSONObject()))
                             "Live-screen request sent" else "Could not request screen"
                     }) { Text("Request live screen") }
-                    OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
+                    OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
                         streamStatus.value = if (sendInput("screen.stream.stop", JSONObject()))
                             "Stop request sent" else "Could not stop stream"
                     }) { Text("Stop stream") }
@@ -1815,7 +1815,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     minLines = 1,
                     maxLines = 3
                 )
-                OutlinedButton(enabled = session.value != null && dataChannelConnected.value && remoteText.value.isNotEmpty(), onClick = {
+                OutlinedButton(enabled = session.value != null && secureRelayConnected.value && remoteText.value.isNotEmpty(), onClick = {
                     streamStatus.value = if (sendInput(
                         "screen.input",
                         JSONObject().put("action", "text").put("text", remoteText.value)
@@ -1824,9 +1824,9 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 }
                 if (feature == SecureFeatureSection.AUDIO) {
                 Card(
-                    modifier = Modifier.fillMaxWidth().pointerInput(session.value, dataChannelConnected.value, role.value) {
+                    modifier = Modifier.fillMaxWidth().pointerInput(session.value, secureRelayConnected.value, role.value) {
                         detectTapGestures(onPress = {
-                            if (role.value == CloudflareSignalingClient.Role.CONTROLLER && dataChannelConnected.value) {
+                            if (role.value == CloudflareSignalingClient.Role.CONTROLLER && secureRelayConnected.value) {
                                 if (!MicrophoneChunkStore.isCapturing()) {
                                     pttStatus.value = "Start microphone capture locally on this phone first"
                                 } else if (pttRelayActive.compareAndSet(false, true)) {
@@ -1881,11 +1881,11 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
+                    OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
                         audioStatus.value = if (sendInput("audio.start.request", JSONObject()))
                             "Microphone stream requested" else "Could not request microphone stream"
                     }) { Text("Listen to target microphone") }
-                    OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
+                    OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
                         audioStatus.value = if (sendInput("audio.stop", JSONObject()))
                             "Microphone stream stop requested" else "Could not stop microphone stream"
                         audioPlayback.close()
@@ -1894,7 +1894,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 Text(audioStatus.value, style = MaterialTheme.typography.bodySmall)
                 }
                 if (feature == SecureFeatureSection.NOTIFICATIONS) {
-                OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
+                OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
                     notificationSummary.value = if (sendInput("notifications.sync.request", JSONObject()))
                         "Notification sync requested" else "Could not request notification sync"
                 }) { Text("Fetch recent notifications") }
@@ -1903,7 +1903,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 if (feature == SecureFeatureSection.SMS_MESSAGES) {
                     if (role.value == CloudflareSignalingClient.Role.CONTROLLER) {
                         OutlinedButton(
-                            enabled = session.value != null && dataChannelConnected.value,
+                            enabled = session.value != null && secureRelayConnected.value,
                             onClick = {
                                 smsStatus.value = if (sendInput("sms.sync.request", JSONObject()))
                                     "درخواست گزارش پیامک‌ها به دستگاه مقصد ارسال شد"
@@ -1972,7 +1972,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 if (feature == SecureFeatureSection.CALL_LOGS) {
                     if (role.value == CloudflareSignalingClient.Role.CONTROLLER) {
                         OutlinedButton(
-                            enabled = session.value != null && dataChannelConnected.value,
+                            enabled = session.value != null && secureRelayConnected.value,
                             onClick = {
                                 callLogStatus.value = if (sendInput("calllog.sync.request", JSONObject()))
                                     "درخواست گزارش تماس به دستگاه مقصد ارسال شد"
@@ -2048,7 +2048,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     val latest = locationHistory.value.lastOrNull()
                     if (role.value == CloudflareSignalingClient.Role.CONTROLLER) {
                         OutlinedButton(
-                            enabled = session.value != null && dataChannelConnected.value,
+                            enabled = session.value != null && secureRelayConnected.value,
                             onClick = {
                                 locationStatus.value = if (sendInput("location.sync.request", JSONObject())) "درخواست تاریخچه موقعیت به دستگاه مقصد ارسال شد" else "ارسال درخواست ناموفق بود"
                             }
@@ -2079,7 +2079,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                             locationStatus.value = "تاریخچه محلی به‌روزرسانی شد"
                         }) { Text("نمایش تاریخچه ذخیره‌شده") }
                         OutlinedButton(
-                            enabled = session.value != null && dataChannelConnected.value && backgroundGranted && (fineGranted || coarseGranted),
+                            enabled = session.value != null && secureRelayConnected.value && backgroundGranted && (fineGranted || coarseGranted),
                             onClick = {
                                 runCatching { grantRememberedReportCapability(RemoteCapability.LOCATION); LocationCaptureScheduler.start(context) }
                                     .onSuccess { locationStatus.value = "ارسال موقعیت برای همین دستگاه جفت‌شده مجاز شد" }
@@ -2119,12 +2119,12 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     }
                 }
                 if (feature == SecureFeatureSection.FILES) {
-                OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
+                OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
                     fileStatus.value = if (sendInput("file.list.request", JSONObject()))
                         "Folder listing requested" else "Could not request folder listing"
                 }) { Text("Browse target folder") }
                 OutlinedButton(
-                    enabled = session.value != null && dataChannelConnected.value &&
+                    enabled = session.value != null && secureRelayConnected.value &&
                         fileParentId.value.isNotBlank() && fileParentId.value != fileRootId.value,
                     onClick = {
                         val sent = session.value?.sendMessage(
@@ -2189,7 +2189,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     pendingDownloadId.value == downloadReceiver.pendingTransferId() &&
                     !transferActive.get()) {
                     OutlinedButton(
-                        enabled = session.value != null && dataChannelConnected.value &&
+                        enabled = session.value != null && secureRelayConnected.value &&
                             !pendingDownloadDocumentId.value.isNullOrBlank(),
                         onClick = {
                             val transferId = pendingDownloadId.value ?: return@OutlinedButton
@@ -2215,12 +2215,12 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
-                        enabled = session.value != null && dataChannelConnected.value &&
+                        enabled = session.value != null && secureRelayConnected.value &&
                             outgoingUploadIds.size < SecureSafTransferBridge.MAX_ACTIVE_UPLOADS,
                         onClick = { uploadPicker.launch(arrayOf("*/*")) }
                     ) { Text("Upload files (up to 3)") }
                     OutlinedButton(
-                        enabled = session.value != null && dataChannelConnected.value &&
+                        enabled = session.value != null && secureRelayConnected.value &&
                             (outgoingUploadIds.isNotEmpty() || activeTransferId.get() != null),
                         onClick = {
                             outgoingUploadIds.toList().forEach { transferId ->
