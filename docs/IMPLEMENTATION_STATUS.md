@@ -14,7 +14,7 @@ This branch is a development foundation for the next major RKRemote iteration.
 - Session command authorization gate requiring an owner-approved active session, exact peer identity, per-capability grants, monotonic sequence numbers, and explicit revocation.
 - SAF document repository limited to the tree URI selected by the device owner; bounded file reads and permission-checked deletion.
 - Read-only LAN agent/controller on TCP 18765 with temporary bearer token; health check and owner-selected folder metadata listing. Client handling is bounded (four active workers, sixteen queued clients, header limits and socket timeouts); controller response reads are capped at 16 MiB and IPv4 octets are validated.
-- Owner-approved screen capture through Android MediaProjection consent, visible mediaProjection foreground service, in-memory JPEG frame (maximum dimension 1600 px), and authenticated `/screen.jpg` snapshot endpoint; controller can request and display a still snapshot.
+- Owner-approved screen capture through Android MediaProjection consent, visible mediaProjection foreground service, in-memory JPEG frame (maximum dimension 1600 px), and authenticated `/screen.jpg` snapshot endpoint; controller can request one snapshot or poll JPEG snapshots at roughly one per second for a low-rate preview (not continuous video).
 - JVM tests for the encryption envelope and command authorization gate.
 - Existing local setup and encrypted notification store remain in place.
 
@@ -22,7 +22,7 @@ This branch is a development foundation for the next major RKRemote iteration.
 
 - Internet relay, cross-network connection, TLS on the LAN socket, or end-to-end authenticated key exchange. The LAN token is a temporary bearer secret sent over the local network; use only on a trusted private Wi-Fi network. The AES-GCM envelope is not yet connected to the LAN transport.
 - Durable paired-device identity and key rotation.
-- Continuous screen video, remote touch/input, camera/microphone streaming, file download/upload, contacts/call-log transfer, and push-to-talk. Screen capture is currently a single JPEG snapshot per controller request; it is not a live video stream. The remote file feature lists names and metadata only; it does not download file contents.
+- Continuous screen video (the current preview is periodic JPEG polling), remote touch/input, camera/microphone streaming, file download/upload, contacts/call-log transfer, and push-to-talk. Screen capture is currently a single JPEG snapshot per controller request; it is not a live video stream. The remote file feature lists names and metadata only; it does not download file contents.
 - Automated reconnect/backoff and network diagnostics. The LAN bearer token and snapshots still travel without TLS; worker bounds reduce local resource-exhaustion risk but do not make the protocol safe on untrusted networks.
 - Device-farm tests, physical-device tests, release signing, and security review.
 
