@@ -8,6 +8,7 @@
 - Application signaling is blocked until both sides have approved. WebRTC offer, answer, and trickled ICE candidates are carried as Noise-encrypted application messages.
 - The SDP's SHA-256 DTLS fingerprint is checked against the fingerprint field inside the authenticated Noise message. libwebrtc then validates the remote DTLS certificate against the SDP fingerprint during the DTLS handshake.
 - A WebRTC ordered binary DataChannel is created by the controller and accepted by the target. DataChannel payloads are protected by DTLS. The code does not double-encrypt every DataChannel packet with Noise.
+- DataChannel application messages use a bounded RKD1 fragment format: up to 4 MiB per logical message, 12 KiB transport frames, 4 incomplete messages, 30-second assembly lifetime, and strict duplicate/length/index checks. This allows large file/video protocol frames to be carried later without exceeding the per-frame cap; it does not itself migrate those features.
 - ICE uses a public STUN server by default. Optional TURN configuration is accepted by the transport class; TURN credentials are not hard-coded or sent to Cloudflare.
 
 ## App setup
@@ -48,7 +49,7 @@ For reliable use across restrictive networks, provision a separately operated TU
 - [ ] Approve both phones and confirm DataChannel connects on the same Wi-Fi.
 - [ ] Repeat on separate networks with direct UDP available.
 - [ ] Repeat with TURN configured and direct UDP blocked; confirm relay candidate selected.
-- [ ] Send test payloads in both directions and verify payload size bounds.
+- [ ] Send small and multi-megabyte test payloads in both directions and verify fragment bounds/reassembly.
 - [ ] Verify peer-left, socket failure, and local Stop close WebRTC and Noise state.
 - [ ] Test Android 13+ and supported Android device architectures.
 - [ ] Complete independent security review before sending private device data.
