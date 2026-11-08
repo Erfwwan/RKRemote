@@ -943,7 +943,7 @@ fun SecureInternetPanel() {
                                                         JSONObject().put("data", Base64.getEncoder().encodeToString(chunk))
                                                     ) == true
                                                     if (!sent) {
-                                                        pttStatus.value = "PTT connection lost"
+                                                        mainHandler.post { pttStatus.value = "PTT connection lost" }
                                                         pttRelayActive.set(false)
                                                         break
                                                     }
