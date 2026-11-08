@@ -1,6 +1,5 @@
 package com.rkremote.remote
 
-import android.os.Build
 import androidx.annotation.RequiresApi
 import com.stonygrey.torann.HandshakeState
 import com.stonygrey.torann.NoiseProtocol
@@ -40,7 +39,6 @@ class SecureLinkHandshake(
     private var approved = false
 
     init {
-        require(Build.VERSION.SDK_INT >= 33) { "SecureLink requires Android 13 (API 33) or later" }
         require(localBinding.verify()) { "Local identity binding is invalid" }
         require(localBinding.noiseStaticPublicKeyBase64 ==
             java.util.Base64.getEncoder().withoutPadding().encodeToString(localStaticKey.publicKey)) {
@@ -214,9 +212,29 @@ class SecureLinkHandshake(
         remoteBinding = null
     }
 
-    override fun close() = close()
-
     companion object {
         const val MAX_FRAME_BYTES = 12 * 1024
+
+        /** Creates a session using the Android-Keystore-backed signing identity and encrypted X25519 key store. */
+        @JvmStatic
+        fun create(
+            initiator: Boolean,
+            identityStore: P2pIdentityStore,
+            staticKeyStore: SecureLinkStaticKeyStore,
+            expectedPeerId: String? = null
+        ): SecureLinkHandshake {
+            val stored = staticKeyStore.getOrCreate()
+            return try {
+                val binding = SecureLinkIdentityBinding.create(
+                    identityStore,
+                    stored.keyPair.publicKey,
+                    stored.generation
+                )
+                SecureLinkHandshake(initiator, binding, stored.keyPair, expectedPeerId)
+            } catch (error: Throwable) {
+                stored.keyPair.close()
+                throw error
+            }
+        }
     }
 }
