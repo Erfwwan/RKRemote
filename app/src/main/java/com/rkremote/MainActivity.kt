@@ -199,6 +199,14 @@ private fun LocalSetupScreen(darkMode: Boolean, onToggleTheme: () -> Unit) {
                 "برای ثبت موقعیت لازم است؛ ثبت دوره‌ای در پس‌زمینه به مجوز جداگانه «همیشه مجاز» نیاز دارد.",
                 listOf(Manifest.permission.ACCESS_COARSE_LOCATION)
             ))
+            if (Build.VERSION.SDK_INT >= 29) {
+                add(PermissionItem(
+                    "background_location",
+                    "موقعیت مکانی در پس‌زمینه",
+                    "برای ثبت دوره‌ای موقعیت هنگام بسته بودن برنامه لازم است. این دسترسی جدا از موقعیت تقریبی است و باید آگاهانه از تنظیمات اندروید فعال شود.",
+                    listOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                ))
+            }
             add(PermissionItem(
                 "call_log",
                 "تاریخچه تماس‌ها",
@@ -402,15 +410,60 @@ private fun LocalSetupScreen(darkMode: Boolean, onToggleTheme: () -> Unit) {
                                     Text(item.description, style = MaterialTheme.typography.bodySmall)
                                     if (!granted) {
                                         Spacer(Modifier.height(8.dp))
-                                        if (!requestedOnce) {
-                                            OutlinedButton(onClick = {
-                                                // Record before launching so dismissing or denying the
-                                                // system dialog cannot cause repeated prompts.
-                                                PermissionRequestPolicy.markRequested(context, item.permissions)
-                                                refreshKey++
-                                                permissionLauncher.launch(item.permissions.toTypedArray())
-                                            }) {
+                                        if (item.key == "background_location" &&
+                                            Build.VERSION.SDK_INT >= 30
+                                        ) {
+                                            val foregroundLocationGranted =
+                                                ContextCompat.checkSelfPermission(
+                                                    context,
+                                                    Manifest.permission.ACCESS_COARSE_LOCATION
+                                                ) == PackageManager.PERMISSION_GRANTED ||
+                                                    ContextCompat.checkSelfPermission(
+                                                        context,
+                                                        Manifest.permission.ACCESS_FINE_LOCATION
+                                                    ) == PackageManager.PERMISSION_GRANTED
+                                            OutlinedButton(
+                                                enabled = foregroundLocationGranted,
+                                                onClick = {
+                                                    context.startActivity(PermissionRequestPolicy.appSettingsIntent(context))
+                                                }
+                                            ) {
+                                                Text("مدیریت دسترسی در تنظیمات")
+                                            }
+                                            if (!foregroundLocationGranted) {
+                                                Text(
+                                                    "ابتدا مجوز موقعیت مکانی را در بخش قبلی فعال کن.",
+                                                    style = MaterialTheme.typography.bodySmall
+                                                )
+                                            }
+                                        } else if (!requestedOnce) {
+                                            val foregroundLocationGranted =
+                                                item.key != "background_location" ||
+                                                    ContextCompat.checkSelfPermission(
+                                                        context,
+                                                        Manifest.permission.ACCESS_COARSE_LOCATION
+                                                    ) == PackageManager.PERMISSION_GRANTED ||
+                                                    ContextCompat.checkSelfPermission(
+                                                        context,
+                                                        Manifest.permission.ACCESS_FINE_LOCATION
+                                                    ) == PackageManager.PERMISSION_GRANTED
+                                            OutlinedButton(
+                                                enabled = foregroundLocationGranted,
+                                                onClick = {
+                                                    // Record before launching so dismissing or denying the
+                                                    // system dialog cannot cause repeated prompts.
+                                                    PermissionRequestPolicy.markRequested(context, item.permissions)
+                                                    refreshKey++
+                                                    permissionLauncher.launch(item.permissions.toTypedArray())
+                                                }
+                                            ) {
                                                 Text("درخواست مجوز (فقط یک‌بار)")
+                                            }
+                                            if (!foregroundLocationGranted) {
+                                                Text(
+                                                    "ابتدا مجوز موقعیت مکانی را در بخش قبلی فعال کن.",
+                                                    style = MaterialTheme.typography.bodySmall
+                                                )
                                             }
                                         } else {
                                             OutlinedButton(onClick = {
