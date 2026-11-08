@@ -215,6 +215,7 @@ class SecureLinkHandshake(
     }
 
     private fun fail() {
+        if (state == State.FAILED || state == State.CLOSED) return
         state = State.FAILED
         approved = false
         try {
