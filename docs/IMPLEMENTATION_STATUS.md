@@ -112,3 +112,15 @@ Validation for this pass: source and JVM tests were committed, but no Gradle bui
 - Changed the Android WSS client to send/receive bounded binary frames without parsing payloads and to accept only known room lifecycle events as text.
 - **Not implemented:** a Noise cryptographic engine, persistent X25519 static-key store and P-256 binding verifier, authenticated WebRTC fingerprint exchange, WebRTC PeerConnection, or encrypted migration of existing app capabilities.
 - This is not yet end-to-end encrypted remote access. WSS protects only each hop; do not deploy as a working secure session or expose the plaintext LAN TCP server. No Android build, Worker deployment, Noise vector, integration, or physical-device test has been verified.
+
+
+## RK-SecureLink · Noise XX engine source implementation
+
+- Added pinned dependency `com.stonygrey:torann:0.3.1`, using `Noise_XX_25519_ChaChaPoly_SHA256`. The library documents Android API 33+ support, shared Noise test vectors and cross-implementation tests; it explicitly says it has not been independently audited and is not production-ready. SecureLink key storage fails closed below API 33; the overall app minSdk remains 26.
+- Added `SecureLinkStaticKeyStore`: creates X25519 static keys, wraps private bytes with AES-256-GCM using a non-exportable Android Keystore key, stores only IV/ciphertext/generation in app-private preferences, and supports rotation/clear. X25519 private bytes are not hardware-backed.
+- Added `SecureLinkIdentityBinding`: signs the peer ID, P-256 public key, X25519 public key, version and generation with the existing P-256 Android Keystore identity. The binding is carried inside encrypted Noise handshake payloads.
+- Added `SecureLinkHandshake`: initiator/responder Noise XX three-message state machine; validates signed peer bindings and optional pinned Peer ID; derives a 6-digit SAS from the final handshake hash; blocks transport read/write until local SAS confirmation; closes the session on handshake/decryption failure.
+- Added a factory joining the existing P-256 identity store and encrypted X25519 key store. Cloudflare signaling remains a separate opaque-binary transport and is not yet wired to this engine.
+- Added JVM tests for two-party handshake/transport, matching SAS, wrong pinned peer rejection, and forged binding rejection.
+- **Still not complete:** app-level trust acknowledgement from both peers, persistent paired-peer pin/generation/revocation database, Cloudflare client integration, WebRTC PeerConnection and DTLS fingerprint binding, migration of existing feature traffic, upstream Noise vector run on Android, independent security review, Android build/CI and physical two-device tests.
+- Do not expose the legacy plaintext LAN TCP port 18765. This source implementation is not a production-verified secure Internet connection.
