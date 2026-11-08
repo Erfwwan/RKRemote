@@ -157,11 +157,11 @@ class LanAgentServer(
     }
 
     private fun respondBytes(output: OutputStream, bytes: ByteArray) {
-        val header = "HTTP/1.1 200 OK\\r\\n" +
-            "Content-Type: image/jpeg\\r\\n" +
-            "Content-Length: ${bytes.size}\\r\\n" +
-            "Connection: close\\r\\n" +
-            "Cache-Control: no-store\\r\\n\\r\\n"
+        val header = "HTTP/1.1 200 OK\r\n" +
+            "Content-Type: image/jpeg\r\n" +
+            "Content-Length: ${bytes.size}\r\n" +
+            "Connection: close\r\n" +
+            "Cache-Control: no-store\r\n\r\n"
         output.write(header.toByteArray(Charsets.US_ASCII))
         output.write(bytes)
         output.flush()
@@ -177,11 +177,11 @@ class LanAgentServer(
             503 -> "Service Unavailable"
             else -> "Method Not Allowed"
         }
-        val header = "HTTP/1.1 $status $label\\r\\n" +
-            "Content-Type: application/json; charset=utf-8\\r\\n" +
-            "Content-Length: ${bytes.size}\\r\\n" +
-            "Connection: close\\r\\n" +
-            "Cache-Control: no-store\\r\\n\\r\\n"
+        val header = "HTTP/1.1 $status $label\r\n" +
+            "Content-Type: application/json; charset=utf-8\r\n" +
+            "Content-Length: ${bytes.size}\r\n" +
+            "Connection: close\r\n" +
+            "Cache-Control: no-store\r\n\r\n"
         output.write(header.toByteArray(Charsets.US_ASCII))
         output.write(bytes)
         output.flush()
