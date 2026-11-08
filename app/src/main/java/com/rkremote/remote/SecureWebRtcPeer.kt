@@ -43,7 +43,86 @@ class SecureWebRtcPeer(
         val username: String,
         val credential: String
     ) {
-        init {
+    
+    fun start() {
+        check(!closed.get()) { "WebRTC peer is closed" }
+        listener.onConnecting()
+        if (role == Role.CONTROLLER) {
+            val init = DataChannel.Init().apply {
+                ordered = true
+                negotiated = false
+            }
+            dataChannel = peerConnection!!.createDataChannel(DATA_CHANNEL_LABEL, init)
+                ?: error("Could not create WebRTC data channel")
+            observeDataChannel(dataChannel!!)
+            peerConnection!!.createOffer(sdpObserver { description ->
+                setLocalAndSignal(description, "offer")
+            }, MediaConstraints())
+        }
+        // Target waits for the encrypted offer and accepts the incoming DataChannel.
+    }
+
+    fun send(payload: ByteArray): Boolean {
+        if (closed.get() || payload.isEmpty() || payload.size > MAX_DATA_BYTES) return false
+        val channel = dataChannel ?: return false
+        if (channel.state() != DataChannel.State.OPEN) return false
+        return channel.send(DataChannel.Buffer(ByteBuffer.wrap(payload), false))
+    }
+
+    private val observer = object : PeerConnection.Observer {
+        override fun onSignalingChange(state: PeerConnection.SignalingState) = Unit
+        override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {
+            when (state) {
+                PeerConnection.IceConnectionState.CONNECTED,
+                PeerConnection.IceConnectionState.COMPLETED -> {
+                    if (dataChannel?.state() == DataChannel.State.OPEN) listener.onConnected()
+                }
+                PeerConnection.IceConnectionState.DISCONNECTED ->
+                    listener.onDisconnected("WebRTC ICE connection disconnected")
+                PeerConnection.IceConnectionState.FAILED ->
+                    listener.onFailure(IllegalStateException("WebRTC ICE connectivity failed"))
+                PeerConnection.IceConnectionState.CLOSED -> Unit
+                else -> Unit
+            }
+        }
+        override fun onIceConnectionReceivingChange(receiving: Boolean) = Unit
+        override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) = Unit
+        override fun onIceCandidate(candidate: IceCandidate) {
+            runCatching {
+                sendSignal(JSONObject()
+                    .put("type", "ice")
+                    .put("peerId", localPeerId)
+                    .put("mid", candidate.sdpMid)
+                    .put("mLine", candidate.sdpMLineIndex)
+                    .put("candidate", candidate.sdp))
+            }.onFailure {
+                listener.onFailure(it)
+                close()
+            }
+        }
+        override fun onIceCandidatesRemoved(candidates: Array<IceCandidate>) = Unit
+        override fun onAddStream(stream: org.webrtc.MediaStream) = Unit
+        override fun onRemoveStream(stream: org.webrtc.MediaStream) = Unit
+        override fun onDataChannel(channel: DataChannel) {
+            if (role != Role.TARGET || channel.label() != DATA_CHANNEL_LABEL || dataChannel != null) {
+                channel.close()
+                channel.dispose()
+                return
+            }
+            dataChannel = channel
+            observeDataChannel(channel)
+        }
+        override fun onRenegotiationNeeded() = Unit
+        override fun onAddTrack(receiver: org.webrtc.RtpReceiver, streams: Array<org.webrtc.MediaStream>) = Unit
+        override fun onTrack(transceiver: org.webrtc.RtpTransceiver) = Unit
+        override fun onConnectionChange(newState: PeerConnection.PeerConnectionState) {
+            if (newState == PeerConnection.PeerConnectionState.FAILED) {
+                listener.onFailure(IllegalStateException("WebRTC peer connection failed"))
+            }
+        }
+    }
+
+    init {
             require(urls.isNotEmpty())
             require(username.isNotBlank() && credential.isNotBlank())
             require(urls.all { it.startsWith("turn:") || it.startsWith("turns:") })
@@ -95,79 +174,6 @@ class SecureWebRtcPeer(
     }
 
     /** Call after SecureLink reports mutual owner approval and onSecureReady. */
-    fun start() {
-        check(!closed.get()) { "WebRTC peer is closed" }
-        listener.onConnecting()
-        if (role == Role.CONTROLLER) {
-            val init = DataChannel.Init().apply {
-                ordered = true
-                negotiated = false
-            }
-            dataChannel = peerConnection!!.createDataChannel(DATA_CHANNEL_LABEL, init)
-                ?: error("Could not create WebRTC data channel")
-            observeDataChannel(dataChannel!!)
-            peerConnection!!.createOffer(sdpObserver { description ->
-                setLocalAndSignal(description, "offer")
-            }, MediaConstraints())
-        }
-        // Target waits for the encrypted offer and accepts the incoming DataChannel.
-    }
-
-    fun send(payload: ByteArray): Boolean {
-        if (closed.get() || payload.isEmpty() || payload.size > MAX_DATA_BYTES) return false
-        val channel = dataChannel ?: return false
-        if (channel.state() != DataChannel.State.OPEN) return false
-        return channel.send(DataChannel.Buffer(ByteBuffer.wrap(payload), false))
-    }
-
-    private val observer = object : PeerConnection.Observer {
-        override fun onSignalingChange(state: PeerConnection.SignalingState) = Unit
-        override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {
-            when (state) {
-                PeerConnection.IceConnectionState.CONNECTED,
-                PeerConnection.IceConnectionState.COMPLETED -> {
-                    if (dataChannel?.state() == DataChannel.State.OPEN) listener.onConnected()
-                }
-                PeerConnection.IceConnectionState.DISCONNECTED ->
-                    listener.onDisconnected("WebRTC ICE connection disconnected")
-                PeerConnection.IceConnectionState.FAILED ->
-                    listener.onFailure(IllegalStateException("WebRTC ICE connectivity failed"))
-                PeerConnection.IceConnectionState.CLOSED -> Unit
-                else -> Unit
-            }
-        }
-        override fun onIceConnectionReceivingChange(receiving: Boolean) = Unit
-        override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) = Unit
-        override fun onIceCandidate(candidate: IceCandidate) {
-            sendSignal(JSONObject()
-                .put("type", "ice")
-                .put("peerId", localPeerId)
-                .put("mid", candidate.sdpMid)
-                .put("mLine", candidate.sdpMLineIndex)
-                .put("candidate", candidate.sdp))
-        }
-        override fun onIceCandidatesRemoved(candidates: Array<IceCandidate>) = Unit
-        override fun onAddStream(stream: org.webrtc.MediaStream) = Unit
-        override fun onRemoveStream(stream: org.webrtc.MediaStream) = Unit
-        override fun onDataChannel(channel: DataChannel) {
-            if (role != Role.TARGET || channel.label() != DATA_CHANNEL_LABEL || dataChannel != null) {
-                channel.close()
-                channel.dispose()
-                return
-            }
-            dataChannel = channel
-            observeDataChannel(channel)
-        }
-        override fun onRenegotiationNeeded() = Unit
-        override fun onAddTrack(receiver: org.webrtc.RtpReceiver, streams: Array<org.webrtc.MediaStream>) = Unit
-        override fun onTrack(transceiver: org.webrtc.RtpTransceiver) = Unit
-        override fun onConnectionChange(newState: PeerConnection.PeerConnectionState) {
-            if (newState == PeerConnection.PeerConnectionState.FAILED) {
-                listener.onFailure(IllegalStateException("WebRTC peer connection failed"))
-            }
-        }
-    }
-
     private fun observeDataChannel(channel: DataChannel) {
         channel.registerObserver(object : DataChannel.Observer {
             override fun onBufferedAmountChange(previousAmount: Long) = Unit
