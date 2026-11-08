@@ -78,3 +78,18 @@ The target UI includes an explicit **Start agent after phone reboot** option, di
 This does not bypass Android's force-stop state. A user force-stop, app-data clear, uninstall, revoked permissions, an invalidated Keystore key, OEM power-management termination, or system policy can prevent restoration. Android may delay a sticky service restart until resources are available. Reboot restoration is also subject to the device's foreground-service and boot policies; failures must be diagnosed on the actual device. No permanent always-on guarantee is made. Battery-optimization settings remain an explicit owner choice.
 
 Validation status: source changes committed. No Gradle build, CI workflow result, reboot test, process-kill test, or physical Samsung-device test has yet verified this implementation. A rejected boot-time start is logged and leaves the owner preference available for a manual retry.
+
+
+## Internet P2P migration · Stage 1 committed
+
+The first P2P foundation is present:
+- Android Keystore-backed P-256 peer identity (P2pIdentityStore); private key is non-exportable.
+- Stable peer ID derived from SHA-256 of the encoded public key.
+- Signed, bounded, short-lived peer advertisement format (P2pPeerRecord) with sequence, issue/expiry timestamps, peer ID/public-key binding and transport-address validation.
+- JVM tests for record round-trip, tampering, expiry, TTL bounds and address syntax.
+
+This is **not yet internet connectivity**. DHT publication/lookup, NAT traversal, direct peer transport, relay fallback, and migration of existing feature traffic are not implemented. The old plaintext TCP bearer-token path remains LAN-only; do not expose port 18765 to the internet. See [INTERNET_P2P_MIGRATION.md](INTERNET_P2P_MIGRATION.md) for the staged architecture and acceptance criteria.
+
+The current jvm-libp2p candidate is not yet suitable to claim production DHT/relay support: its component matrix does not list Kademlia DHT as implemented and marks Circuit Relay v2 as prototype/beta. No dependency was added pending a validated Android-compatible implementation.
+
+Validation for this pass: source and JVM tests were committed, but no Gradle build, CI result, DHT integration test, NAT traversal test, or two-device internet test has yet been verified.
