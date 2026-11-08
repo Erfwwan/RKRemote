@@ -12,7 +12,7 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /**
- * Encrypted, owner-managed remember-me grants for SMS, call-history and location sharing.
+ * Encrypted, owner-managed remember-me grants for contacts, SMS, call-history and location sharing.
  *
  * Entries are bound to the remote peer's stable, signed P2P identity ID. The
  * store never persists a grant for any other capability.
@@ -38,7 +38,7 @@ class PersistentPeerReportConsent(context: Context) {
     fun grant(peerId: String, capability: RemoteCapability) {
         validatePeerId(peerId)
         require(capability in PERSISTABLE_CAPABILITIES) {
-            "Only SMS and call-history report grants can be remembered"
+            "Only contacts, SMS, call-history and location grants can be remembered"
         }
         val records = readAll()
         val grants = records.getOrPut(peerId) { mutableSetOf() }
@@ -131,6 +131,7 @@ class PersistentPeerReportConsent(context: Context) {
     private fun parseCapability(name: String): RemoteCapability? =
         when (name) {
             RemoteCapability.CONTACTS.name -> RemoteCapability.CONTACTS
+            RemoteCapability.ADDRESS_BOOK.name -> RemoteCapability.ADDRESS_BOOK
             RemoteCapability.CALL_LOG.name -> RemoteCapability.CALL_LOG
             RemoteCapability.LOCATION.name -> RemoteCapability.LOCATION
             else -> null
@@ -154,6 +155,7 @@ class PersistentPeerReportConsent(context: Context) {
         private val AAD = "RKRemote|peer-report-consent|v1".toByteArray(Charsets.UTF_8)
         private val PERSISTABLE_CAPABILITIES = setOf(
             RemoteCapability.CONTACTS,
+            RemoteCapability.ADDRESS_BOOK,
             RemoteCapability.CALL_LOG,
             RemoteCapability.LOCATION
         )
