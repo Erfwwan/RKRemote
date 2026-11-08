@@ -190,13 +190,6 @@ fun LanRemotePanel() {
                         .putExtra(SessionForegroundService.EXTRA_TOKEN, token)
                     ContextCompat.startForegroundService(context, intent)
                 }) { Text("Start agent") }
-                OutlinedButton(onClick = {
-                    context.startService(
-                        Intent(context, SessionForegroundService::class.java)
-                            .setAction(SessionForegroundService.ACTION_STOP)
-                    )
-                    token = ""
-                }) { Text("Stop") }
             }
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 Checkbox(
@@ -221,7 +214,7 @@ fun LanRemotePanel() {
             if (token.isNotBlank()) {
                 Text("Temporary access token (share only with your controller phone):", style = MaterialTheme.typography.bodySmall)
                 Text(token, fontWeight = FontWeight.Bold)
-                Text("Port: ${LanAgentServer.DEFAULT_PORT} · Read-only · Stop from notification or here.", style = MaterialTheme.typography.bodySmall)
+                Text("Port: ${LanAgentServer.DEFAULT_PORT} · Read-only · Stop from the persistent notification.", style = MaterialTheme.typography.bodySmall)
             }
             Spacer(Modifier.height(4.dp))
             Text("SCREEN SHARING · TARGET PHONE", fontWeight = FontWeight.SemiBold)
