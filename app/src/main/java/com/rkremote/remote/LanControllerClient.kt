@@ -70,7 +70,7 @@ object LanControllerClient {
         }
         require(token.length >= 24) { "Invalid session token" }
         require(
-            (method == "GET" && (endpoint in setOf("/health", "/files", "/screen.jpg", "/camera.jpg", "/audio/chunk") ||
+            (method == "GET" && (endpoint in setOf("/health", "/files", "/screen.jpg", "/camera.jpg", "/audio/chunk", "/notifications") ||
                 endpoint.startsWith("/file/download?"))) ||
                 (method == "POST" && endpoint in setOf("/input/tap", "/input/gesture", "/input/text", "/file/upload", "/audio/ptt"))
         ) { "Unsupported request" }
