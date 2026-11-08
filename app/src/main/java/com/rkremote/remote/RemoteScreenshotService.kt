@@ -168,7 +168,7 @@ class RemoteScreenshotService : Service() {
         runCatching { oldProjection?.stop() }
         worker?.quitSafely()
         worker = null
-        RemoteScreenshotStore.clear()
+        RemoteScreenshotStore.setActive(false)
     }
 
     override fun onDestroy() {
