@@ -2,7 +2,7 @@
 
 ## Status
 
-This document is the normative design for the next RKRemote transport stage. The Cloudflare worker and Android signaling adapter have been changed to carry opaque binary frames only. **The Noise XX handshake engine, encrypted X25519 static-key store, and signed P-256 identity binding are now implemented as source code with JVM handshake tests. WebRTC transport, full official-vector execution in this app, Android build verification, and two-device acceptance tests are still outstanding.** Do not treat the current branch as providing end-to-end encryption or expose the legacy LAN server to the internet.
+This document is the normative design for the next RKRemote transport stage. The Cloudflare worker and Android signaling adapter have been changed to carry opaque binary frames only. **The Noise XX handshake engine, encrypted X25519 static-key store, signed P-256 identity binding, and a Cloudflare session bridge are implemented as source code. The bridge sends/receives the three Noise handshake messages as opaque binary frames, exposes the peer ID and SAS for owner confirmation, and gates application frames until both peers have locally approved. JVM handshake tests exist, but bridge integration tests, WebRTC transport, full official-vector execution in this app, Android build verification, and two-device acceptance tests are still outstanding.** Do not treat the current branch as providing end-to-end encryption or expose the legacy LAN server to the internet.
 
 ## Goals and limits
 
@@ -45,11 +45,12 @@ Each peer sends its binding statement as encrypted Noise handshake payload (resp
 1. Open WSS to the rendezvous. Cloudflare sees the room ID, connecting IPs, role, timing, and traffic volume.
 2. Exchange Noise XX handshake messages as binary WebSocket messages. Cloudflare forwards bytes without parsing or storing them. The worker accepts no client text/JSON messages.
 3. Verify both P-256-signed X25519 binding statements against the paired peer records and pinned identities.
-4. Compare the 6-digit short authentication string derived from the final Noise handshake hash. `SecureLinkHandshake` gates all Noise transport reads/writes until the local owner confirms this code and, when known, the expected peer ID.
-5. Derive directional transport keys and nonces from Noise's completed handshake state. Never reuse a key/nonce pair, manually roll counters back, or persist session keys.
-6. Only after successful authentication, exchange WebRTC offer/answer/ICE as encrypted Noise transport payloads. The SDP and ICE candidates are never sent as clear text to Cloudflare.
-7. Exchange the WebRTC DTLS certificate fingerprints inside the authenticated Noise channel and bind the expected fingerprint to the approved peer identity and current session. Reject mismatches before accepting the peer connection.
-8. Close and erase in-memory session state on local stop, peer revoke, authentication failure, or session expiry.
+4. Compare the 6-digit short authentication string derived from the final Noise handshake hash. The bridge reports the peer ID and SAS to the UI; the owner must explicitly approve the peer ID and code on each device.
+5. After local approval, each peer sends an encrypted READY message. Application frames remain blocked until the bridge receives the remote READY as well. Frames arriving before local approval are held in a bounded queue of eight encrypted frames; overflow fails closed.
+6. Derive directional transport keys and nonces from Noise's completed handshake state. Never reuse a key/nonce pair, manually roll counters back, or persist session keys.
+7. Only after mutual approval, exchange WebRTC offer/answer/ICE as encrypted Noise transport payloads. The SDP and ICE candidates are never sent as clear text to Cloudflare.
+8. Exchange the WebRTC DTLS certificate fingerprints inside the authenticated Noise channel and bind the expected fingerprint to the approved peer identity and current session. Reject mismatches before accepting the peer connection.
+9. Close and erase in-memory session state on local stop, peer revoke, authentication failure, or session expiry.
 
 Room IDs are random 256-bit temporary rendezvous invitations, not cryptographic peer identities or session keys. Use one target and one controller per room, a short room lifetime, rate limits, and local cancel. Do not put tokens or capabilities in the room ID.
 
@@ -95,8 +96,9 @@ Before enabling Internet remote control, complete all of the following:
 1. Torann 0.3.1 is pinned and integrated for API 33+; review its transitive Bouncy Castle dependency and obtain an independent security audit before production.
 2. Encrypted-at-rest X25519 key storage, generation tracking, P-256-signed identity binding, and a three-message XX state machine are implemented. JVM tests cover two-party handshake, identity pin mismatch, signature tampering, SAS agreement, and encrypted transport round-trip.
 3. Run the upstream official Noise test vectors on the actual Android API 33+ runtime and expand negative tests for malformed/replayed frames, revoked peers, and key rotation. A local source test is not a substitute for this run.
-4. Implement WebRTC and authenticate its DTLS fingerprint through the Noise channel.
-5. Add independent security review and physical two-device tests on separate networks, including direct and relay paths.
-6. Migrate each capability only after explicit capability authorization, local owner visibility, stop/revoke behavior, and encrypted transport are tested.
+4. Add bridge-level tests using an in-memory frame channel, including early-frame buffering, mutual READY gating, malformed app frames, room loss, and bounded-queue failure.
+5. Implement WebRTC and authenticate its DTLS fingerprint through the Noise channel.
+6. Add independent security review and physical two-device tests on separate networks, including direct and relay paths.
+7. Migrate each capability only after explicit capability authorization, local owner visibility, stop/revoke behavior, and encrypted transport are tested.
 
-Until the remaining gates pass, the binary Cloudflare tunnel plus Noise engine is a cryptographic foundation only; it is not yet integrated with WebRTC or existing remote-control features and must not be treated as a secure remote-control product.
+Until the remaining gates pass, the Cloudflare-to-Noise signaling bridge is only a secure signaling foundation; it is not integrated with WebRTC or existing remote-control features and must not be treated as a secure remote-control product. The legacy LAN path remains plaintext.
