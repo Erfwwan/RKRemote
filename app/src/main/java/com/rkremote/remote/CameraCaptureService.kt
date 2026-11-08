@@ -152,7 +152,7 @@ class CameraCaptureService : Service() {
                 val buffer = image.planes[0].buffer
                 val bytes = ByteArray(buffer.remaining())
                 buffer.get(bytes)
-                val (encoded, mimeType) = encodeLosslesslyWhenSmaller(bytes)
+                val (encoded, mimeType) = compressForTransfer(bytes)
                 CameraFrameStore.publish(encoded, mimeType)
             } finally {
                 image.close()
@@ -217,14 +217,20 @@ class CameraCaptureService : Service() {
         }, handler)
     }
 
-    private fun encodeLosslesslyWhenSmaller(jpeg: ByteArray): Pair<ByteArray, String> {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return jpeg to "image/jpeg"
-        val bitmap = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size) ?: return jpeg to "image/jpeg"
+    /**
+     * Telegram-style photo compression: keep the camera's already bounded
+     * dimensions, then re-encode as JPEG at quality 82 to reduce transfer size.
+     * If decoding or encoding fails, preserve and send the original camera JPEG.
+     */
+    private fun compressForTransfer(jpeg: ByteArray): Pair<ByteArray, String> {
+        val bitmap = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size)
+            ?: return jpeg to "image/jpeg"
         return try {
             val output = ByteArrayOutputStream()
-            val encoded = bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSLESS, 100, output)
-            val webp = output.toByteArray()
-            if (encoded && webp.isNotEmpty() && webp.size < jpeg.size) webp to "image/webp" else jpeg to "image/jpeg"
+            val encoded = bitmap.compress(Bitmap.CompressFormat.JPEG, TRANSFER_JPEG_QUALITY, output)
+            val compressed = output.toByteArray()
+            if (encoded && compressed.isNotEmpty()) compressed to "image/jpeg"
+            else jpeg to "image/jpeg"
         } catch (_: Exception) {
             jpeg to "image/jpeg"
         } finally {
@@ -260,5 +266,6 @@ class CameraCaptureService : Service() {
         const val EXTRA_LENS_FACING = "camera_lens_facing"
         private const val CHANNEL = "rkremote_camera_capture"
         private const val NOTIFICATION_ID = 4203
+        private const val TRANSFER_JPEG_QUALITY = 82
     }
 }
