@@ -758,19 +758,19 @@ fun SecureInternetPanel() {
                                                     mainHandler.post {
                                             if (activePeerRef.get() !== activePeer) return@post
                                                         if (!accepted) {
-                                                            if (transferId.isNotBlank() && activeTransferId.get() == transferId) {
-                                                                transferActive.set(false)
-                                                                activeTransferId.compareAndSet(transferId, null)
-                                                                downloadReceiver.abort()
+                                                            if (transferId.isNotBlank()) {
+                                                                outgoingUploadIds.remove(transferId)
+                                                                if (activeTransferId.get() == transferId) {
+                                                                    transferActive.set(false)
+                                                                    activeTransferId.compareAndSet(transferId, null)
+                                                                    downloadReceiver.abort()
+                                                                }
                                                             }
                                                             fileUploadStatus.value =
                                                                 message.payload.optString("reason", "Target rejected file transfer")
                                                         } else if (message.payload.optString("commandType") == "file.transfer.complete") {
+                                                            if (transferId.isNotBlank()) outgoingUploadIds.remove(transferId)
                                                             fileUploadStatus.value = "Target verified and saved uploaded file"
-                                                            if (transferId.isNotBlank()) {
-                                                                transferActive.set(false)
-                                                                activeTransferId.compareAndSet(transferId, null)
-                                                            }
                                                         }
                                                     }
                                                 }
@@ -1299,26 +1299,35 @@ fun SecureInternetPanel() {
                 Text(fileDownloadStatus.value, style = MaterialTheme.typography.bodySmall)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
-                        enabled = session.value != null && dataChannelConnected.value && !transferActive.get(),
+                        enabled = session.value != null && dataChannelConnected.value &&
+                            outgoingUploadIds.size < SecureSafTransferBridge.MAX_ACTIVE_UPLOADS,
                         onClick = { uploadPicker.launch(arrayOf("*/*")) }
-                    ) { Text("Upload a file to target") }
+                    ) { Text("Upload files (up to 3)") }
                     OutlinedButton(
-                        enabled = session.value != null && dataChannelConnected.value,
+                        enabled = session.value != null && dataChannelConnected.value &&
+                            (outgoingUploadIds.isNotEmpty() || activeTransferId.get() != null),
                         onClick = {
-                            val transferId = activeTransferId.get()
-                            if (transferId != null) {
+                            outgoingUploadIds.toList().forEach { transferId ->
                                 sendInput(
                                     "file.transfer.cancel",
                                     JSONObject().put("transferId", transferId)
                                 )
+                                outgoingUploadIds.remove(transferId)
                             }
-                            transferActive.set(false)
-                            activeTransferId.set(null)
-                            downloadReceiver.abort()
-                            fileDownloadStatus.value = "File transfer cancelled"
-                            fileUploadStatus.value = "File transfer cancelled"
+                            val downloadId = activeTransferId.get()
+                            if (downloadId != null) {
+                                sendInput(
+                                    "file.transfer.cancel",
+                                    JSONObject().put("transferId", downloadId)
+                                )
+                                transferActive.set(false)
+                                activeTransferId.compareAndSet(downloadId, null)
+                                downloadReceiver.abort()
+                            }
+                            fileDownloadStatus.value = "Active download cancelled"
+                            fileUploadStatus.value = "Outgoing uploads cancelled"
                         }
-                    ) { Text("Cancel transfer") }
+                    ) { Text("Cancel transfers") }
                 }
                 Text(fileUploadStatus.value, style = MaterialTheme.typography.bodySmall)
             }
