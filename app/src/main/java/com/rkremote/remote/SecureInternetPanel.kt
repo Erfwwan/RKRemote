@@ -526,15 +526,12 @@ fun SecureInternetPanel() {
                                         "file.download.begin"
                                     }
                                     register("camera.start.request", RemoteCapability.CAMERA) {
-                                        val frame = CameraFrameStore.latestFrame?.copyOf()
-                                            ?: error("Start the camera locally on the target first")
-                                        require(frame.size in 1..SecureImageFrameAssembler.MAX_IMAGE_BYTES) {
-                                            "Camera frame exceeds the secure snapshot limit"
+                                        check(CameraFrameStore.latestFrame != null) {
+                                            "Start the camera locally on the target first"
                                         }
                                         check(cameraTransferActive.compareAndSet(false, true)) {
-                                            "A camera snapshot is already being transferred"
+                                            "Secure camera stream is already active"
                                         }
-                                        val transferId = UUID.randomUUID().toString()
                                         cameraExecutor.execute {
                                             try {
                                                 fun sendWithRetry(type: String, payload: JSONObject): Boolean {
@@ -546,36 +543,56 @@ fun SecureInternetPanel() {
                                                     }
                                                     return false
                                                 }
-                                                check(sendWithRetry(
-                                                    "camera.frame.begin",
-                                                    JSONObject()
-                                                        .put("transferId", transferId)
-                                                        .put("totalBytes", frame.size)
-                                                        .put("mimeType", CameraFrameStore.latestMimeType)
-                                                )) { "Could not start camera frame transfer" }
-                                                var offset = 0
-                                                while (offset < frame.size && cameraTransferActive.get()) {
-                                                    val end = minOf(offset + SecureImageFrameAssembler.MAX_CHUNK_BYTES, frame.size)
-                                                    val chunk = frame.copyOfRange(offset, end)
+
+                                                // Relay only fresh frames already published by the
+                                                // locally started CameraCaptureService. This loop
+                                                // never opens or switches the camera.
+                                                while (cameraTransferActive.get()) {
+                                                    val frame = CameraFrameStore.latestFrame?.copyOf()
+                                                        ?: error("Local camera capture stopped")
+                                                    require(frame.size in 1..SecureImageFrameAssembler.MAX_IMAGE_BYTES) {
+                                                        "Camera frame exceeds the secure stream limit"
+                                                    }
+                                                    val transferId = UUID.randomUUID().toString()
                                                     check(sendWithRetry(
-                                                        "camera.frame.chunk",
+                                                        "camera.frame.begin",
                                                         JSONObject()
                                                             .put("transferId", transferId)
-                                                            .put("offset", offset)
-                                                            .put("data", Base64.getEncoder().encodeToString(chunk))
-                                                    )) { "Camera frame transfer was interrupted" }
-                                                    offset = end
+                                                            .put("totalBytes", frame.size)
+                                                            .put("mimeType", CameraFrameStore.latestMimeType)
+                                                    )) { "Could not start secure camera frame transfer" }
+
+                                                    var offset = 0
+                                                    while (offset < frame.size && cameraTransferActive.get()) {
+                                                        val endOffset = minOf(
+                                                            offset + SecureImageFrameAssembler.MAX_CHUNK_BYTES,
+                                                            frame.size
+                                                        )
+                                                        val chunk = frame.copyOfRange(offset, endOffset)
+                                                        check(sendWithRetry(
+                                                            "camera.frame.chunk",
+                                                            JSONObject()
+                                                                .put("transferId", transferId)
+                                                                .put("offset", offset)
+                                                                .put("data", Base64.getEncoder().encodeToString(chunk))
+                                                        )) { "Secure camera frame transfer was interrupted" }
+                                                        offset = endOffset
+                                                    }
+                                                    if (!cameraTransferActive.get()) break
+                                                    val hash = MessageDigest.getInstance("SHA-256").digest(frame)
+                                                        .joinToString("") { "%02x".format(it) }
+                                                    check(sendWithRetry(
+                                                        "camera.frame.complete",
+                                                        JSONObject().put("transferId", transferId).put("sha256", hash)
+                                                    )) { "Could not complete secure camera frame transfer" }
+                                                    Thread.sleep(650)
                                                 }
-                                                check(cameraTransferActive.get()) { "Camera frame transfer was stopped" }
-                                                val hash = MessageDigest.getInstance("SHA-256").digest(frame)
-                                                    .joinToString("") { "%02x".format(it) }
-                                                check(sendWithRetry(
-                                                    "camera.frame.complete",
-                                                    JSONObject().put("transferId", transferId).put("sha256", hash)
-                                                )) { "Could not complete camera frame transfer" }
                                             } catch (failure: Throwable) {
-                                                mainHandler.post {
-                                                    cameraStatus.value = failure.message ?: "Camera frame transfer failed"
+                                                if (cameraTransferActive.get()) {
+                                                    mainHandler.post {
+                                                        if (activePeerRef.get() !== activePeer) return@post
+                                                        cameraStatus.value = failure.message ?: "Secure camera stream failed"
+                                                    }
                                                 }
                                             } finally {
                                                 cameraTransferActive.set(false)
@@ -732,7 +749,7 @@ fun SecureInternetPanel() {
                                             }.onSuccess {
                                                 mainHandler.post {
                                             if (activePeerRef.get() !== activePeer) return@post
-                                            cameraStatus.value = "Receiving secure camera snapshot"
+                                            cameraStatus.value = "Receiving secure camera frame"
                                             }
                                             }.onFailure {
                                                 imageAssembler.abort()
@@ -758,7 +775,7 @@ fun SecureInternetPanel() {
                                                 mainHandler.post {
                                             if (activePeerRef.get() !== activePeer) return@post
                                                     cameraBitmap.value = bitmap
-                                                    cameraStatus.value = "Secure camera snapshot received"
+                                                    cameraStatus.value = "Secure live camera frame received"
                                                 }
                                             }.onFailure {
                                                 imageAssembler.abort()
@@ -1233,20 +1250,20 @@ fun SecureInternetPanel() {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(enabled = session.value != null && dataChannelConnected.value && !cameraTransferActive.get(), onClick = {
                         cameraStatus.value = if (sendInput("camera.start.request", JSONObject()))
-                            "Camera snapshot requested" else "Could not request camera snapshot"
-                    }) { Text("Request camera snapshot") }
+                            "Live camera stream requested" else "Could not start live camera stream"
+                    }) { Text("Start live camera") }
                     OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
                         cameraTransferActive.set(false)
                         imageAssembler.abort()
                         sendInput("camera.stop", JSONObject())
-                        cameraStatus.value = "Camera snapshot transfer stopped"
-                    }) { Text("Stop camera transfer") }
+                        cameraStatus.value = "Live camera stream stopped"
+                    }) { Text("Stop camera stream") }
                 }
                 Text(cameraStatus.value, style = MaterialTheme.typography.bodySmall)
                 cameraBitmap.value?.let { bitmap ->
                     Image(
                         bitmap = bitmap.asImageBitmap(),
-                        contentDescription = "Secure owner-approved camera snapshot",
+                        contentDescription = "Secure owner-approved live camera frame",
                         modifier = Modifier.fillMaxWidth(),
                         contentScale = ContentScale.Fit
                     )
