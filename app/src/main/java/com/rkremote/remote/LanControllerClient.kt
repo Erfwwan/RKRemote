@@ -35,7 +35,7 @@ object LanControllerClient {
         require(token.length >= 24) { "Invalid session token" }
         require(
             (method == "GET" && endpoint in setOf("/health", "/files", "/screen.jpg")) ||
-                (method == "POST" && endpoint == "/input/tap")
+                (method == "POST" && endpoint in setOf("/input/tap", "/input/gesture", "/input/text"))
         ) { "Unsupported request" }
 
         val socket = Socket()
