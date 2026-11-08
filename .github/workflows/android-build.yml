@@ -1,7 +1,7 @@
 name: Android build
 
 on:
-  # Final build verification: first-run roles, target-only setup, request-only reports and PTT-only audio.
+  # Build verification: independent owner-authorized microphone stream and immediate location requests.
   push:
     branches:
       - feature/remote-agent-foundation
