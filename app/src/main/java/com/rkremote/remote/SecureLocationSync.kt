@@ -322,8 +322,9 @@ class LocationCaptureWorker(
                 freshFix = false
             )
         }
+        // Location samples are stored locally. The controller receives them only
+        // after an authenticated location.sync.request from its paired session.
         store.append(snapshot)
-        LocationSessionBridge.sendIfOwnerApproved(applicationContext, snapshot)
         return Result.success()
     }
 
