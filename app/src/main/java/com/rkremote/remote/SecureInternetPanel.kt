@@ -200,6 +200,10 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
     val targetActiveUploadIds = remember { java.util.concurrent.ConcurrentHashMap.newKeySet<String>() }
     val outgoingUploadIds = remember { java.util.concurrent.ConcurrentHashMap.newKeySet<String>() }
     val audioRelayActive = remember { AtomicBoolean(false) }
+    val microphoneStreamActive = remember { AtomicBoolean(false) }
+    val microphoneStreamStatus = remember { mutableStateOf("میکروفن مستقل غیرفعال است") }
+    val microphonePlayback = remember(context) { SecureAudioPlayback() }
+    val microphoneExecutor = remember { Executors.newSingleThreadExecutor() }
     val pttRelayActive = remember { AtomicBoolean(false) }
     val pttStatus = remember { mutableStateOf("Push-to-talk idle") }
     val audioExecutor = remember { Executors.newSingleThreadExecutor() }
@@ -413,6 +417,9 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
             RemoteCapability.ADDRESS_BOOK -> check(SecureContactsSync.hasContactsPermission(context)) {
                 "Enable Android Contacts permission locally first"
             }
+            RemoteCapability.MICROPHONE -> check(ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                "Enable Android microphone permission locally first"
+            }
             RemoteCapability.LOCATION -> {
                 val hasLocation = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
                     ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
@@ -575,6 +582,9 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
             audioRelayActive.set(false)
             pttRelayActive.set(false)
             audioPlayback.close()
+            microphoneStreamActive.set(false)
+            microphonePlayback.close()
+            microphoneExecutor.shutdownNow()
             audioExecutor.shutdownNow()
             streamSender.value?.close()
             streamSender.value = null
@@ -896,14 +906,48 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                 "sms.sync.result"
                                             }
                                             register("location.sync.request", RemoteCapability.LOCATION) { message ->
-                                                val response = SecureLocationSync.buildLatestResponse(
-                                                    context,
-                                                    message.payload.getString("requestId")
-                                                )
-                                                check(activePeer?.sendMessage("location.sync.result", response) == true) {
-                                                    "Could not send encrypted location history"
+                                                val requestId = message.payload.getString("requestId")
+                                                SecureLocationSync.requestCurrentResponse(context, requestId) { response ->
+                                                    check(activePeer?.sendMessage("location.sync.result", response) == true) {
+                                                        "Could not send encrypted current location"
+                                                    }
                                                 }
                                                 "location.sync.result"
+                                            }
+                                            register("microphone.stream.start", RemoteCapability.MICROPHONE) {
+                                                check(ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                                                    "Android microphone permission is not granted on target"
+                                                }
+                                                check(MicrophoneChunkStore.isCapturing()) {
+                                                    "The target owner must first enable the microphone locally; its visible notification must be active"
+                                                }
+                                                check(!audioRelayActive.get() && !pttRelayActive.get()) {
+                                                    "Stop push-to-talk before starting the independent microphone stream"
+                                                }
+                                                check(microphoneStreamActive.compareAndSet(false, true)) {
+                                                    "Independent microphone stream is already active"
+                                                }
+                                                microphoneStreamStatus.value = "در حال ارسال صدای میکروفن مستقل…"
+                                                microphoneExecutor.execute {
+                                                    try {
+                                                        while (microphoneStreamActive.get() && MicrophoneChunkStore.isCapturing()) {
+                                                            val chunk = MicrophoneChunkStore.take()
+                                                            if (chunk == null) { Thread.sleep(8); continue }
+                                                            val sent = activePeer?.sendMessage("microphone.audio.chunk", JSONObject().put("data", Base64.getEncoder().encodeToString(chunk))) == true
+                                                            if (!sent) { microphoneStreamActive.set(false); break }
+                                                        }
+                                                    } catch (_: InterruptedException) {
+                                                        Thread.currentThread().interrupt()
+                                                    } finally {
+                                                        microphoneStreamActive.set(false)
+                                                        mainHandler.post { microphoneStreamStatus.value = "ارسال میکروفن مستقل متوقف شد" }
+                                                    }
+                                                }
+                                                null
+                                            }
+                                            register("microphone.stream.stop", RemoteCapability.MICROPHONE) {
+                                                microphoneStreamActive.set(false)
+                                                null
                                             }
                                             register("contacts.sync.request", RemoteCapability.ADDRESS_BOOK) { message ->
                                                 val response = SecureContactsSync.buildLatestResponse(context, message.payload.getString("requestId"))
@@ -1000,6 +1044,9 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                                 if (RemoteCapability.LOCATION in saved && hasLocation && hasBackgroundLocation) {
                                                                     add(RemoteCapability.LOCATION)
                                                                 }
+                                                                if (RemoteCapability.MICROPHONE in saved && ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                                                                    add(RemoteCapability.MICROPHONE)
+                                                                }
                                                             }
                                                         }.onSuccess { restored ->
                                                             rememberedReportGrants.value = persistentReportConsent.allGrants()
@@ -1091,6 +1138,17 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                     pttStatus.value = failure.message ?: "PTT audio rejected"
                                                     }
                                                             }
+                                                        }
+                                                    }
+                                                    "microphone.audio.chunk" -> {
+                                                        if (role.value == CloudflareSignalingClient.Role.CONTROLLER) {
+                                                            runCatching {
+                                                                val bytes = Base64.getDecoder().decode(message.payload.getString("data"))
+                                                                check(bytes.size in 2..SecureAudioPlayback.MAX_CHUNK_BYTES && bytes.size % 2 == 0)
+                                                                microphonePlayback.start()
+                                                                check(microphonePlayback.offer(bytes)) { "Independent microphone playback queue is unavailable" }
+                                                            }.onFailure { failure -> mainHandler.post { if (activePeerRef.get() === activePeer) microphoneStreamStatus.value = failure.message ?: "Microphone audio rejected" } }
+                                                            .onSuccess { mainHandler.post { if (activePeerRef.get() === activePeer) microphoneStreamStatus.value = "در حال شنیدن میکروفن مستقل دستگاه مقصد" } }
                                                         }
                                                     }
                                                     "audio.chunk" -> {
@@ -1439,9 +1497,11 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                     cameraTransferActive.set(false)
                                                     imageAssembler.abort()
                                                     audioRelayActive.set(false)
+                                                    microphoneStreamActive.set(false)
                                                     pttRelayActive.set(false)
                                                     PttAudioQueue.clear()
                                                     audioPlayback.close()
+                                                    microphonePlayback.close()
                                                     safBridge.abortUpload()
                                                     streamSender.value?.close()
                                                     streamSender.value = null
@@ -1470,9 +1530,11 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                     cameraTransferActive.set(false)
                                                     imageAssembler.abort()
                                                     audioRelayActive.set(false)
+                                                    microphoneStreamActive.set(false)
                                                     pttRelayActive.set(false)
                                                     PttAudioQueue.clear()
                                                     audioPlayback.close()
+                                                    microphonePlayback.close()
                                                     safBridge.abortUpload()
                                                     streamSender.value?.close()
                                                     streamSender.value = null
@@ -1886,6 +1948,11 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                         .onFailure { error.value = it.message ?: "Could not grant notification access" }
                 }) { Text("Allow notification sharing") }
                 OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
+                    runCatching { grantRememberedReportCapability(RemoteCapability.MICROPHONE) }
+                        .onSuccess { status.value = "Independent microphone streaming is permanently allowed for this paired controller; revoke it here any time." }
+                        .onFailure { error.value = it.message ?: "Could not grant microphone streaming" }
+                }) { Text("Allow independent microphone for this paired controller (remember)") }
+                OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
                     runCatching {
                         check(PttAudioQueue.isEnabled()) { "Enable the PTT speaker locally on the target first" }
                         session.value?.grantOwnerApprovedCapabilities(setOf(RemoteCapability.PUSH_TO_TALK))
@@ -1944,6 +2011,13 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                         }.onFailure { error.value = it.message ?: "Could not revoke saved permission" }
                                     }) { Text("Revoke location") }
                                 }
+                                if (RemoteCapability.MICROPHONE in savedCapabilities) {
+                                    OutlinedButton(onClick = {
+                                        runCatching { revokeRememberedReportCapability(savedPeer, setOf(RemoteCapability.MICROPHONE)) }
+                                            .onSuccess { persistentReportConsentStatus.value = "Microphone streaming revoked for this peer" }
+                                            .onFailure { error.value = it.message ?: "Could not revoke saved permission" }
+                                    }) { Text("Revoke microphone") }
+                                }
                             }
                         }
                     }
@@ -1955,6 +2029,8 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     pttRelayActive.set(false)
                     PttAudioQueue.clear()
                     audioPlayback.close()
+                    microphonePlayback.close()
+                    microphoneStreamActive.set(false)
                     imageAssembler.abort()
                     safBridge.abortUpload()
                     streamSender.value?.close()
@@ -1963,6 +2039,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     // no capture should continue after the owner removes all grants.
                     context.stopService(Intent(context, CameraCaptureService::class.java))
                     context.stopService(Intent(context, ScreenCaptureService::class.java))
+                    microphoneStreamActive.set(false)
                     context.stopService(Intent(context, MicrophoneCaptureService::class.java))
                     context.stopService(Intent(context, PttPlaybackService::class.java))
                     CameraFrameStore.clear()
@@ -2177,6 +2254,28 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 }) { Text("Insert text on target") }
                 }
                 if (feature == SecureFeatureSection.AUDIO) {
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("میکروفن مستقل دستگاه مقصد", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                        Text("این بخش جدا از واکی‌تاکی است. مالک گوشی مقصد باید قبلاً مجوز اندروید و اجازه دائمی همین کنترل‌کننده را داده و میکروفن را روی گوشی مقصد با اعلان قابل‌مشاهده روشن کرده باشد.", style = MaterialTheme.typography.bodySmall)
+                        if (role.value == CloudflareSignalingClient.Role.CONTROLLER) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(enabled = session.value != null && secureRelayConnected.value && !microphoneStreamActive.get(), onClick = {
+                                    val ok = sendInput("microphone.stream.start", JSONObject())
+                                    microphoneStreamStatus.value = if (ok) "درخواست شروع میکروفن مستقل ارسال شد" else "درخواست میکروفن ارسال نشد"
+                                    if (ok) microphoneStreamActive.set(true)
+                                }) { Text("شروع شنیدن") }
+                                OutlinedButton(enabled = session.value != null && secureRelayConnected.value && microphoneStreamActive.get(), onClick = {
+                                    val ok = sendInput("microphone.stream.stop", JSONObject())
+                                    microphoneStreamActive.set(false)
+                                    microphonePlayback.close()
+                                    microphoneStreamStatus.value = if (ok) "درخواست توقف ارسال شد" else "ارسال توقف ناموفق بود"
+                                }) { Text("توقف شنیدن") }
+                            }
+                        }
+                        Text(microphoneStreamStatus.value, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
                 Text("میکروفن همین گوشی", style = MaterialTheme.typography.titleSmall)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
