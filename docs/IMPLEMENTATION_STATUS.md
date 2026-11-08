@@ -136,3 +136,17 @@ Validation for this pass: source and JVM tests were committed, but no Gradle bui
 - Added a JVM bridge test with an in-memory paired channel: verifies both peers receive matching SAS, data is blocked until both owners approve, and application bytes are delivered only after mutual READY. This test is committed but has not yet been confirmed passing in CI.
 - **Not yet implemented:** persistent peer pin/revocation UI and database, WebRTC PeerConnection, authenticated DTLS fingerprint exchange, ICE/STUN/direct path, relay fallback, migration of existing remote-control capabilities, and automatic reconnect/rekey.
 - **Validation:** source committed only. No successful Gradle build, CI result for the current head, deployed Worker, live WSS integration test, Android API 33+ run, or physical two-device test has been verified. Do not expose TCP 18765 or treat this branch as production-secure.
+
+
+## Secure Internet P2P · WebRTC direct data-channel implementation
+
+- Added `io.github.webrtc-sdk:android:150.7871.04` from Maven Central.
+- Added `SecureWebRtcPeer`: controller-created ordered binary DataChannel; target accepts it; SDP and trickled ICE are only sent through the Noise-encrypted SecureLink application channel.
+- SHA-256 DTLS fingerprint is extracted from local SDP and included in the authenticated Noise message. The receiver checks the envelope against the SDP fingerprint; libwebrtc validates the remote DTLS certificate during the DTLS handshake.
+- ICE uses STUN by default and accepts optional user-supplied TURN server configuration. No TURN provider, credentials, or Cloudflare media relay are included.
+- Added `SecureInternetPeer` coordinator: Cloudflare rendezvous -> Noise XX mutual approval -> WebRTC PeerConnection/DataChannel; application payloads use DTLS-protected DataChannel after connection.
+- Added `SecureInternetPanel` to the main screen for WSS URL, room ID, role selection, target-first connection, SAS comparison/approval, and session stop.
+- Added `docs/WEBRTC_DIRECT_TRANSPORT.md` with deployment steps, relay requirements and two-device test checklist.
+- **Not yet migrated:** existing remote input, screen video, files, notifications, camera, microphone and PTT feature traffic. This milestone provides an authenticated data-channel transport and manual connection panel, not complete remote-control functionality.
+- **Not deployed or verified:** Worker deployment, TURN service, Android API 33+ runtime, real two-device internet connection, NAT traversal matrix, DataChannel payload test, independent security review, and current-head CI/build. The WebRTC artifact is documented at Maven Central; see [the SDK project](https://github.com/webrtc-sdk/android).
+- The legacy LAN port 18765 remains plaintext and must stay on trusted private LAN only.
