@@ -19,8 +19,6 @@ class MediaCaptureStoreTest {
         val latest = byteArrayOf(4, 5, 6, 7)
 
         CameraFrameStore.publish(first)
-        CameraFrameStore.publish(latest)
-
         CameraFrameStore.publish(latest, "image/webp")
         assertArrayEquals(latest, CameraFrameStore.latestJpeg)
         assertEquals("image/webp", CameraFrameStore.latestMimeType)
