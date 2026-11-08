@@ -39,6 +39,26 @@ class RemoteProtocolTest {
     }
 
     @Test
+    fun acceptsSecureFileTransferMessages() {
+        val types = listOf(
+            "file.list.request", "file.list.result", "file.download.request",
+            "file.download.begin", "file.download.chunk", "file.download.complete",
+            "file.download.error"
+        )
+        types.forEachIndexed { index, type ->
+            val message = RemoteMessage(
+                type = type,
+                sessionId = "file-session",
+                messageId = "file-$index",
+                sequence = index.toLong(),
+                sentAt = System.currentTimeMillis(),
+                payload = JSONObject().put("requestId", "request-$index")
+            )
+            assertEquals(type, RemoteMessage.parse(message.toJson().toString()).type)
+        }
+    }
+
+    @Test
     fun replayGuardAcceptsIncreasingMessagesAndRejectsReplay() {
         val now = 1_700_000_000_000L
         val guard = SecureMessageGuard("room-session")
