@@ -1,9 +1,7 @@
 name: Android build
 
 on:
-  push:
-    branches: [main]
-  pull_request:
+  # Builds are started manually only after explicit owner approval.
   workflow_dispatch:
 
 permissions:
