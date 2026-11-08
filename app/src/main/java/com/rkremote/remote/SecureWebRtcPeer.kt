@@ -94,8 +94,10 @@ class SecureWebRtcPeer(
     }
     private val pendingRemoteIce = ArrayDeque<IceCandidate>()
     private val dataFramer = SecureDataChannelFramer()
+    private val sendQueue = SecureDataChannelSendQueue()
     private val lock = Any()
     private val sendLock = Any()
+    private val sendDrainRetry = Runnable { drainPendingSends() }
     private val mainHandler = Handler(Looper.getMainLooper())
     private val disconnectTimeout = Runnable {
         if (!closed.get()) {
@@ -251,33 +253,20 @@ class SecureWebRtcPeer(
     fun send(payload: ByteArray): Boolean {
         if (closed.get() || payload.isEmpty() || payload.size > MAX_APP_MESSAGE_BYTES) return false
         val channel = dataChannel ?: return false
-        if (channel.state() != DataChannel.State.OPEN) return false
+        if (channel.state() == DataChannel.State.CLOSING ||
+            channel.state() == DataChannel.State.CLOSED
+        ) return false
         return runCatching {
             val frames = dataFramer.fragment(payload)
-            val totalFrameBytes = frames.sumOf { it.size.toLong() }
             synchronized(sendLock) {
-                if (closed.get() || channel.state() != DataChannel.State.OPEN) {
-                    return@synchronized false
-                }
-                // Reserve room for the entire logical message before sending its first
-                // fragment. This avoids knowingly emitting a partial RKD1 message when
-                // the channel is already congested.
-                if (totalFrameBytes > MAX_BUFFERED_BYTES ||
-                    channel.bufferedAmount() > MAX_BUFFERED_BYTES - totalFrameBytes) {
-                    return@synchronized false
-                }
-                for (frame in frames) {
-                    if (closed.get() || channel.state() != DataChannel.State.OPEN) {
-                        listener.onFailure(IllegalStateException("DataChannel closed during fragmented send"))
-                        close()
-                        return@synchronized false
-                    }
-                    if (!channel.send(DataChannel.Buffer(ByteBuffer.wrap(frame), true))) {
-                        listener.onFailure(IllegalStateException("DataChannel rejected a reserved fragment"))
-                        close()
-                        return@synchronized false
-                    }
-                }
+                if (closed.get() || dataChannel !== channel ||
+                    channel.state() == DataChannel.State.CLOSING ||
+                    channel.state() == DataChannel.State.CLOSED
+                ) return@synchronized false
+                // Enqueue the whole logical message atomically. A bounded FIFO prevents
+                // unbounded heap growth while allowing callers to retry when saturated.
+                if (!sendQueue.enqueue(frames)) return@synchronized false
+                drainPendingSendsLocked(channel)
                 true
             }
         }.getOrElse {
@@ -287,13 +276,53 @@ class SecureWebRtcPeer(
         }
     }
 
+    private fun drainPendingSends() {
+        val channel = dataChannel ?: return
+        synchronized(sendLock) {
+            if (closed.get() || dataChannel !== channel) return
+            drainPendingSendsLocked(channel)
+        }
+    }
+
+    private fun drainPendingSendsLocked(channel: DataChannel) {
+        if (closed.get() || dataChannel !== channel) return
+        sendQueue.drain(
+            bufferedAmount = { runCatching { channel.bufferedAmount() }.getOrDefault(Long.MAX_VALUE) },
+            channelOpen = { !closed.get() && dataChannel === channel && channel.state() == DataChannel.State.OPEN },
+            sendFrame = { frame ->
+                channel.send(DataChannel.Buffer(ByteBuffer.wrap(frame), true))
+            }
+        )
+        if (sendQueue.queuedBytes() > 0L &&
+            !closed.get() &&
+            channel.state() == DataChannel.State.OPEN
+        ) {
+            // Covers native send() returning false without a buffered-amount callback.
+            mainHandler.removeCallbacks(sendDrainRetry)
+            mainHandler.postDelayed(sendDrainRetry, SEND_DRAIN_RETRY_MS)
+        } else {
+            mainHandler.removeCallbacks(sendDrainRetry)
+        }
+    }
+
     private fun observeDataChannel(channel: DataChannel) {
+        channel.setBufferedAmountLowThreshold(
+            SecureDataChannelSendQueue.BUFFERED_AMOUNT_LOW_THRESHOLD
+        )
         channel.registerObserver(object : DataChannel.Observer {
-            override fun onBufferedAmountChange(previousAmount: Long) = Unit
+            override fun onBufferedAmountChange(previousAmount: Long) {
+                if (!closed.get() &&
+                    runCatching { channel.bufferedAmount() }.getOrDefault(Long.MAX_VALUE) <=
+                    SecureDataChannelSendQueue.BUFFERED_AMOUNT_LOW_THRESHOLD
+                ) {
+                    drainPendingSends()
+                }
+            }
             override fun onStateChange() {
                 if (closed.get()) return
                 when (channel.state()) {
                     DataChannel.State.OPEN -> {
+                        drainPendingSends()
                         if (peerConnection?.iceConnectionState() in setOf(
                                 PeerConnection.IceConnectionState.CONNECTED,
                                 PeerConnection.IceConnectionState.COMPLETED
@@ -532,8 +561,10 @@ class SecureWebRtcPeer(
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         clearDisconnectGracePeriod()
+        mainHandler.removeCallbacks(sendDrainRetry)
         runCatching { connectivityManager.unregisterNetworkCallback(networkCallback) }
         synchronized(lock) { pendingRemoteIce.clear() }
+        synchronized(sendLock) { sendQueue.clear() }
         dataFramer.clear()
 
         // Disposal must be best-effort per resource: one native cleanup failure
@@ -558,8 +589,8 @@ class SecureWebRtcPeer(
         private const val MAX_SIGNAL_BYTES = 10 * 1024
         private const val MAX_DATA_FRAME_BYTES = 12 * 1024
         private const val HEADER_BYTES = 24
-        private const val MAX_APP_MESSAGE_BYTES = 4 * 1024 * 1024
-        private const val MAX_BUFFERED_BYTES = 2L * 1024L * 1024L
+        private const val MAX_APP_MESSAGE_BYTES = RemoteMessage.MAX_MESSAGE_BYTES
+        private const val SEND_DRAIN_RETRY_MS = 75L
         private const val MAX_PENDING_ICE = 128
         private const val DISCONNECT_GRACE_PERIOD_MS = 12_000L
         private const val ICE_RESTART_COOLDOWN_MS = 10_000L
