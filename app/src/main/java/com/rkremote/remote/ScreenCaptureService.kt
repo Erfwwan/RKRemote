@@ -114,8 +114,12 @@ class ScreenCaptureService : Service() {
         val mediaProjection = manager.getMediaProjection(resultCode, data)
         projection = mediaProjection
         val metrics = resources.displayMetrics
-        val width = metrics.widthPixels.coerceAtLeast(1)
-        val height = metrics.heightPixels.coerceAtLeast(1)
+        val sourceWidth = metrics.widthPixels.coerceAtLeast(1)
+        val sourceHeight = metrics.heightPixels.coerceAtLeast(1)
+        // Limit snapshot resolution to keep CPU, memory, and LAN traffic modest.
+        val scale = minOf(1f, MAX_CAPTURE_DIMENSION.toFloat() / maxOf(sourceWidth, sourceHeight))
+        val width = (sourceWidth * scale).toInt().coerceAtLeast(1)
+        val height = (sourceHeight * scale).toInt().coerceAtLeast(1)
         val density = metrics.densityDpi
         val imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
         reader = imageReader
@@ -125,9 +129,13 @@ class ScreenCaptureService : Service() {
         active.set(true)
         mediaProjection.registerCallback(object : MediaProjection.Callback() {
             override fun onStop() {
-                stopCapture()
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
+                // stopCapture() nulls projection before calling stop(), so its own
+                // cleanup callback cannot recursively stop a newly-started session.
+                if (projection === mediaProjection) {
+                    stopCapture()
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                }
             }
         }, handler)
         imageReader.setOnImageAvailableListener({ source ->
@@ -196,5 +204,6 @@ class ScreenCaptureService : Service() {
         private const val RESULT_OK = -1
         private const val CHANNEL = "rkremote_screen_share"
         private const val NOTIFICATION_ID = 4202
+        private const val MAX_CAPTURE_DIMENSION = 1600
     }
 }
