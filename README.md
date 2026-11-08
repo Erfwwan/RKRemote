@@ -21,7 +21,7 @@ RKRemote does not implement covert camera/microphone capture, hidden persistence
 
 **Screen-sharing prototype added:** the target phone can request Android MediaProjection consent, start a visible foreground capture session, and expose the latest JPEG screen snapshot to the authenticated controller on the same trusted Wi-Fi. The controller can request a single snapshot or poll snapshots at roughly one per second for a low-rate preview. This remains JPEG polling, not a continuous video stream. A first single-tap prototype is also present: the target owner must manually enable RKRemote touch control in Android Accessibility settings; the controller sends normalized x/y tap coordinates. Swipe, typing and full remote input are not implemented. This is not a secure internet transport.
 
-**Still not implemented:** internet relay, secure TLS LAN transport, continuous screen video, swipe/typing, camera/audio streaming, file content transfer, contacts/call-log transfer, and two-way walkie-talkie.
+**Camera and microphone prototype added:** the target owner can start each sensor locally after Android runtime permission. Separate camera and microphone foreground services keep persistent stop notifications. The controller can poll low-rate JPEG camera frames and receive mono 16 kHz / 16-bit PCM microphone chunks. Sensor endpoints only read an already-running local capture service; remote commands cannot activate the camera or microphone. This is prototype chunk polling, not a production real-time media transport.
 
 ## Build
 
@@ -40,7 +40,7 @@ Open the repository in Android Studio and run the app configuration on an Androi
 4. User-started camera/microphone sessions with foreground-service indicators.
 5. Scoped file/gallery browsing, contacts and call-history access.
 6. Notification history forwarding after explicit pairing and user opt-in.
-7. Two-way push-to-talk audio.
+7. Owner-approved camera and microphone capture prototypes (low-rate JPEG and PCM chunk polling); two-way push-to-talk remains future work.
 8. Connection recovery, diagnostics, and long-duration battery/stability testing.
 
 ## Privacy and security
@@ -58,7 +58,7 @@ Open the repository in Android Studio and run the app configuration on an Androi
 
 A GitHub Actions workflow now runs a debug APK compilation on pushes, pull requests, and manual dispatches. The workflow uses Gradle 8.11.1 with JDK 17.
 
-**Important:** the repository is not yet a complete remote-control product. The current Android application includes local capability setup, an authenticated LAN agent/controller, JPEG screen snapshots, and an owner-enabled single-tap prototype. Swipe/typing, continuous video, media streaming, and secure internet access remain future work. Do not rely on the app for remote access until those features are implemented and tested on real devices.
+**Important:** the repository is not yet a complete remote-control product. The current Android application includes local capability setup, an authenticated LAN agent/controller, JPEG screen snapshots, and an owner-enabled single-tap prototype. Continuous screen video, encrypted media transport, low-latency audio streaming, camera/microphone physical-device validation, and secure internet access remain future work. Do not rely on the app for remote access until those features are implemented and tested on real devices.
 
 
 
@@ -78,4 +78,4 @@ See [implementation status](docs/IMPLEMENTATION_STATUS.md) for the exact boundar
 6. On the controller phone, enter that IP and token, tap **Test connection**, then **List selected folder**.
 7. Use **Stop** on the target phone or **Stop session** in its notification to end the LAN agent. For screen capture, use **Stop screen** or the screen-sharing notification's stop action. To share a screen, tap **Share this screen** on the target and approve Android's capture dialog; on the controller, tap **Start live preview** for periodic JPEG snapshots. For the single-tap prototype, manually enable RKRemote touch control from Android Accessibility settings on the target phone, then use the X/Y normalized coordinate fields on the controller and tap **Send one tap**. The screen snapshot endpoint is authenticated with the same temporary token.
 
-The LAN file browser remains read-only and lists names and metadata only. Screen sharing sends JPEG snapshots of the target display only after Android consent; remote input is limited to a single tap command; no swipe or typing is available. The token is transmitted without TLS, so do not use public Wi-Fi, untrusted networks, or port forwarding. Never expose TCP port 18765 to the internet.
+The LAN file browser remains read-only and lists names and metadata only. Screen sharing sends JPEG snapshots of the target display only after Android consent; remote input supports tap, swipe, long press, and focused-field text insertion after manual Accessibility enablement. Camera and microphone require local start and Android permissions. The token is transmitted without TLS, so do not use public Wi-Fi, untrusted networks, or port forwarding. Never expose TCP port 18765 to the internet.
