@@ -108,14 +108,15 @@ class LanAgentServer(
             ?: return JSONObject().put("error", "Folder unavailable").put("items", JSONArray())
         if (!tree.canRead()) return JSONObject().put("error", "Folder permission unavailable")
         val items = JSONArray()
-        tree.listFiles().take(MAX_LIST_ITEMS).forEach { file ->
+        val children = tree.listFiles()
+        children.take(MAX_LIST_ITEMS).forEach { file ->
             items.put(JSONObject()
                 .put("name", file.name ?: "unnamed")
                 .put("directory", file.isDirectory)
                 .put("size", if (file.isFile) file.length() else JSONObject.NULL)
                 .put("mimeType", file.type ?: JSONObject.NULL))
         }
-        return JSONObject().put("items", items).put("truncated", tree.listFiles().size > MAX_LIST_ITEMS)
+        return JSONObject().put("items", items).put("truncated", children.size > MAX_LIST_ITEMS)
     }
 
     private fun respond(output: OutputStream, status: Int, body: JSONObject) {
