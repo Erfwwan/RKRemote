@@ -154,6 +154,7 @@ class RemoteScreenshotService : Service() {
             "RKRemote-independent-screenshot", width, height, metrics.densityDpi,
             DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, reader.surface, null, handler
         )
+        RemoteScreenshotStore.setActive(true)
     }
 
     private fun stopCapture() {
@@ -191,6 +192,14 @@ class RemoteScreenshotService : Service() {
 internal object RemoteScreenshotStore {
     private val lock = java.lang.Object()
     private var latestImage: Image? = null
+    @Volatile private var active = false
+
+    fun setActive(value: Boolean) {
+        active = value
+        if (!value) clear()
+    }
+
+    fun isActive(): Boolean = active
 
     fun offer(image: Image?) {
         if (image == null) return
