@@ -3,7 +3,6 @@ package com.rkremote.remote
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
-import android.os.Build
 import android.provider.Settings
 import androidx.core.content.ContextCompat
 
@@ -30,8 +29,9 @@ object CapabilityPolicy {
                 ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
                     PackageManager.PERMISSION_GRANTED
             )
-            RemoteCapability.NOTIFICATIONS -> if (Build.VERSION.SDK_INT >= 33)
-                listOf(Manifest.permission.POST_NOTIFICATIONS) else emptyList()
+            // Reading other apps' notifications uses the special Notification Access
+            // setting, not POST_NOTIFICATIONS (which controls this app's own notifications).
+            RemoteCapability.NOTIFICATIONS -> emptyList()
             RemoteCapability.FILES -> emptyList() // SAF URI grant is checked by the file repository.
             RemoteCapability.SCREEN_VIEW, RemoteCapability.SCREEN_INPUT -> emptyList()
         }
@@ -41,11 +41,6 @@ object CapabilityPolicy {
     }
 
     fun hasNotificationListenerAccess(context: Context): Boolean {
-        val enabled = Settings.Secure.getString(
-            context.contentResolver,
-            "enabled_notification_listeners"
-        ) ?: return false
-        val expected = context.packageName + "/" + context.packageName + ".NotificationCaptureService"
-        return enabled.split(':').any { it.equals(expected, ignoreCase = true) }
+        return SecureNotificationSync.isNotificationAccessEnabled(context)
     }
 }
