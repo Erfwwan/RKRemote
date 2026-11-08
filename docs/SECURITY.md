@@ -43,4 +43,4 @@ RKRemote is intended only for devices owned by the operator or devices for which
 
 ## Data retention
 
-The current milestone stores at most 500 notification events in app-private storage encrypted with AES-GCM and an Android Keystore key. No notification content is transmitted in the current build.
+The current milestone stores at most 500 notification events in app-private storage encrypted with AES-GCM and an Android Keystore key. If the target owner enables Android Notification Access and separately grants the NOTIFICATIONS capability for the active paired session, the app can send up to the latest 20 stored events end-to-end encrypted to the controller. The Cloudflare Worker never receives notification plaintext. Revoking the session capability or disabling Notification Access prevents further exports.
