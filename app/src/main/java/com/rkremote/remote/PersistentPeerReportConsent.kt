@@ -132,6 +132,7 @@ class PersistentPeerReportConsent(context: Context) {
         when (name) {
             RemoteCapability.CONTACTS.name -> RemoteCapability.CONTACTS
             RemoteCapability.CALL_LOG.name -> RemoteCapability.CALL_LOG
+            RemoteCapability.LOCATION.name -> RemoteCapability.LOCATION
             else -> null
         }
 
@@ -153,7 +154,8 @@ class PersistentPeerReportConsent(context: Context) {
         private val AAD = "RKRemote|peer-report-consent|v1".toByteArray(Charsets.UTF_8)
         private val PERSISTABLE_CAPABILITIES = setOf(
             RemoteCapability.CONTACTS,
-            RemoteCapability.CALL_LOG
+            RemoteCapability.CALL_LOG,
+            RemoteCapability.LOCATION
         )
         private val PERSISTABLE_NAMES = PERSISTABLE_CAPABILITIES.map { it.name }.toSet()
     }
