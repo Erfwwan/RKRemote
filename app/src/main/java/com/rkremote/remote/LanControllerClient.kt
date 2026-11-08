@@ -21,12 +21,48 @@ object LanControllerClient {
         JSONObject(requestRaw("POST", ip, token, endpoint, body.toString().toByteArray(Charsets.UTF_8))
             .toString(Charsets.UTF_8)).toString(2)
 
+    fun uploadFile(ip: String, token: String, fileName: String, mimeType: String, bytes: ByteArray): String {
+        require(bytes.isNotEmpty() && bytes.size <= MAX_TRANSFER_BYTES) { "File must be 1 byte to 8 MiB" }
+        require(fileName.isNotBlank() && fileName.length <= 180 &&
+            fileName.none { it == '/' || it == '\\' || it.code < 32 }) { "Invalid file name" }
+        val encodedName = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(fileName.toByteArray(Charsets.UTF_8))
+        return requestRaw(
+            "POST", ip, token, "/file/upload", bytes,
+            mimeType.takeIf { it.matches(Regex("[A-Za-z0-9!#    fun postJson(ip: String, token: String, endpoint: String, body: JSONObject): String =
+        JSONObject(requestRaw("POST", ip, token, endpoint, body.toString().toByteArray(Charsets.UTF_8))
+            .toString(Charsets.UTF_8)).toString(2)
+
     private fun requestRaw(
         method: String,
         ip: String,
         token: String,
         endpoint: String,
         body: ByteArray?
+    ): ByteArray {^_.+-]+/[A-Za-z0-9!#    fun postJson(ip: String, token: String, endpoint: String, body: JSONObject): String =
+        JSONObject(requestRaw("POST", ip, token, endpoint, body.toString().toByteArray(Charsets.UTF_8))
+            .toString(Charsets.UTF_8)).toString(2)
+
+    private fun requestRaw(
+        method: String,
+        ip: String,
+        token: String,
+        endpoint: String,
+        body: ByteArray?
+    ): ByteArray {^_.+-]+")) }
+                ?: "application/octet-stream",
+            mapOf("X-File-Name" to encodedName)
+        ).toString(Charsets.UTF_8)
+    }
+
+    private fun requestRaw(
+        method: String,
+        ip: String,
+        token: String,
+        endpoint: String,
+        body: ByteArray?,
+        contentType: String = "application/json",
+        extraHeaders: Map<String, String> = emptyMap()
     ): ByteArray {
         require(ip.matches(Regex("""(?:\d{1,3}\.){3}\d{1,3}""")) &&
             ip.split(".").all { part -> part.toIntOrNull()?.let { it in 0..255 } == true }) {
@@ -34,8 +70,8 @@ object LanControllerClient {
         }
         require(token.length >= 24) { "Invalid session token" }
         require(
-            (method == "GET" && endpoint in setOf("/health", "/files", "/screen.jpg")) ||
-                (method == "POST" && endpoint in setOf("/input/tap", "/input/gesture", "/input/text"))
+            (method == "GET" && (endpoint in setOf("/health", "/files", "/screen.jpg") || endpoint.startsWith("/file/download?"))) ||
+                (method == "POST" && endpoint in setOf("/input/tap", "/input/gesture", "/input/text", "/file/upload"))
         ) { "Unsupported request" }
 
         val socket = Socket()
@@ -48,8 +84,9 @@ object LanControllerClient {
                 .append("Authorization: Bearer $token\r\n")
                 .append("Connection: close\r\n")
             if (body != null) {
-                headers.append("Content-Type: application/json\r\n")
+                headers.append("Content-Type: $contentType\r\n")
                     .append("Content-Length: ${body.size}\r\n")
+                extraHeaders.forEach { (name, value) -> headers.append("$name: $value\r\n") }
             }
             headers.append("\r\n")
             val outputStream = s.getOutputStream()
@@ -75,7 +112,7 @@ object LanControllerClient {
                     response[i + 2] == 13.toByte() && response[i + 3] == 10.toByte()
             } ?: throw IllegalStateException("Invalid response from target")
             val status = response.copyOfRange(0, split).toString(Charsets.US_ASCII).substringBefore("\r\n")
-            if (!status.contains(" 200 ") && !status.contains(" 202 ")) {
+            if (!status.contains(" 200 ") && !status.contains(" 201 ") && !status.contains(" 202 ")) {
                 val responseBody = response.copyOfRange(split + 4, response.size).toString(Charsets.UTF_8)
                 throw IllegalStateException("Target response: $status - $responseBody")
             }
@@ -84,6 +121,7 @@ object LanControllerClient {
     }
 
     private const val MAX_RESPONSE_BYTES = 16 * 1024 * 1024
+    private const val MAX_TRANSFER_BYTES = 8 * 1024 * 1024
 
     fun localIpv4(): String? = runCatching {
         NetworkInterface.getNetworkInterfaces().toList()
