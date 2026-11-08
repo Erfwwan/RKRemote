@@ -71,6 +71,7 @@ class SecureAudioPlayback : AutoCloseable {
         }
     }
 
+    @Synchronized
     fun offer(bytes: ByteArray): Boolean {
         if (!running.get() || bytes.isEmpty() || bytes.size > MAX_CHUNK_BYTES || bytes.size % 2 != 0) return false
         if (queue.offer(bytes.copyOf())) return true
