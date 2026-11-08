@@ -65,3 +65,15 @@ A GitHub Actions workflow now runs a debug APK compilation on pushes, pull reque
 The current development branch is [PR #1](https://github.com/Erfwwan/RKRemote/pull/1). It adds the LAN agent/controller prototype, security foundations, a visible session notification with a stop action, and JVM tests.
 
 See [implementation status](docs/IMPLEMENTATION_STATUS.md) for the exact boundary between implemented code and unfinished features. The LAN prototype is read-only and intended only for a trusted private Wi-Fi network. Do not expose it to the internet. Full remote-control features and real-device validation are still required.
+
+## Part 1 quick start (trusted Wi-Fi only)
+
+1. Install the same RKRemote debug APK on both Android phones.
+2. Connect both phones to the same trusted private Wi-Fi network.
+3. On the target phone, open RKRemote and choose the folder to share using **Choose folder**.
+4. In **Part 1 · Local Wi-Fi connection**, tap **Start agent**. Keep RKRemote open; the foreground notification indicates the active session.
+5. Share the target phone's local IPv4 address and temporary token with the controller phone.
+6. On the controller phone, enter that IP and token, tap **Test connection**, then **List selected folder**.
+7. Tap **Stop** on the target phone or use **Stop session** in its notification to end access.
+
+This first milestone is read-only. It lists file names and metadata; it does not download, edit, or delete files. The token is transmitted without TLS, so do not use public Wi-Fi, untrusted networks, or port forwarding. Never expose TCP port 18765 to the internet.
