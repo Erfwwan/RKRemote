@@ -9,6 +9,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.ImageFormat
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
@@ -22,14 +24,24 @@ import android.os.IBinder
 import android.util.Size
 import androidx.core.app.NotificationCompat
 import com.rkremote.MainActivity
+import java.io.ByteArrayOutputStream
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Latest owner-approved camera frame; kept in memory only. */
 object CameraFrameStore {
-    @Volatile var latestJpeg: ByteArray? = null
+    @Volatile var latestFrame: ByteArray? = null
         private set
-    fun publish(bytes: ByteArray) { latestJpeg = bytes }
-    fun clear() { latestJpeg = null }
+    @Volatile var latestMimeType: String = "image/jpeg"
+        private set
+    val latestJpeg: ByteArray? get() = latestFrame
+    fun publish(bytes: ByteArray, mimeType: String = "image/jpeg") {
+        latestFrame = bytes
+        latestMimeType = mimeType
+    }
+    fun clear() {
+        latestFrame = null
+        latestMimeType = "image/jpeg"
+    }
 }
 
 /**
@@ -43,6 +55,7 @@ class CameraCaptureService : Service() {
     private var reader: ImageReader? = null
     private var thread: HandlerThread? = null
     @Volatile private var lastFrameAt = 0L
+    @Volatile private var activeLensFacing = CameraCharacteristics.LENS_FACING_BACK
 
     override fun onCreate() {
         super.onCreate()
@@ -60,10 +73,16 @@ class CameraCaptureService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        if (active.get()) return START_NOT_STICKY
+        val requestedFacing = intent?.getIntExtra(EXTRA_LENS_FACING, CameraCharacteristics.LENS_FACING_BACK)
+            ?: CameraCharacteristics.LENS_FACING_BACK
+        if (requestedFacing != CameraCharacteristics.LENS_FACING_BACK && requestedFacing != CameraCharacteristics.LENS_FACING_FRONT) return START_NOT_STICKY
+        if (active.get()) {
+            if (activeLensFacing == requestedFacing) return START_NOT_STICKY
+            stopCamera()
+        }
         return try {
             startAsForeground()
-            startCamera()
+            startCamera(requestedFacing)
             START_NOT_STICKY
         } catch (_: Exception) {
             stopCamera()
@@ -97,12 +116,12 @@ class CameraCaptureService : Service() {
         }
     }
 
-    private fun startCamera() {
+    private fun startCamera(lensFacing: Int) {
         val manager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
         val cameraId = manager.cameraIdList.firstOrNull { id ->
-            manager.getCameraCharacteristics(id).get(CameraCharacteristics.LENS_FACING) ==
-                CameraCharacteristics.LENS_FACING_BACK
-        } ?: manager.cameraIdList.firstOrNull() ?: error("No camera is available")
+            manager.getCameraCharacteristics(id).get(CameraCharacteristics.LENS_FACING) == lensFacing
+        } ?: error(if (lensFacing == CameraCharacteristics.LENS_FACING_FRONT) "Front camera is not available" else "Rear camera is not available")
+        activeLensFacing = lensFacing
         val characteristics = manager.getCameraCharacteristics(cameraId)
         val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
             ?: error("Camera output configuration is unavailable")
@@ -131,7 +150,8 @@ class CameraCaptureService : Service() {
                 val buffer = image.planes[0].buffer
                 val bytes = ByteArray(buffer.remaining())
                 buffer.get(bytes)
-                CameraFrameStore.publish(bytes)
+                val (encoded, mimeType) = encodeLosslesslyWhenSmaller(bytes)
+                CameraFrameStore.publish(encoded, mimeType)
             } finally {
                 image.close()
             }
@@ -193,6 +213,21 @@ class CameraCaptureService : Service() {
         }, handler)
     }
 
+    private fun encodeLosslesslyWhenSmaller(jpeg: ByteArray): Pair<ByteArray, String> {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return jpeg to "image/jpeg"
+        val bitmap = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size) ?: return jpeg to "image/jpeg"
+        return try {
+            val output = ByteArrayOutputStream()
+            val encoded = bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSLESS, 100, output)
+            val webp = output.toByteArray()
+            if (encoded && webp.isNotEmpty() && webp.size < jpeg.size) webp to "image/webp" else jpeg to "image/jpeg"
+        } catch (_: Exception) {
+            jpeg to "image/jpeg"
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
     private fun stopCamera() {
         active.set(false)
         CameraFrameStore.clear()
@@ -217,6 +252,7 @@ class CameraCaptureService : Service() {
 
     companion object {
         const val ACTION_STOP = "com.rkremote.action.STOP_CAMERA"
+        const val EXTRA_LENS_FACING = "camera_lens_facing"
         private const val CHANNEL = "rkremote_camera_capture"
         private const val NOTIFICATION_ID = 4203
     }
