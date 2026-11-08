@@ -1,5 +1,6 @@
 package com.rkremote.remote
 
+import org.json.JSONException
 import org.json.JSONObject
 
 /**
@@ -41,24 +42,46 @@ data class RemoteMessage(
             require(raw.toByteArray(Charsets.UTF_8).size <= MAX_MESSAGE_BYTES) {
                 "Message exceeds the maximum size"
             }
-            val json = JSONObject(raw)
-            val version = json.getInt("protocolVersion")
-            require(version == CURRENT_VERSION) { "Unsupported protocol version" }
-            val type = json.getString("type")
-            require(type in allowedTypes) { "Unknown message type" }
+            try {
+                val json = JSONObject(raw)
+                val versionValue = json.opt("protocolVersion") as? Number
+                    ?: throw IllegalArgumentException("Protocol version must be numeric")
+                require(versionValue.toDouble() == CURRENT_VERSION.toDouble()) {
+                    "Unsupported protocol version"
+                }
+                val version = versionValue.toInt()
+                val type = json.opt("type") as? String
+                    ?: throw IllegalArgumentException("Message type must be a string")
+                require(type in allowedTypes) { "Unknown message type" }
 
-            val sessionId = json.getString("sessionId")
-            val messageId = json.getString("messageId")
-            require(sessionId.isNotBlank() && sessionId.length <= 128)
-            require(messageId.isNotBlank() && messageId.length <= 128)
+                val sessionId = json.opt("sessionId") as? String
+                    ?: throw IllegalArgumentException("Session ID must be a string")
+                val messageId = json.opt("messageId") as? String
+                    ?: throw IllegalArgumentException("Message ID must be a string")
+                require(sessionId.isNotBlank() && sessionId.length <= 128)
+                require(messageId.isNotBlank() && messageId.length <= 128)
 
-            val sequence = json.getLong("sequence")
-            require(sequence >= 0)
-            val sentAt = json.getLong("sentAt")
-            require(sentAt >= 0) { "Invalid message timestamp" }
-            val payload = json.optJSONObject("payload") ?: JSONObject()
-            require(payload.toString().toByteArray(Charsets.UTF_8).size <= MAX_MESSAGE_BYTES) { "Payload exceeds protocol limit" }
-            return RemoteMessage(type, sessionId, messageId, sequence, sentAt, payload, version)
+                val sequenceValue = json.opt("sequence") as? Number
+                    ?: throw IllegalArgumentException("Sequence must be numeric")
+                val sequence = sequenceValue.toLong()
+                require(sequence >= 0 && sequenceValue.toDouble() == sequence.toDouble()) {
+                    "Invalid message sequence"
+                }
+                val sentAtValue = json.opt("sentAt") as? Number
+                    ?: throw IllegalArgumentException("Message timestamp must be numeric")
+                val sentAt = sentAtValue.toLong()
+                require(sentAt >= 0 && sentAtValue.toDouble() == sentAt.toDouble()) {
+                    "Invalid message timestamp"
+                }
+                val payload = json.opt("payload") as? JSONObject
+                    ?: throw IllegalArgumentException("Message payload must be an object")
+                require(payload.toString().toByteArray(Charsets.UTF_8).size <= MAX_MESSAGE_BYTES) {
+                    "Payload exceeds protocol limit"
+                }
+                return RemoteMessage(type, sessionId, messageId, sequence, sentAt, payload, version)
+            } catch (failure: JSONException) {
+                throw IllegalArgumentException("Malformed remote message", failure)
+            }
         }
     }
 }
