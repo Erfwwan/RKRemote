@@ -27,11 +27,13 @@ object PttAudioQueue {
     private val queue = ArrayBlockingQueue<ByteArray>(MAX_QUEUED_CHUNKS)
     private val enabled = AtomicBoolean(false)
 
+    @Synchronized
     fun setEnabled(value: Boolean) {
         enabled.set(value)
         if (!value) queue.clear()
     }
 
+    @Synchronized
     fun offer(chunk: ByteArray): Boolean {
         if (!enabled.get() || chunk.isEmpty() || chunk.size > MAX_CHUNK_BYTES || chunk.size % 2 != 0) return false
         // Keep latency bounded: discard the oldest chunk when the queue is full.
