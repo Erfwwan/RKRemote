@@ -11,7 +11,7 @@ import java.security.MessageDigest
 import java.util.Base64
 
 /**
- * Receives ordered secure P2P download messages and publishes verified files locally.
+ * Receives ordered end-to-end encrypted relay messages and publishes verified files locally.
  *
  * An interrupted transfer is kept in the app-private files directory. Its metadata
  * and byte length survive activity recreation and process death. A resumed begin()
