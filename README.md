@@ -40,7 +40,8 @@ Open the repository in Android Studio and run the app configuration on an Androi
 4. Owner-started camera and microphone capture prototypes.
 5. Two-way audio prototype with local PTT speaker opt-in.
 6. Notification history viewing after Android Notification Access and a separate local sharing opt-in.
-7. Secure transport integration, persistent identity/key rotation, reconnect/stability, release signing, and physical-device/security validation.
+7. Connection recovery prototype, bounded reconnect backoff, preview retry, and LAN health diagnostics.
+8. Secure transport integration, persistent identity/key rotation, reconnect/stability, release signing, and physical-device/security validation.
 
 ## Privacy and security
 
