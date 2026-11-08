@@ -122,8 +122,23 @@ class SecureInternetPeer(
                                         close()
                                     }
                                 }
-                                override fun onDisconnected(reason: String) = listener.onDisconnected(reason)
-                                override fun onFailure(error: Throwable) = listener.onFailure(error)
+                                // There is no automatic ICE restart in this version. Close the
+                                // entire secure session on transport loss so command grants and
+                                // authenticated peer state cannot survive a dead DataChannel.
+                                override fun onDisconnected(reason: String) {
+                                    try {
+                                        listener.onDisconnected(reason)
+                                    } finally {
+                                        close()
+                                    }
+                                }
+                                override fun onFailure(error: Throwable) {
+                                    try {
+                                        listener.onFailure(error)
+                                    } finally {
+                                        close()
+                                    }
+                                }
                             }
                         )
                         synchronized(lock) {
