@@ -201,14 +201,16 @@ class CameraCaptureService : Service() {
 
             override fun onDisconnected(device: CameraDevice) {
                 device.close()
-                if (camera === device) camera = null
-                stopSelf()
+                val wasCurrentCamera = camera === device
+                if (wasCurrentCamera) camera = null
+                if (wasCurrentCamera && active.get()) stopSelf()
             }
 
             override fun onError(device: CameraDevice, error: Int) {
                 device.close()
-                if (camera === device) camera = null
-                stopSelf()
+                val wasCurrentCamera = camera === device
+                if (wasCurrentCamera) camera = null
+                if (wasCurrentCamera && active.get()) stopSelf()
             }
         }, handler)
     }
