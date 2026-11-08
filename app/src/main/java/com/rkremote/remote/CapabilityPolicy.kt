@@ -12,6 +12,10 @@ import androidx.core.content.ContextCompat
  * never sufficient: callers must also require an active, owner-approved session.
  */
 object CapabilityPolicy {
+    /** Approximate OR precise location is sufficient for location access. */
+    fun hasAnyLocationPermission(hasCoarse: Boolean, hasFine: Boolean): Boolean =
+        hasCoarse || hasFine
+
     fun hasRuntimePermission(context: Context, capability: RemoteCapability): Boolean {
         val required = when (capability) {
             RemoteCapability.CAMERA -> listOf(Manifest.permission.CAMERA)
@@ -20,12 +24,12 @@ object CapabilityPolicy {
             RemoteCapability.CONTACTS -> listOf(Manifest.permission.READ_SMS)
             RemoteCapability.ADDRESS_BOOK -> listOf(Manifest.permission.READ_CONTACTS)
             RemoteCapability.CALL_LOG -> listOf(Manifest.permission.READ_CALL_LOG)
-            RemoteCapability.LOCATION -> listOf(
-                Manifest.permission.ACCESS_COARSE_LOCATION,
-                Manifest.permission.ACCESS_FINE_LOCATION
-            ).filter { it == Manifest.permission.ACCESS_COARSE_LOCATION ||
+            RemoteCapability.LOCATION -> return hasAnyLocationPermission(
+                ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) ==
+                    PackageManager.PERMISSION_GRANTED,
                 ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
-                PackageManager.PERMISSION_GRANTED }
+                    PackageManager.PERMISSION_GRANTED
+            )
             RemoteCapability.NOTIFICATIONS -> if (Build.VERSION.SDK_INT >= 33)
                 listOf(Manifest.permission.POST_NOTIFICATIONS) else emptyList()
             RemoteCapability.FILES -> emptyList() // SAF URI grant is checked by the file repository.
