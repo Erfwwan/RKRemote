@@ -265,8 +265,8 @@ class SecureInternetPeer(
     }
 
     /** Stops a session from the persistent notification and informs the live UI. */
-    fun stopFromOwnerAction() {
-        closeInternal("نشست از اعلان اندروید متوقف شد")
+    fun stopFromOwnerAction(reason: String = "نشست از اعلان اندروید متوقف شد") {
+        closeInternal(reason)
     }
 
     override fun close() {
