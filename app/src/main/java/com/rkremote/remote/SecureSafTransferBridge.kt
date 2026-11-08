@@ -300,6 +300,11 @@ class SecureSafTransferBridge(context: Context) {
         return abortUpload(transferId)
     }
 
+    /** Cancel any active downloads when the secure session is closed or revoked. */
+    fun cancelAllDownloads() {
+        downloadCancellations.clear()
+    }
+
     @Synchronized
     fun abortUpload(transferId: String): Boolean {
         val pending = pendingUpload ?: return false
