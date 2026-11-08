@@ -34,7 +34,7 @@ For reliable use across restrictive networks, provision a separately operated TU
 
 ## Current limits
 
-- Keep RKRemote open while testing: the Internet session is not yet owned by a persistent foreground service and will not survive app-process termination. Live screen, remote input, notification sync, owner-scoped file browsing/upload/download, camera snapshots, microphone monitoring, and half-duplex PTT are integrated at source level; live camera video and WebRTC media tracks are not implemented.
+- Keep RKRemote open while testing: the Internet session is not yet owned by a persistent foreground service and will not survive app-process termination. Live screen, remote input, notification sync, owner-scoped file browsing/upload/download, camera snapshots, microphone monitoring, and half-duplex PTT are integrated at source level; live camera video and WebRTC media tracks are not implemented. ICE/DataChannel disconnect or failure now closes the whole secure session and revokes target command grants; this version requires a fresh manual connection and owner approval rather than attempting an unsafe in-place reconnect.
 - No WebRTC media tracks are added yet. Screen video currently travels as bounded application messages over the DataChannel; live camera video and native audio tracks remain future work.
 - There is no persistent trusted-peer registry, revocation UI, or key-rotation workflow beyond the existing local key stores.
 - No automatic TURN provisioning, DHT peer discovery, multi-path racing, relay fallback service, or session rekey/reconnect exists.
