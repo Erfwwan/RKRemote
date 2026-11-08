@@ -55,7 +55,7 @@ fun CloudflareSetupPanel() {
                 value = workerUrl, onValueChange = { workerUrl = it.trim() },
                 modifier = Modifier.fillMaxWidth(), singleLine = true,
                 label = { Text("آدرس Worker مخصوص این اتصال (WSS)") },
-                placeholder = { Text("wss://your-worker.workers.dev/signal/ROOM_ID?role=target") }
+                placeholder = { Text("wss://your-worker.workers.dev") }
             )
             OutlinedTextField(
                 value = roomId, onValueChange = { roomId = it.filter { ch -> ch in '0'..'9' || ch in 'a'..'f' }.take(64) },
@@ -71,19 +71,16 @@ fun CloudflareSetupPanel() {
             Button(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
-                    val validUrl = workerUrl.startsWith("wss://") &&
-                        workerUrl.contains("/signal/") &&
-                        workerUrl.contains("role=")
+                    val validUrl = workerUrl.startsWith("wss://")
                     if (!validUrl) {
-                        status = "آدرس باید WSS و شامل مسیر /signal/ و پارامتر role باشد."
+                        status = "فقط آدرس اصلی Worker با WSS را وارد کن؛ مسیر، Room ID و نقش را برنامه خودش اضافه می‌کند."
                     } else if (roomId.length != 64) {
                         status = "Room ID باید دقیقاً ۶۴ رقم هگزادسیمال باشد."
                     } else {
                         val parsed = runCatching {
                             val uri = java.net.URI(workerUrl)
                             require(uri.host != null && uri.userInfo == null && uri.fragment == null)
-                            require(workerUrl.contains(roomId))
-                            require(workerUrl.contains("role=$role"))
+                            require(uri.rawQuery == null && (uri.rawPath.isNullOrEmpty() || uri.rawPath == "/"))
                             iceUrls.split(',').map { it.trim() }.filter { it.isNotEmpty() }.also { list ->
                                 require(list.size <= 8)
                                 require(list.all { it.startsWith("stun:") || it.startsWith("stuns:") || it.startsWith("turn:") || it.startsWith("turns:") })
@@ -118,8 +115,8 @@ fun CloudflareSetupPanel() {
             Text("۲) در Workers & Pages یک Worker جدید بساز و Durable Objects را فعال کن.")
             Text("۳) کد Worker رسمی RKRemote را از پوشه cloudflare/worker مخزن پروژه با Wrangler مستقر کن؛ Worker عمومی دلخواه یا WebSocket معمولی سازگار نیست.")
             Text("۴) بعد از Deploy، دامنه workers.dev را بردار. برای گوشی مقصد URL را به شکل زیر بساز:")
-            Text("wss://YOUR-WORKER.workers.dev/signal/ROOM_ID?role=target", style = MaterialTheme.typography.bodySmall)
-            Text("۵) برای گوشی کنترل‌کننده همان دامنه و Room ID را استفاده کن و فقط role را controller بگذار.")
+            Text("wss://YOUR-WORKER.workers.dev", style = MaterialTheme.typography.bodySmall)
+            Text("۵) برای گوشی کنترل‌کننده همان دامنه و Room ID را در تنظیمات خودش ذخیره کن و نقش Controller را انتخاب کن؛ برنامه مسیر و نقش را خودش می‌سازد.")
             Text("۶) Room ID را در هر دو گوشی دقیقاً یکسان وارد کن. گوشی مقصد باید اول وصل شود.")
             Text("۷) STUN عمومی برای شروع کافی است. اگر NAT یا اپراتور اتصال مستقیم را مسدود کرد، TURN جداگانه تهیه کن و URL و اعتبارنامه موقت آن را در صفحه اتصال امن وارد کن.")
             Text("۸) بعد از اتصال، Peer ID و کد امنیتی شش‌رقمی را در هر دو گوشی مقایسه کن و فقط در صورت تطابق، هر دو طرف تأیید کنند.")
