@@ -196,10 +196,17 @@ private fun LocalSetupScreen(darkMode: Boolean, onToggleTheme: () -> Unit) {
             add(PermissionItem(
                 "location",
                 "موقعیت مکانی",
-                "برای ثبت موقعیت لازم است؛ ثبت دوره‌ای در پس‌زمینه به مجوز جداگانه «همیشه مجاز» نیاز دارد.",
-                listOf(Manifest.permission.ACCESS_COARSE_LOCATION)
+                "برای ثبت موقعیت لازم است. در Android 10 دسترسی پس‌زمینه همراه با مجوز اصلی درخواست می‌شود؛ در نسخه‌های جدیدتر جداگانه مدیریت می‌شود.",
+                if (Build.VERSION.SDK_INT == 29) {
+                    listOf(
+                        Manifest.permission.ACCESS_COARSE_LOCATION,
+                        Manifest.permission.ACCESS_BACKGROUND_LOCATION
+                    )
+                } else {
+                    listOf(Manifest.permission.ACCESS_COARSE_LOCATION)
+                }
             ))
-            if (Build.VERSION.SDK_INT >= 29) {
+            if (Build.VERSION.SDK_INT >= 30) {
                 add(PermissionItem(
                     "background_location",
                     "موقعیت مکانی در پس‌زمینه",
