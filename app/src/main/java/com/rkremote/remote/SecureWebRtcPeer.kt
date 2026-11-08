@@ -126,6 +126,7 @@ class SecureWebRtcPeer(
                 PeerConnection.IceConnectionState.COMPLETED -> {
                     clearDisconnectGracePeriod()
                     iceRestartInProgress.set(false)
+                    drainPendingSends()
                     if (dataChannel?.state() == DataChannel.State.OPEN) listener.onConnected()
                 }
                 PeerConnection.IceConnectionState.DISCONNECTED ->
@@ -181,6 +182,7 @@ class SecureWebRtcPeer(
                 PeerConnection.PeerConnectionState.CONNECTED -> {
                     clearDisconnectGracePeriod()
                     iceRestartInProgress.set(false)
+                    drainPendingSends()
                 }
                 PeerConnection.PeerConnectionState.DISCONNECTED -> scheduleDisconnectGracePeriod()
                 PeerConnection.PeerConnectionState.FAILED -> {
@@ -278,9 +280,19 @@ class SecureWebRtcPeer(
 
     private fun drainPendingSends() {
         val channel = dataChannel ?: return
-        synchronized(sendLock) {
-            if (closed.get() || dataChannel !== channel) return
-            drainPendingSendsLocked(channel)
+        try {
+            synchronized(sendLock) {
+                if (closed.get() || dataChannel !== channel) return
+                drainPendingSendsLocked(channel)
+            }
+        } catch (error: Throwable) {
+            if (!closed.get()) {
+                try {
+                    listener.onFailure(error)
+                } finally {
+                    close()
+                }
+            }
         }
     }
 
