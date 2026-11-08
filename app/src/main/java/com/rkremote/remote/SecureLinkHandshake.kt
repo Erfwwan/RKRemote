@@ -184,12 +184,18 @@ class SecureLinkHandshake(
         if (state == State.CLOSED) return
         state = State.CLOSED
         approved = false
-        handshake.close()
-        transport?.close()
-        transport = null
-        handshakeHash?.fill(0)
-        handshakeHash = null
-        remoteBinding = null
+        try {
+            handshake.close()
+        } finally {
+            try {
+                transport?.close()
+            } finally {
+                transport = null
+                handshakeHash?.fill(0)
+                handshakeHash = null
+                remoteBinding = null
+            }
+        }
     }
 
     private fun confirmationCode(): String {
@@ -211,12 +217,18 @@ class SecureLinkHandshake(
     private fun fail() {
         state = State.FAILED
         approved = false
-        handshake.close()
-        transport?.close()
-        transport = null
-        handshakeHash?.fill(0)
-        handshakeHash = null
-        remoteBinding = null
+        try {
+            handshake.close()
+        } finally {
+            try {
+                transport?.close()
+            } finally {
+                transport = null
+                handshakeHash?.fill(0)
+                handshakeHash = null
+                remoteBinding = null
+            }
+        }
     }
 
     companion object {
