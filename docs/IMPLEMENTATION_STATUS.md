@@ -177,3 +177,14 @@ Validation for this pass: source and JVM tests were committed, but no Gradle bui
 - Added JVM tests for the new secure message type and oversized nested payload rejection.
 - Still not migrated: actual screen input/video, SAF file operations, notification history, camera, microphone, and PTT. No privileged command is executed from this message layer. Each feature still requires explicit owner-granted capabilities, Android permission/state checks, a target-side dispatcher and per-operation validation before it can be safely exposed over the Internet.
 - The room ID is used as a shared session namespace; use a fresh random 256-bit room ID for each session. Noise XX mutual approval and WebRTC DTLS remain the cryptographic/session transport layers. The legacy TCP 18765 path remains plaintext and LAN-only.
+
+
+## Secure P2P command authorization and video framing · next integration pass
+
+- Added `SecureRemoteCommandRouter`: only an authenticated target-side peer can dispatch a registered command after the target owner explicitly activates a capability set. Every command requires a bounded request ID; duplicate IDs are rejected; the existing `SessionCommandGate` enforces peer identity, active owner-approved session, capability grants and monotonic command sequence.
+- Wired the router into `SecureInternetPeer` for inbound target-side command messages. The router is inert until the target app calls `activateOwnerApprovedCommands(...)`; connection establishment and SAS approval alone do not grant remote operations. `revokeOwnerApprovedCommands()` clears grants without requiring the encrypted connection to close.
+- The router intentionally does not implement platform side effects. Registered feature handlers must still check current Android permission state, active owner-started foreground service, MediaProjection state, SAF URI grants, and per-command limits. No command handler for live screen, input, file transfer, notification sync, camera, microphone or PTT has been registered yet.
+- Added `SecureVideoFrameCodec` for bounded H.264 access-unit fragmentation/reassembly inside versioned secure messages: 32 KiB chunks, max 2 MiB per frame, max 64 chunks, at most two incomplete frames and 5-second assembly expiry. It validates stream IDs, dimensions, metadata consistency, chunk lengths, duplicates and stale frame sequences.
+- Added JVM tests for command authorization/revocation/replay and H.264 frame reassembly/invalid chunks.
+- **Not yet connected to the live screen encoder or a video decoder UI.** This commit supplies a bounded video frame codec; it does not start screen capture or stream frames by itself. Screen capture remains owner-started locally and is not started remotely.
+- GitHub Actions for the newest commit must complete before treating this pass as CI-verified. No physical two-device testing or security audit has been performed.
