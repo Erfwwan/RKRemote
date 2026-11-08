@@ -157,3 +157,11 @@ Validation for this pass: source and JVM tests were committed, but no Gradle bui
 - GitHub Actions completed both `:app:testDebugUnitTest` and `:app:assembleDebug` successfully for commit `16455720dc76dac9f3293adb2faed88114b9e119` (the first integrated coordinator + main-screen panel).
 - The follow-up UI test-frame change at `8de82d63e974c33e23d9532e557afb64bc5fcb08` passed unit tests; its APK assembly was still running at the time this status was updated.
 - Subsequent changes were an API-level annotation and documentation updates. The current branch head has a newer workflow run in progress, so do not treat the latest branch head as fully CI-verified until that run completes.
+
+
+## Secure Internet P2P · DataChannel framing and TURN configuration
+
+- Added bounded RKD1 fragmentation/reassembly for the ordered WebRTC DataChannel: logical payloads up to 4 MiB, frames up to 12 KiB, at most four incomplete inbound messages, 30-second assembly expiry, strict duplicate/index/count/length checks, and a 2 MiB outbound buffered-amount guard.
+- Added JVM tests for out-of-order reassembly, duplicate fragment rejection, corrupted headers, and oversized payload rejection. Test execution for the current head is pending.
+- Added optional TURN URL/username/credential fields to the secure connection panel. These values are passed only to libwebrtc and are not sent to the Cloudflare Worker. The user must supply credentials from a TURN service they control; none is hosted or provisioned by this repository.
+- This remains a transport milestone. Existing remote-control routes and media pipelines are not yet migrated to the WebRTC DataChannel. Do not use the insecure LAN TCP server over the public internet.
