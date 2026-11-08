@@ -5,8 +5,7 @@ import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.BufferedReader
-import java.io.InputStreamReader
+import java.io.InputStream
 import java.io.OutputStream
 import java.net.ServerSocket
 import java.net.Socket
@@ -101,77 +100,84 @@ class LanAgentServer(
     private fun handle(socket: Socket) {
         socket.use { client ->
             client.soTimeout = 4000
-            val reader = BufferedReader(InputStreamReader(client.getInputStream(), Charsets.US_ASCII))
-            val requestLine = reader.readLine()?.takeIf { it.length <= MAX_REQUEST_LINE } ?: return
+            val input = client.getInputStream()
+            val output = client.getOutputStream()
+            val requestLine = readAsciiLine(input, MAX_REQUEST_LINE) ?: return
             val headers = mutableMapOf<String, String>()
             var headerCount = 0
             var headerBytes = 0
             while (true) {
-                val line = reader.readLine() ?: break
+                val line = readAsciiLine(input, MAX_HEADER_LINE_BYTES) ?: break
                 if (line.isEmpty()) break
                 headerCount++
                 headerBytes += line.length
                 if (headerCount > MAX_HEADERS || headerBytes > MAX_HEADER_BYTES) {
-                    respond(client.getOutputStream(), 400, JSONObject().put("error", "Headers too large"))
+                    respond(output, 400, JSONObject().put("error", "Headers too large"))
                     return
                 }
                 val separator = line.indexOf(':')
-                if (separator > 0) headers[line.substring(0, separator).trim().lowercase()] =
-                    line.substring(separator + 1).trim()
+                if (separator > 0) {
+                    val name = line.substring(0, separator).trim().lowercase()
+                    if (name in headers) {
+                        respond(output, 400, JSONObject().put("error", "Duplicate header"))
+                        return
+                    }
+                    headers[name] = line.substring(separator + 1).trim()
+                }
             }
             val parts = requestLine.split(' ')
-            if (parts.size < 2 || (parts[0] != "GET" && parts[0] != "POST")) {
-                respond(client.getOutputStream(), 405, JSONObject().put("error", "GET or POST only"))
+            if (parts.size != 3 || (parts[0] != "GET" && parts[0] != "POST") ||
+                parts[2] != "HTTP/1.1") {
+                respond(output, 405, JSONObject().put("error", "GET or POST HTTP/1.1 only"))
                 return
             }
             val expected = "Bearer $token".toByteArray(Charsets.UTF_8)
             val supplied = (headers["authorization"] ?: "").toByteArray(Charsets.UTF_8)
             if (!MessageDigest.isEqual(expected, supplied)) {
-                respond(client.getOutputStream(), 401, JSONObject().put("error", "Unauthorized"))
+                respond(output, 401, JSONObject().put("error", "Unauthorized"))
+                return
+            }
+            if (headers.containsKey("transfer-encoding")) {
+                respond(output, 400, JSONObject().put("error", "Transfer-Encoding is not supported"))
                 return
             }
             val endpoint = parts[1].substringBefore('?')
             if (parts[0] == "POST" && endpoint == "/input/tap") {
                 val length = headers["content-length"]?.toIntOrNull()
                 if (length == null || length !in 1..MAX_INPUT_BODY_BYTES) {
-                    respond(client.getOutputStream(), 400, JSONObject().put("error", "Invalid request body size"))
+                    respond(output, 400, JSONObject().put("error", "Invalid request body size"))
                     return
                 }
-                val bodyChars = CharArray(length)
-                var offset = 0
-                while (offset < length) {
-                    val count = reader.read(bodyChars, offset, length - offset)
-                    if (count < 0) {
-                        respond(client.getOutputStream(), 400, JSONObject().put("error", "Incomplete request body"))
+                val bodyBytes = readExact(input, length)
+                    ?: run {
+                        respond(output, 400, JSONObject().put("error", "Incomplete request body"))
                         return
                     }
-                    offset += count
-                }
-                val command = runCatching { JSONObject(String(bodyChars)) }.getOrNull()
+                val command = runCatching { JSONObject(String(bodyBytes, Charsets.UTF_8)) }.getOrNull()
                 val x = command?.optDouble("x", Double.NaN) ?: Double.NaN
                 val y = command?.optDouble("y", Double.NaN) ?: Double.NaN
                 if (!x.isFinite() || !y.isFinite() || x !in 0.0..1.0 || y !in 0.0..1.0) {
-                    respond(client.getOutputStream(), 400, JSONObject().put("error", "x and y must be normalized between 0 and 1"))
+                    respond(output, 400, JSONObject().put("error", "x and y must be normalized between 0 and 1"))
                     return
                 }
                 val accepted = RemoteAccessibilityService.dispatchTapNormalized(x.toFloat(), y.toFloat())
                 if (!accepted) {
-                    respond(client.getOutputStream(), 503, JSONObject().put("error", "Accessibility service is not enabled"))
+                    respond(output, 503, JSONObject().put("error", "Accessibility service is not enabled"))
                 } else {
-                    respond(client.getOutputStream(), 202, JSONObject().put("accepted", true).put("action", "tap"))
+                    respond(output, 202, JSONObject().put("accepted", true).put("action", "tap"))
                 }
                 return
             }
             if (parts[0] != "GET") {
-                respond(client.getOutputStream(), 404, JSONObject().put("error", "Endpoint not found"))
+                respond(output, 404, JSONObject().put("error", "Endpoint not found"))
                 return
             }
             if (endpoint == "/screen.jpg") {
                 val frame = ScreenFrameStore.latestJpeg
                 if (frame == null) {
-                    respond(client.getOutputStream(), 503, JSONObject().put("error", "Screen sharing is not active or no frame is ready"))
+                    respond(output, 503, JSONObject().put("error", "Screen sharing is not active or no frame is ready"))
                 } else {
-                    respondBytes(client.getOutputStream(), frame)
+                    respondBytes(output, frame)
                 }
                 return
             }
@@ -182,12 +188,41 @@ class LanAgentServer(
                     .put("mode", "owner-authorized-lan")
                 "/files" -> listSelectedFolder()
                 else -> {
-                    respond(client.getOutputStream(), 404, JSONObject().put("error", "Not found"))
+                    respond(output, 404, JSONObject().put("error", "Not found"))
                     return
                 }
             }
-            respond(client.getOutputStream(), 200, response)
+            respond(output, 200, response)
         }
+    }
+
+    /** Reads one bounded ASCII HTTP line without allowing an oversized line allocation. */
+    private fun readAsciiLine(input: InputStream, maxBytes: Int): String? {
+        val bytes = java.io.ByteArrayOutputStream()
+        while (true) {
+            val value = input.read()
+            if (value < 0) {
+                if (bytes.size() == 0) return null
+                break
+            }
+            if (value == 10) break
+            if (value != 13) {
+                if (bytes.size() >= maxBytes) throw java.io.IOException("HTTP line too large")
+                bytes.write(value)
+            }
+        }
+        return bytes.toByteArray().toString(Charsets.US_ASCII)
+    }
+
+    private fun readExact(input: InputStream, length: Int): ByteArray? {
+        val result = ByteArray(length)
+        var offset = 0
+        while (offset < length) {
+            val count = input.read(result, offset, length - offset)
+            if (count < 0) return null
+            offset += count
+        }
+        return result
     }
 
     private fun listSelectedFolder(): JSONObject {
@@ -245,6 +280,7 @@ class LanAgentServer(
         const val DEFAULT_PORT = 18765
         private const val MAX_LIST_ITEMS = 200
         private const val MAX_REQUEST_LINE = 2048
+        private const val MAX_HEADER_LINE_BYTES = 2048
         private const val MAX_HEADERS = 24
         private const val MAX_HEADER_BYTES = 8192
         private const val MAX_INPUT_BODY_BYTES = 1024
