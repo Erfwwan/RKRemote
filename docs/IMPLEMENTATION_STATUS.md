@@ -42,6 +42,8 @@ Camera and microphone capture must be started by the owner from the target phone
 
 ## Two-way audio / push-to-talk prototype boundary
 
+The implementation notes and two-device acceptance checklist are in [docs/SECTION_5_TWO_WAY_AUDIO.md](SECTION_5_TWO_WAY_AUDIO.md).
+
 The target owner must enable the PTT speaker locally from the app. This starts a mediaPlayback foreground service with a persistent notification and a local stop action. The server rejects incoming PTT chunks unless this service is active; a network request cannot start playback. The controller requires Android RECORD_AUDIO permission and sends 16 kHz mono 16-bit PCM only while the user holds the PTT control. Releasing the control stops capture and cancels transmission. Chunks are bounded to 4096 bytes and queued in memory (maximum 24 chunks; oldest chunks are dropped under pressure). The existing /audio/chunk endpoint carries the target microphone back to the controller, so the prototype supports talk-to-target plus listen-from-target. It is not synchronized full-duplex VoIP, has no jitter buffer or echo cancellation, and should be tested with headphones. All audio still travels over the plaintext LAN bearer-token protocol; trusted private Wi-Fi only. Physical-device tests remain outstanding.
 
 
