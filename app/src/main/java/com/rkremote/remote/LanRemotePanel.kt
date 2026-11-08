@@ -2,8 +2,13 @@ package com.rkremote.remote
 
 import android.Manifest
 import android.content.Intent
+import android.app.Activity
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.media.projection.MediaProjectionManager
 import android.content.pm.PackageManager
 import android.os.Build
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,6 +31,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
@@ -43,6 +50,20 @@ fun LanRemotePanel() {
     var targetToken by remember { mutableStateOf("") }
     var output by remember { mutableStateOf("No request yet.") }
     var busy by remember { mutableStateOf(false) }
+    var screenBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    val projectionManager = remember { context.getSystemService(MediaProjectionManager::class.java) }
+    val screenConsentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val data = result.data
+        if (result.resultCode == Activity.RESULT_OK && data != null) {
+            val captureIntent = Intent(context, ScreenCaptureService::class.java)
+                .putExtra(ScreenCaptureService.EXTRA_RESULT_CODE, result.resultCode)
+                .putExtra(ScreenCaptureService.EXTRA_RESULT_DATA, data)
+            ContextCompat.startForegroundService(context, captureIntent)
+            output = "Screen sharing started. Use the persistent notification to stop."
+        } else {
+            output = "Screen sharing permission was cancelled."
+        }
+    }
     val localIp = remember { LanControllerClient.localIpv4() ?: "Wi-Fi address unavailable" }
     val notificationsAllowed = Build.VERSION.SDK_INT < 33 ||
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
@@ -82,6 +103,18 @@ fun LanRemotePanel() {
                 Text("Port: ${LanAgentServer.DEFAULT_PORT} · Read-only · Stop from notification or here.", style = MaterialTheme.typography.bodySmall)
             }
             Spacer(Modifier.height(4.dp))
+            Text("SCREEN SHARING · TARGET PHONE", fontWeight = FontWeight.SemiBold)
+            Text("Android will show its own screen-capture consent dialog. Sharing stays visible in a persistent notification.", style = MaterialTheme.typography.bodySmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(enabled = notificationsAllowed, onClick = {
+                    screenConsentLauncher.launch(projectionManager.createScreenCaptureIntent())
+                }) { Text("Share this screen") }
+                OutlinedButton(onClick = {
+                    context.startService(Intent(context, ScreenCaptureService::class.java).setAction(ScreenCaptureService.ACTION_STOP))
+                    screenBitmap = null
+                }) { Text("Stop screen") }
+            }
+            Spacer(Modifier.height(4.dp))
             Text("CONTROLLER PHONE", fontWeight = FontWeight.SemiBold)
             OutlinedTextField(
                 value = targetIp, onValueChange = { targetIp = it },
@@ -118,10 +151,27 @@ fun LanRemotePanel() {
                     }
                 }) { Text("List selected folder") }
             }
+            OutlinedButton(enabled = !busy, onClick = {
+                busy = true
+                scope.launch {
+                    val result = runCatching {
+                        withContext(Dispatchers.IO) {
+                            val bytes = LanControllerClient.requestBytes(targetIp.trim(), targetToken.trim(), "/screen.jpg")
+                            BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: error("Invalid screen image")
+                        }
+                    }
+                    result.onSuccess { screenBitmap = it; output = "Screen snapshot received." }
+                    result.onFailure { output = "Screen request failed: ${it.message}" }
+                    busy = false
+                }
+            }) { Text("View screen snapshot") }
+            screenBitmap?.let { bitmap ->
+                Image(bitmap = bitmap.asImageBitmap(), contentDescription = "Remote phone screen snapshot", modifier = Modifier.fillMaxWidth(), contentScale = ContentScale.Fit)
+            }
             Text("Result", fontWeight = FontWeight.SemiBold)
             Text(output, style = MaterialTheme.typography.bodySmall)
             Text(
-                "Prototype boundary: local trusted Wi-Fi only; read-only folder listing and status. No internet relay, remote screen, camera, microphone or file download in this part.",
+                "Prototype boundary: local trusted Wi-Fi only; read-only folder listing and status. No internet relay, camera, microphone or file download. Screen sharing is an owner-approved still-image snapshot, not continuous video or remote input.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
