@@ -1881,7 +1881,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                             locationStatus.value = "تاریخچه محلی به‌روزرسانی شد"
                         }) { Text("نمایش تاریخچه ذخیره‌شده") }
                         OutlinedButton(
-                            enabled = session.value != null && dataChannelConnected.value && fineGranted || session.value != null && dataChannelConnected.value && coarseGranted,
+                            enabled = session.value != null && dataChannelConnected.value && (fineGranted || coarseGranted),
                             onClick = {
                                 runCatching { grantRememberedReportCapability(RemoteCapability.LOCATION); LocationCaptureScheduler.start(context) }
                                     .onSuccess { locationStatus.value = "ارسال موقعیت برای همین دستگاه جفت‌شده مجاز شد" }
