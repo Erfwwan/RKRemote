@@ -32,7 +32,7 @@ class SecureScreenStreamSender(
             val config = ScreenVideoStore.awaitConfig(CONFIG_WAIT_MS)
                 ?: error("Screen sharing is not active on the target device")
             require(config.width in 2..480 && config.height in 2..480)
-            require(config.csd0.size <= MAX_CODEC_CONFIG_BYTES && config.csd1.size <= MAX_CODEC_CONFIG_BYTES) {
+            require(config.csd0.isNotEmpty() && config.csd0.size <= MAX_CODEC_CONFIG_BYTES && config.csd1.size <= MAX_CODEC_CONFIG_BYTES) {
                 "H.264 codec configuration is too large"
             }
             val configPayload = JSONObject()
