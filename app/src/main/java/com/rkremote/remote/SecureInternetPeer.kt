@@ -233,7 +233,12 @@ class SecureInternetPeer(
     fun send(payload: ByteArray): Boolean = synchronized(outboundLock) {
         if (closed.get() || payload.isEmpty()) return@synchronized false
         runCatching {
-            relayCodec.encode(payload).all { fragment ->
+            val messageType = runCatching {
+                JSONObject(payload.toString(Charsets.UTF_8)).optString("type")
+            }.getOrDefault("")
+            val allowCompression = !messageType.startsWith("screen.") &&
+                !messageType.startsWith("camera.")
+            relayCodec.encode(payload, allowCompression).all { fragment ->
                 secureSession.sendApplication(fragment).also { accepted ->
                     check(accepted) { "Cloudflare encrypted relay rejected an application frame" }
                 }
