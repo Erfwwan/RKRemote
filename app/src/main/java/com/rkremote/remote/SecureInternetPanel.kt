@@ -1461,7 +1461,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     rememberedReportGrants.value.toSortedMap().forEach { (savedPeer, savedCapabilities) ->
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(
-                                "Peer: " + savedPeer.take(20) + if (savedPeer.length > 20) "…" else "",
+                                "Peer identity: " + savedPeer,
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.SemiBold
                             )
