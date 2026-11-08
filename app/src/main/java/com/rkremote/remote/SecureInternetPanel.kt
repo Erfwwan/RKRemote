@@ -347,7 +347,7 @@ fun SecureInternetPanel() {
                                     }
                                     register("file.transfer.complete", RemoteCapability.FILES) { message ->
                                         val transferId = message.payload.getString("transferId")
-                                        check(activeTransferId.get() == transferId && transferActive.get()) {
+                                        check(activeUploadIds.contains(transferId)) {
                                             "Upload was cancelled or is no longer active"
                                         }
                                         try {
