@@ -166,6 +166,21 @@ class LocationHistoryStore(context: Context) {
  * Holds only the currently authenticated target-side transport. The worker
  * sends location only when the paired peer has a saved LOCATION consent.
  */
+object SecureLocationSync {
+    fun buildLatestResponse(context: Context, requestId: String): JSONObject {
+        require(requestId.isNotBlank() && requestId.length <= 128)
+        val store = LocationHistoryStore(context)
+        val records = store.readAll().takeLast(100)
+        val array = JSONArray()
+        records.forEach { array.put(it.toJson()) }
+        return JSONObject()
+            .put("requestId", requestId)
+            .put("records", array)
+            .put("returned", records.size)
+            .put("trackingEnabled", store.isTrackingEnabled())
+    }
+}
+
 object LocationSessionBridge {
     private val activePeer = AtomicReference<SecureInternetPeer?>(null)
 
