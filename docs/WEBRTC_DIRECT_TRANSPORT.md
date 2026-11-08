@@ -14,7 +14,7 @@
 
 The main screen contains **Secure Internet P2P**.
 
-1. Deploy `cloudflare/worker` to a Cloudflare account using Wrangler. The app does not deploy the Worker automatically.
+1. From the repository root, run `cd cloudflare/worker`, then `npx wrangler login` and `npx wrangler deploy`. Use a Cloudflare account you control and approve the Durable Objects migration when prompted. The app does not deploy the Worker automatically; the assigned `workers.dev` hostname is the WSS base URL.
 2. Enter the deployed Worker base URL in the WSS field (for example, the actual `workers.dev` hostname assigned by Cloudflare).
 3. On the controller, generate a 64-character room ID and share it privately with the target.
 4. Select **Target** on the destination phone and **Controller** on the controlling phone.
