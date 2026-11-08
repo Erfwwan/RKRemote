@@ -66,5 +66,9 @@ class SessionCommandGate {
         return Decision(true, "Approved")
     }
 
+    @Synchronized
+    fun hasCapability(peerId: String, capability: RemoteCapability): Boolean =
+        sessionActive && peerId == approvedPeerId && capability in (grants[peerId] ?: emptySet())
+
     fun isSessionActive(): Boolean = sessionActive
 }
