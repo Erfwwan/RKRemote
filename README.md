@@ -22,7 +22,7 @@ Create a token with **Workers Editor** access scoped to the existing `rkremote-s
 
 ## Feature boundaries
 
-The source includes owner-approved screen viewing/input, owner-selected SAF file browsing and transfer, notification snapshots, call/SMS/location reports, and owner-started camera/microphone/PTT functions. Each capability remains separately granted. Camera, microphone and screen capture still require local owner action, Android permissions, visible foreground notifications and local stop controls.
+The source includes owner-approved screen viewing/input, owner-selected SAF file browsing and transfer, notification snapshots, call/SMS/contact/location reports, and owner-started single-photo camera, microphone and PTT functions. Each capability remains separately granted. Camera, microphone and screen capture still require local owner action, Android permissions, visible foreground notifications and local stop controls.
 
 The app does not bypass Android permissions, silently start sensors, hide its session, or access arbitrary private app storage. Call-log/SMS/background-location access may be restricted by Android version and install channel.
 
