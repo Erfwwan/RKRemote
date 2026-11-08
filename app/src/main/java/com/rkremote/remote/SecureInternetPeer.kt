@@ -1,6 +1,7 @@
 package com.rkremote.remote
 
 import android.content.Context
+import androidx.annotation.RequiresApi
 import org.json.JSONObject
 import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicBoolean
@@ -13,6 +14,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * messages. Once WebRTC is connected, application bytes use the WebRTC DataChannel,
  * protected by DTLS. This coordinator does not silently fall back to plaintext/LAN.
  */
+@RequiresApi(33)
 class SecureInternetPeer(
     context: Context,
     baseWssUrl: String,
