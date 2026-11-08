@@ -72,6 +72,8 @@ fun SecureInternetPanel() {
     val transferExecutor = remember { Executors.newSingleThreadExecutor() }
     val transferActive = remember { AtomicBoolean(false) }
     val audioRelayActive = remember { AtomicBoolean(false) }
+    val pttRelayActive = remember { AtomicBoolean(false) }
+    val pttStatus = remember { mutableStateOf("Push-to-talk idle") }
     val audioExecutor = remember { Executors.newSingleThreadExecutor() }
     val audioPlayback = remember(context) { SecureAudioPlayback() }
     val audioStatus = remember { mutableStateOf("Microphone stream idle") }
@@ -170,6 +172,7 @@ fun SecureInternetPanel() {
         onDispose {
             transferActive.set(false)
             audioRelayActive.set(false)
+            pttRelayActive.set(false)
             audioPlayback.close()
             audioExecutor.shutdownNow()
             streamSender.value?.close()
@@ -370,6 +373,20 @@ fun SecureInternetPanel() {
                                         streamSender.value = null
                                         null
                                     }
+                                    register("ptt.start", RemoteCapability.PUSH_TO_TALK) {
+                                        check(PttAudioQueue.isEnabled()) {
+                                            "Enable the PTT speaker locally on the target first"
+                                        }
+                                        check(pttRelayActive.compareAndSet(false, true)) {
+                                            "A push-to-talk transmission is already active"
+                                        }
+                                        null
+                                    }
+                                    register("ptt.stop", RemoteCapability.PUSH_TO_TALK) {
+                                        pttRelayActive.set(false)
+                                        PttAudioQueue.clear()
+                                        null
+                                    }
                                     register("audio.start.request", RemoteCapability.MICROPHONE) {
                                         check(MicrophoneChunkStore.isCapturing()) {
                                             "Start microphone capture locally on the target first"
@@ -464,6 +481,21 @@ fun SecureInternetPanel() {
                                     override fun onData(payload: ByteArray) = Unit
                                     override fun onRemoteMessage(message: RemoteMessage) {
                                         when (message.type) {
+                                            "ptt.audio.chunk" -> {
+                                                if (role.value == CloudflareSignalingClient.Role.TARGET && pttRelayActive.get()) {
+                                                    runCatching {
+                                                        val bytes = Base64.getDecoder().decode(message.payload.getString("data"))
+                                                        check(bytes.size in 2..PttAudioQueue.MAX_CHUNK_BYTES && bytes.size % 2 == 0)
+                                                        check(PttAudioQueue.offer(bytes)) {
+                                                            "Target PTT speaker is not accepting audio"
+                                                        }
+                                                    }.onFailure { failure ->
+                                                        pttRelayActive.set(false)
+                                                        PttAudioQueue.clear()
+                                                        mainHandler.post { pttStatus.value = failure.message ?: "PTT audio rejected" }
+                                                    }
+                                                }
+                                            }
                                             "audio.chunk" -> {
                                                 if (role.value == CloudflareSignalingClient.Role.CONTROLLER) {
                                                     runCatching {
@@ -592,6 +624,8 @@ fun SecureInternetPanel() {
                                     override fun onDisconnected(reason: String) {
                                         transferActive.set(false)
                                         audioRelayActive.set(false)
+                                        pttRelayActive.set(false)
+                                        PttAudioQueue.clear()
                                         audioPlayback.close()
                                         safBridge.abortUpload()
                                         streamSender.value?.close()
@@ -604,6 +638,8 @@ fun SecureInternetPanel() {
                                     override fun onFailure(failure: Throwable) {
                                         transferActive.set(false)
                                         audioRelayActive.set(false)
+                                        pttRelayActive.set(false)
+                                        PttAudioQueue.clear()
                                         audioPlayback.close()
                                         safBridge.abortUpload()
                                         streamSender.value?.close()
@@ -684,6 +720,13 @@ fun SecureInternetPanel() {
                         .onFailure { error.value = it.message ?: "Could not grant microphone access" }
                 }) { Text("Allow microphone streaming") }
                 OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
+                    runCatching {
+                        check(PttAudioQueue.isEnabled()) { "Enable the PTT speaker locally on the target first" }
+                        session.value?.grantOwnerApprovedCapabilities(setOf(RemoteCapability.PUSH_TO_TALK))
+                    }.onSuccess { status.value = "Push-to-talk allowed for this session" }
+                        .onFailure { error.value = it.message ?: "Could not grant push-to-talk" }
+                }) { Text("Allow push-to-talk") }
+                OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
                     runCatching { session.value?.grantOwnerApprovedCapabilities(setOf(RemoteCapability.FILES)) }
                         .onSuccess { status.value = "Secure file access allowed for this session" }
                         .onFailure { error.value = it.message ?: "Could not grant file access" }
@@ -725,6 +768,63 @@ fun SecureInternetPanel() {
                         JSONObject().put("action", "text").put("text", remoteText.value)
                     )) "Text insertion requested" else "Could not send text"
                 }) { Text("Insert text on target") }
+                Card(
+                    modifier = Modifier.fillMaxWidth().pointerInput(session.value, dataChannelConnected.value, role.value) {
+                        detectTapGestures(onPress = {
+                            if (role.value == CloudflareSignalingClient.Role.CONTROLLER && dataChannelConnected.value) {
+                                if (!MicrophoneChunkStore.isCapturing()) {
+                                    pttStatus.value = "Start microphone capture locally on this phone first"
+                                } else if (pttRelayActive.compareAndSet(false, true)) {
+                                    val started = sendInput("ptt.start", JSONObject())
+                                    if (!started) {
+                                        pttRelayActive.set(false)
+                                        pttStatus.value = "Target did not accept push-to-talk"
+                                    } else {
+                                        pttStatus.value = "Transmitting · release to stop"
+                                        audioExecutor.execute {
+                                            try {
+                                                while (pttRelayActive.get() && MicrophoneChunkStore.isCapturing()) {
+                                                    val chunk = MicrophoneChunkStore.take()
+                                                    if (chunk == null) {
+                                                        Thread.sleep(8)
+                                                        continue
+                                                    }
+                                                    val sent = session.value?.sendMessage(
+                                                        "ptt.audio.chunk",
+                                                        JSONObject().put("data", Base64.getEncoder().encodeToString(chunk))
+                                                    ) == true
+                                                    if (!sent) {
+                                                        pttStatus.value = "PTT connection lost"
+                                                        pttRelayActive.set(false)
+                                                        break
+                                                    }
+                                                }
+                                            } catch (_: InterruptedException) {
+                                                Thread.currentThread().interrupt()
+                                            }
+                                        }
+                                        try {
+                                            tryAwaitRelease()
+                                        } finally {
+                                            pttRelayActive.set(false)
+                                            sendInput("ptt.stop", JSONObject())
+                                            pttStatus.value = "Push-to-talk stopped"
+                                        }
+                                    }
+                                }
+                            }
+                        })
+                    }
+                ) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                        Text(
+                            if (pttRelayActive.get()) "HOLDING · TRANSMITTING" else "HOLD TO TALK",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(pttStatus.value, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(enabled = session.value != null && dataChannelConnected.value, onClick = {
                         audioStatus.value = if (sendInput("audio.start.request", JSONObject()))
