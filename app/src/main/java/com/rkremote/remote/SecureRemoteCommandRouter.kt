@@ -60,6 +60,11 @@ class SecureRemoteCommandRouter(
     }
 
     @Synchronized
+    fun revokeCapabilities(capabilities: Set<RemoteCapability>) {
+        gate.revokeCapabilities(capabilities)
+    }
+
+    @Synchronized
     fun endSession() {
         gate.endSession()
         seenRequests.clear()
