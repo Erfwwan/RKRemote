@@ -65,6 +65,21 @@ class P2pIdentityStore {
     }
 
     @Synchronized
+    fun verify(publicKeyBase64: String, data: ByteArray, signatureBytes: ByteArray): Boolean {
+        if (data.size > P2pPeerRecord.MAX_RECORD_BYTES || signatureBytes.isEmpty()) return false
+        return runCatching {
+            val publicBytes = Base64.getDecoder().decode(publicKeyBase64)
+            val publicKey = java.security.KeyFactory.getInstance("EC")
+                .generatePublic(java.security.spec.X509EncodedKeySpec(publicBytes))
+            Signature.getInstance(P2pPeerRecord.SIGNATURE_ALGORITHM).run {
+                initVerify(publicKey)
+                update(data)
+                verify(signatureBytes)
+            }
+        }.getOrDefault(false)
+    }
+
+    @Synchronized
     fun createAdvertisement(
         sequence: Long,
         addresses: List<String>,
