@@ -43,7 +43,7 @@ class RemoteProtocolTest {
         val types = listOf(
             "file.list.request", "file.list.result", "file.download.request",
             "file.download.begin", "file.download.chunk", "file.download.complete",
-            "file.download.error"
+            "file.download.error", "file.upload.begin", "file.transfer.chunk", "file.transfer.complete", "file.transfer.cancel"
         )
         types.forEachIndexed { index, type ->
             val message = RemoteMessage(
