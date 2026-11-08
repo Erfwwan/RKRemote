@@ -6,8 +6,8 @@ import java.security.SecureRandom
 import java.util.LinkedHashMap
 
 /**
- * Bounded fragmentation/reassembly for the ordered WebRTC DataChannel.
- * DataChannel itself is DTLS protected; this layer only frames large app messages.
+ * Bounded fragmentation/reassembly for ordered encrypted relay messages.
+ * The Noise transport protects each fragment; this layer validates large-message framing.
  */
 internal class SecureDataChannelFramer(
     private val maxFrameBytes: Int = 12 * 1024,
