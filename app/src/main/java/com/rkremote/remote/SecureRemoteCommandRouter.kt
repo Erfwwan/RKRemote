@@ -104,7 +104,6 @@ class SecureRemoteCommandRouter(
         fun isCommandType(type: String): Boolean = type in COMMAND_CAPABILITIES
 
         private val COMMAND_CAPABILITIES = mapOf(
-            "screen.snapshot.request" to RemoteCapability.SCREEN_VIEW,
             "screen.stream.start" to RemoteCapability.SCREEN_VIEW,
             "screen.stream.stop" to RemoteCapability.SCREEN_VIEW,
             "screen.input" to RemoteCapability.SCREEN_INPUT,
