@@ -10,7 +10,6 @@ import org.json.JSONObject
 
 /** Read-only, explicitly requested address-book export. */
 object SecureContactsSync {
-    const val MAX_REMOTE_RECORDS = 300
     const val MAX_LOCAL_RECORDS = 300
     private const val MAX_FIELD_CHARS = 120
     private const val MAX_RESPONSE_BYTES = 48 * 1024
