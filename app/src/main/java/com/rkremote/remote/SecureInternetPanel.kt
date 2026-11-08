@@ -58,9 +58,11 @@ fun SecureInternetPanel() {
             JSONObject(raw)
         }.getOrNull()
     }
-    val url = remember { mutableStateOf(initialNetworkProfile?.optString("signalingUrl").orEmpty()) }
-    val room = remember { mutableStateOf("") }
-    val role = remember { mutableStateOf(CloudflareSignalingClient.Role.TARGET) }
+    val setupPrefs = remember(context) { context.getSharedPreferences("rkremote_cloudflare_setup", android.content.Context.MODE_PRIVATE) }
+    val savedRole = remember { setupPrefs.getString("role", "target") ?: "target" }
+    val url = remember { mutableStateOf(setupPrefs.getString("worker_url", null) ?: initialNetworkProfile?.optString("signalingUrl").orEmpty()) }
+    val room = remember { mutableStateOf(setupPrefs.getString("room_id", null).orEmpty()) }
+    val role = remember { mutableStateOf(if (savedRole == "controller") CloudflareSignalingClient.Role.CONTROLLER else CloudflareSignalingClient.Role.TARGET) }
     val turnUrls = remember {
         val addresses = initialNetworkProfile?.optJSONArray("iceUrls")
         mutableStateOf(if (addresses == null) "" else
