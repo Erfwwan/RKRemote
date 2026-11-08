@@ -109,3 +109,7 @@ This path is implemented in source and awaits CI completion plus physical two-de
 The target owner may locally start the microphone capture service and then grant `MICROPHONE` for this session. The controller can request a live 16 kHz mono PCM monitor stream; the target only relays chunks already published by the local capture service and never starts the microphone remotely. Playback uses a bounded queue and drops old chunks under congestion.
 
 For half-duplex push-to-talk, the target owner must locally enable the PTT speaker service and grant `PUSH_TO_TALK`. The controller must have locally started microphone capture and holds the PTT control to transmit short PCM chunks. Releasing the control sends `ptt.stop`; the target queue is cleared. These features are source-integrated but not yet validated on physical devices. Camera frames are still not migrated to this secure Internet path.
+
+## Secure file-transfer cancellation
+
+The owner-approved `FILES` capability now includes an explicit `file.transfer.cancel` command. Either controller can request cancellation while a transfer is active; the target closes and deletes an incomplete SAF upload, stops an in-progress download sender, and the controller discards any incomplete temporary download. The cancellation command is authenticated, replay-guarded, session-scoped and unavailable until the target owner grants `FILES`. A completed file is never deleted by cancellation. Cancellation is best-effort if the connection is already lost; disconnect cleanup remains active on the target.
