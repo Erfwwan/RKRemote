@@ -18,10 +18,10 @@ This branch is a development foundation for the next major RKRemote iteration.
 
 ## Not implemented / not production-ready
 
-- A deployed relay server, controller application, or end-to-end authenticated key-exchange / pairing handshake. The AES-GCM envelope is a building block, not proof of a completed E2E secure channel.
+- Internet relay, cross-network connection, TLS on the LAN socket, or end-to-end authenticated key exchange. The LAN token is a temporary bearer secret sent over the local network; use only on a trusted private Wi-Fi network. The AES-GCM envelope is not yet connected to the LAN transport.
 - Durable paired-device identity and key rotation.
-- Network-connected remote command execution, screen capture/input, camera/microphone streaming, file transfer, contacts/call-log transfer, or push-to-talk. SAF file access is local-only at this stage.
+- Remote screen capture/input, camera/microphone streaming, file download/upload, contacts/call-log transfer, and push-to-talk. The current remote file feature lists names and metadata only; it does not download file contents.
 - Automated reconnect/backoff and network diagnostics.
 - Device-farm tests, physical-device tests, release signing, and security review.
 
-The transport is a generic pinned WSS client, not a complete relay protocol. The command gate and authenticated-encryption utility are not yet wired to a network handshake or privileged operations. No privileged operation should be wired to inbound messages until peer authentication, authorization, replay protection, capability consent, and session revocation are integrated and tested.
+The WSS transport, encryption utility, and command gate remain separate foundations. The first executable LAN path is a deliberately small read-only HTTP-like TCP protocol with a temporary token; it is not suitable for untrusted networks or internet exposure. No privileged Android operation is executed from inbound network requests. No privileged operation should be wired to inbound messages until peer authentication, authorization, replay protection, capability consent, and session revocation are integrated and tested.
