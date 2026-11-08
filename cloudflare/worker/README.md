@@ -6,13 +6,12 @@ This Worker is the **transport relay**, not just a signaling rendezvous. Both An
 
 ## Deploy
 
-1. Open the Deploy button above and sign in to your own Cloudflare account.
-2. Confirm the Worker name and deployment settings.
-3. Approve creation of the SignalRoom Durable Object binding/migration.
-4. Deploy. Cloudflare provisions the Durable Object resource declared by wrangler.toml.
-5. Copy the assigned workers.dev origin. Enter it in RKRemote as wss://<your-worker-host>.
+There are two supported paths:
 
-The Worker subdirectory is self-contained: it includes src/index.ts, wrangler.toml, and its own package.json. The deploy button creates a copy in your GitHub account and configures Workers Builds. Alternatively, deploy manually from this directory with npx wrangler deploy.
+1. **Automatic from RKRemote:** configure the Cloudflare OAuth mobile Client ID once in the Android build, tap "ورود به Cloudflare و ساخت خودکار Worker", authorize the account in the browser, and let the app upload the Worker module, create the Durable Object migration/binding, enable workers.dev and save the resulting WSS URL. See [OAuth setup](../../docs/CLOUDFLARE_OAUTH_SETUP.md).
+2. **Manual Deploy button:** open the button above, sign in to Cloudflare, approve the Durable Object configuration and deploy. Copy the assigned workers.dev origin into RKRemote.
+
+The Worker subdirectory is self-contained: it includes src/index.ts, src/index.js, wrangler.toml, and package.json. The Deploy button can create a GitHub copy and configure Workers Builds. Alternatively, deploy manually from this directory with npx wrangler deploy.
 
 ## Wire behavior
 
