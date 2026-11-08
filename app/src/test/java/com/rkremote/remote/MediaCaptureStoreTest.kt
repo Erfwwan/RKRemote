@@ -20,9 +20,15 @@ class MediaCaptureStoreTest {
 
         CameraFrameStore.setCapturing(true)
         CameraFrameStore.publish(first)
+        // A one-shot capture accepts only the first completed photo.
+        CameraFrameStore.publish(latest, "image/jpeg")
+        assertArrayEquals(first, CameraFrameStore.latestFrame)
+        assertEquals("image/jpeg", CameraFrameStore.latestMimeType)
+
+        // A new explicit capture replaces the previous photo.
+        CameraFrameStore.setCapturing(true)
         CameraFrameStore.publish(latest, "image/jpeg")
         assertArrayEquals(latest, CameraFrameStore.latestFrame)
-        assertEquals("image/jpeg", CameraFrameStore.latestMimeType)
 
         CameraFrameStore.clear()
         assertNull(CameraFrameStore.latestFrame)
@@ -35,7 +41,8 @@ class MediaCaptureStoreTest {
         CameraFrameStore.publish(byteArrayOf(1, 2))
         CameraFrameStore.setCapturing(false)
         CameraFrameStore.publish(byteArrayOf(3, 4))
-        assertNull(CameraFrameStore.latestFrame)
+        // Stopping capture prevents late frames but retains the completed photo.
+        assertArrayEquals(byteArrayOf(1, 2), CameraFrameStore.latestFrame)
 
         CameraFrameStore.setCapturing(true)
         val resumed = byteArrayOf(5, 6)
