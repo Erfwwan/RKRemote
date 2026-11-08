@@ -65,5 +65,8 @@ class PttAudioQueueTest {
         assertFalse(PttAudioQueue.isEnabled())
         assertNull(PttAudioQueue.poll(0))
         assertFalse(PttAudioQueue.offer(byteArrayOf(2, 0)))
+
+        PttAudioQueue.setEnabled(true)
+        assertNull(PttAudioQueue.poll(0))
     }
 }
