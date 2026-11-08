@@ -191,19 +191,14 @@ fun RemoteMediaPanel(
                     if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
                         startCameraCapture(context, pendingCameraFacing, onStatus)
                     } else cameraPermission.launch(Manifest.permission.CAMERA)
-                }) { Text("Start rear camera") }
+                }) { Text("ثبت عکس با دوربین پشت") }
                 OutlinedButton(onClick = {
                     pendingCameraFacing = CameraCharacteristics.LENS_FACING_FRONT
                     if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
                         startCameraCapture(context, pendingCameraFacing, onStatus)
                     } else cameraPermission.launch(Manifest.permission.CAMERA)
-                }) { Text("Start front camera") }
+                }) { Text("ثبت عکس با دوربین جلو") }
             }
-            OutlinedButton(onClick = {
-                context.startService(Intent(context, CameraCaptureService::class.java).setAction(CameraCaptureService.ACTION_STOP))
-                cameraBitmap = null
-                onStatus("Camera stop requested on this phone.")
-            }) { Text("Stop camera") }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = {
                     if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
@@ -270,45 +265,33 @@ fun RemoteMediaPanel(
                 }
             }
 
-            Text("CONTROLLER PHONE · REMOTE CAMERA", fontWeight = FontWeight.SemiBold)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(enabled = !cameraPreview && targetIp.isNotBlank() && targetToken.isNotBlank(), onClick = {
-                    cameraPreview = true
-                    val ip = targetIp.trim()
-                    val token = targetToken.trim()
-                    cameraJob = scope.launch {
-                        try {
-                            while (isActive) {
-                                val frame = withContext(Dispatchers.IO) {
-                                    val bytes = LanControllerClient.requestBytes(ip, token, "/camera.jpg")
-                                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                                        ?: error("Camera returned an invalid image frame")
-                                }
-                                cameraBitmap = frame
-                                delay(650)
-                            }
-                        } catch (cancelled: CancellationException) {
-                            throw cancelled
-                        } catch (error: Exception) {
-                            onStatus("Camera preview stopped: ${error.message}")
-                        } finally {
-                            cameraPreview = false
-                            cameraJob = null
+            Text("CONTROLLER PHONE · SINGLE PHOTO", fontWeight = FontWeight.SemiBold)
+            OutlinedButton(enabled = !cameraPreview && targetIp.isNotBlank() && targetToken.isNotBlank(), onClick = {
+                cameraPreview = true
+                val ip = targetIp.trim()
+                val token = targetToken.trim()
+                cameraJob = scope.launch {
+                    try {
+                        val photo = withContext(Dispatchers.IO) {
+                            val bytes = LanControllerClient.requestBytes(ip, token, "/camera.jpg")
+                            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                                ?: error("Camera returned an invalid photo")
                         }
+                        cameraBitmap = photo
+                        onStatus("One photo received.")
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        onStatus("Photo request failed: ${error.message}")
+                    } finally {
+                        cameraPreview = false
+                        cameraJob = null
                     }
-                }) { Text("View camera") }
-                OutlinedButton(enabled = cameraPreview, onClick = {
-                    cameraJob?.cancel()
-                    onStatus("Stopping remote camera preview…")
-                }) { Text("Stop view") }
-            }
+                }
+            }) { Text("دریافت یک عکس") }
             cameraBitmap?.let {
-                Image(
-                    bitmap = it.asImageBitmap(),
-                    contentDescription = "Owner-approved remote camera preview",
-                    modifier = Modifier.fillMaxWidth(),
-                    contentScale = ContentScale.Fit
-                )
+                Image(bitmap = it.asImageBitmap(), contentDescription = "Owner-approved single remote photo",
+                    modifier = Modifier.fillMaxWidth(), contentScale = ContentScale.Fit)
             }
 
             Text("CONTROLLER PHONE · RECEIVE AUDIO (SIMULTANEOUS)", fontWeight = FontWeight.SemiBold)
