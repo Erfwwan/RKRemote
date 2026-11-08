@@ -188,3 +188,16 @@ Validation for this pass: source and JVM tests were committed, but no Gradle bui
 - Added JVM tests for command authorization/revocation/replay and H.264 frame reassembly/invalid chunks.
 - **Not yet connected to the live screen encoder or a video decoder UI.** This commit supplies a bounded video frame codec; it does not start screen capture or stream frames by itself. Screen capture remains owner-started locally and is not started remotely.
 - GitHub Actions for the newest commit must complete before treating this pass as CI-verified. No physical two-device testing or security audit has been performed.
+
+
+## Secure live screen streaming integrated · current milestone
+
+- Connected the existing owner-started `ScreenCaptureService` H.264 latest-frame store to a new `SecureScreenStreamSender`. The sender reads only an already-active MediaProjection session; it never starts screen capture.
+- Target owner must separately grant `SCREEN_VIEW` in the secure Internet panel for the current session. A controller may then request `screen.stream.start`; the target router checks the authenticated peer, owner grant, request ID and monotonic command sequence.
+- H.264 codec configuration and bounded access-unit chunks are sent as versioned RemoteMessage envelopes over the authenticated DTLS DataChannel. The controller reassembles and decodes frames to a SurfaceView using MediaCodec.
+- Added target-side immediate revocation of remote command permissions. The sender is closed on explicit revoke, secure session stop, connection failure, panel disposal, and when the owner stops local screen capture. Screen capture still has its persistent local notification and Android's MediaProjection consent flow.
+- Added a bounded `command.result` response envelope so the controller receives accepted/rejected command status.
+- The sender checks for local capture termination to avoid spinning after ScreenVideoStore is cleared. Codec configuration is validated before decoder setup.
+- Automated CI for the earlier UI integration commit `a03d88e` completed unit tests successfully and proceeded to APK assembly. The later lifecycle, command-result and codec-validation commits are still awaiting their own final CI results.
+- No two-device Internet/NAT test or physical Samsung test has been performed. Video quality, latency, codec compatibility and behavior under congestion remain unverified on hardware.
+- Remote screen input, files, notification sync, camera, microphone and PTT are still not migrated to the secure Internet channel.
