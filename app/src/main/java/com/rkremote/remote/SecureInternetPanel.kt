@@ -65,27 +65,12 @@ enum class SecureFeatureSection {
 fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CONNECTION) {
     val context = LocalContext.current
     val persistentReportConsent = remember(context) { PersistentPeerReportConsent(context) }
-    val initialNetworkProfile = remember(context) {
-        runCatching {
-            val raw = context.getSharedPreferences("rkremote_custom_networks", android.content.Context.MODE_PRIVATE)
-                .getString("active_profile", null) ?: return@runCatching null
-            JSONObject(raw)
-        }.getOrNull()
-    }
     val setupPrefs = remember(context) { context.getSharedPreferences("rkremote_cloudflare_setup", android.content.Context.MODE_PRIVATE) }
     val savedRole = remember { setupPrefs.getString("role", "target") ?: "target" }
-    val url = remember { mutableStateOf(setupPrefs.getString("worker_url", null) ?: initialNetworkProfile?.optString("signalingUrl").orEmpty()) }
-    val room = remember { mutableStateOf(setupPrefs.getString("room_id", null).orEmpty()) }
+    val url = remember { mutableStateOf(setupPrefs.getString("worker_url", "").orEmpty()) }
+    val room = remember { mutableStateOf(setupPrefs.getString("room_id", "").orEmpty()) }
     val role = remember { mutableStateOf(if (savedRole == "controller") CloudflareSignalingClient.Role.CONTROLLER else CloudflareSignalingClient.Role.TARGET) }
-    val turnUrls = remember {
-        val savedIce = setupPrefs.getString("ice_urls", null)
-        val addresses = initialNetworkProfile?.optJSONArray("iceUrls")
-        mutableStateOf(savedIce ?: if (addresses == null) "" else
-            (0 until addresses.length()).joinToString(", ") { addresses.optString(it) })
-    }
-    val turnUsername = remember { mutableStateOf("") }
-    val turnCredential = remember { mutableStateOf("") }
-    val forceTurnRelay = remember { mutableStateOf(false) }
+    val guideOpen = remember { mutableStateOf(false) }
     val status = remember { mutableStateOf("Not connected") }
     val dataChannelConnected = remember { mutableStateOf(false) }
     val peerId = remember { mutableStateOf<String?>(null) }
@@ -397,79 +382,73 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 )
             }
             if (feature == SecureFeatureSection.CONNECTION) {
-            Text("Secure Internet P2P", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("اتصال امن Cloudflare Relay", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
-                "Noise XX identity verification + WebRTC DTLS DataChannel. Cloudflare is used only for encrypted rendezvous signaling.",
+                "تمام داده‌های برنامه از رله Cloudflare عبور می‌کنند؛ داده‌های قابل‌فشرده‌سازی ابتدا فشرده و سپس رمزنگاری سرتاسری می‌شوند. هیچ تنظیم STUN، TURN یا شبکهٔ دیگری لازم نیست.",
                 style = MaterialTheme.typography.bodySmall
             )
             OutlinedTextField(
                 value = url.value,
                 onValueChange = { url.value = it.trim() },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Cloudflare Worker WSS URL") },
+                label = { Text("آدرس Worker کلادفلر") },
                 placeholder = { Text("wss://your-worker.workers.dev") },
-                singleLine = true
+                singleLine = true,
+                enabled = session.value == null
             )
-            OutlinedTextField(
-                value = room.value,
-                onValueChange = { room.value = it.filter { ch -> ch in '0'..'9' || ch in 'a'..'f' }.take(64) },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("64-character room ID") },
-                singleLine = true
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(enabled = session.value == null, onClick = {
+                    runCatching {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(
+                            "https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2FErfwwan%2FRKRemote%2Ftree%2Ffeature%2Fremote-agent-foundation%2Fcloudflare%2Fworker"
+                        )))
+                    }.onFailure { error.value = it.message ?: "Could not open Cloudflare deployment" }
+                }) { Text("ساخت Worker در Cloudflare") }
+                OutlinedButton(onClick = { guideOpen.value = true }) { Text("راهنمای فارسی") }
+            }
+            if (guideOpen.value) {
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { guideOpen.value = false },
+                    title = { Text("راهنمای ساده اتصال Cloudflare") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("۱) دکمه «ساخت Worker در Cloudflare» را بزن و وارد حساب Cloudflare خودت شو.")
+                            Text("۲) پروژه RKRemote را Deploy کن و اجازه ایجاد Durable Object را تأیید کن.")
+                            Text("۳) پس از Deploy، نشانی workers.dev را کپی کن و فقط در فیلد آدرس Worker وارد کن.")
+                            Text("۴) روی گوشی مقصد «شروع اتصال» را بزن. برنامه یک اتاق تصادفی می‌سازد و لینک دعوت را برای اشتراک‌گذاری باز می‌کند.")
+                            Text("۵) گوشی دوم لینک دعوت را باز می‌کند و بدون واردکردن Room ID یا انتخاب نقش، به همان اتاق وصل می‌شود.")
+                            Text("۶) هر دو گوشی باید شناسه دستگاه و کد شش‌رقمی یکسان را بررسی و اتصال را جداگانه تأیید کنند.")
+                            Text("۷) بعد از اتصال، فقط قابلیت‌هایی را که صاحب گوشی مقصد اجازه می‌دهد فعال کن. دوربین، میکروفن و ضبط صفحه همچنان باید محلی و با اعلان قابل‌مشاهده شروع شوند.")
+                            Text("نکته: Cloudflare محتوای داده‌ها را نمی‌خواند، اما IP، زمان اتصال و حجم ترافیک را می‌بیند. مصرف ترافیک رله از سهمیه Worker حساب می‌شود.")
+                        }
+                    },
+                    confirmButton = {
+                        Button(onClick = { guideOpen.value = false }) { Text("متوجه شدم") }
+                    }
+                )
+            }
+            Text(
+                if (role.value == CloudflareSignalingClient.Role.TARGET)
+                    "این گوشی نقش مقصد را دارد. با شروع اتصال، لینک دعوت گوشی کنترل‌کننده ساخته می‌شود."
+                else "دعوت‌نامه دریافت شد؛ برنامه نقش کنترل‌کننده و اتاق اتصال را به‌صورت خودکار تنظیم کرده است.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            OutlinedTextField(value = turnUrls.value, onValueChange = { turnUrls.value = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Optional TURN URLs (comma-separated)") }, singleLine = true)
-            OutlinedButton(enabled = session.value == null, onClick = {
-                runCatching {
-                    val saved = context.getSharedPreferences("rkremote_cloudflare_setup", android.content.Context.MODE_PRIVATE)
-                    url.value = saved.getString("worker_url", "").orEmpty()
-                    room.value = saved.getString("room_id", "").orEmpty()
-                    turnUrls.value = saved.getString("ice_urls", "").orEmpty()
-                    role.value = if (saved.getString("role", "target") == "controller")
-                        CloudflareSignalingClient.Role.CONTROLLER else CloudflareSignalingClient.Role.TARGET
-                    turnUsername.value = ""
-                    turnCredential.value = ""
-                    forceTurnRelay.value = false
-                    error.value = "Per-device Cloudflare setup loaded"
-                }.onFailure { error.value = it.message ?: "Could not load saved setup" }
-            }) { Text("Load saved Cloudflare setup for this phone") }
-            OutlinedButton(enabled = session.value == null, onClick = {
-                runCatching {
-                    val raw = context.getSharedPreferences("rkremote_custom_networks", android.content.Context.MODE_PRIVATE)
-                        .getString("active_profile", null) ?: error("No active custom network profile")
-                    val profile = JSONObject(raw)
-                    val addresses = profile.optJSONArray("iceUrls")
-                    url.value = profile.getString("signalingUrl")
-                    turnUrls.value = if (addresses == null) "" else
-                        (0 until addresses.length()).joinToString(", ") { addresses.optString(it) }
-                    turnUsername.value = ""
-                    turnCredential.value = ""
-                    forceTurnRelay.value = false
-                    error.value = "Loaded profile: ${profile.optString("name")} · enter TURN credentials if required"
-                }.onFailure { error.value = it.message ?: "Could not load profile" }
-            }) { Text("Load active custom network profile") }
-            OutlinedTextField(value = turnUsername.value, onValueChange = { turnUsername.value = it }, modifier = Modifier.fillMaxWidth(), label = { Text("TURN username") }, singleLine = true)
-            OutlinedTextField(value = turnCredential.value, onValueChange = { turnCredential.value = it }, modifier = Modifier.fillMaxWidth(), label = { Text("TURN credential") }, singleLine = true)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Checkbox(checked = forceTurnRelay.value, onCheckedChange = { forceTurnRelay.value = it }, enabled = session.value == null)
-                Column {
-                    Text("Force TURN relay (diagnostic)", style = MaterialTheme.typography.bodyMedium)
-                    Text("Requires working TURN URLs and temporary credentials; direct ICE paths are disabled.", style = MaterialTheme.typography.bodySmall)
-                }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(enabled = session.value == null, onClick = { role.value = CloudflareSignalingClient.Role.TARGET }) {
-                    Text(if (role.value == CloudflareSignalingClient.Role.TARGET) "✓ Target" else "Target")
-                }
-                OutlinedButton(enabled = session.value == null, onClick = { role.value = CloudflareSignalingClient.Role.CONTROLLER }) {
-                    Text(if (role.value == CloudflareSignalingClient.Role.CONTROLLER) "✓ Controller" else "Controller")
-                }
-                OutlinedButton(onClick = { room.value = CloudflareSignalingClient.newRoomId() }) { Text("New room") }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
+            Button(
                     enabled = session.value == null && Build.VERSION.SDK_INT >= 33 &&
-                        url.value.startsWith("wss://") && room.value.matches(Regex("[a-f0-9]{64}")),
+                        url.value.startsWith("wss://") &&
+                        (role.value == CloudflareSignalingClient.Role.TARGET ||
+                            room.value.matches(Regex("[a-f0-9]{64}"))),
                     onClick = {
+                        if (role.value == CloudflareSignalingClient.Role.TARGET &&
+                            !room.value.matches(Regex("[a-f0-9]{64}"))) {
+                            room.value = CloudflareSignalingClient.newRoomId()
+                        }
+                        setupPrefs.edit()
+                            .putString("worker_url", url.value)
+                            .putString("room_id", room.value)
+                            .putString("role", if (role.value == CloudflareSignalingClient.Role.TARGET) "target" else "controller")
+                            .apply()
                         error.value = null
                         peerId.value = null
                         sas.value = null
@@ -481,21 +460,6 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                 identityStore = identityStore,
                                 staticKeyStore = SecureLinkStaticKeyStore(context)
                             )
-                            val configuredTurnServers = if (
-                                turnUrls.value.isBlank() && turnUsername.value.isBlank() && turnCredential.value.isBlank()
-                            ) emptyList() else {
-                                require(turnUrls.value.isNotBlank() && turnUsername.value.isNotBlank() && turnCredential.value.isNotBlank()) {
-                                    "Enter TURN URLs, username and credential together"
-                                }
-                                listOf(SecureWebRtcPeer.TurnServer(
-                                    turnUrls.value.split(',').map { it.trim() }.filter { it.isNotEmpty() },
-                                    turnUsername.value.trim(),
-                                    turnCredential.value
-                                ))
-                            }
-                            require(!forceTurnRelay.value || configuredTurnServers.isNotEmpty()) {
-                                "Force TURN relay requires TURN URLs, username and credential"
-                            }
                             var activePeer: SecureInternetPeer? = null
                             val targetRouter = if (role.value == CloudflareSignalingClient.Role.TARGET) {
                                 SecureRemoteCommandRouter().apply {
@@ -871,8 +835,6 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                 role = role.value,
                                 handshake = handshake,
                                 identityStore = identityStore,
-                                turnServers = configuredTurnServers,
-                                forceTurnRelay = forceTurnRelay.value,
                                 commandRouter = targetRouter,
                                 listener = object : SecureInternetPeer.Listener {
                                     override fun onPeerVerificationRequired(id: String, code: String) {
@@ -886,7 +848,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                     override fun onSecureSignalingReady(id: String) {
                                         mainHandler.post {
                                             if (activePeerRef.get() !== activePeer) return@post
-                                            status.value = "Owners approved · negotiating WebRTC"
+                                            status.value = "هویت دوطرف تأیید شد · آماده‌سازی رله رمزنگاری‌شده"
                                             if (role.value == CloudflareSignalingClient.Role.TARGET) {
                                                 activePeer?.let(LocationSessionBridge::attach)
                                                 runCatching {
@@ -931,14 +893,14 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                     override fun onWebRtcConnecting() {
                                         mainHandler.post {
                                             if (activePeerRef.get() !== activePeer) return@post
-                                            status.value = "Establishing direct P2P connection"
+                                            status.value = "در حال اتصال به رله امن Cloudflare"
                                             }
                                     }
                                     override fun onWebRtcConnected() {
                                         mainHandler.post {
                                             if (activePeerRef.get() !== activePeer) return@post
                                             dataChannelConnected.value = true
-                                            status.value = "WebRTC DataChannel connected (DTLS)"
+                                            status.value = "اتصال رمزنگاری‌شده Cloudflare برقرار شد"
                                             if (role.value == CloudflareSignalingClient.Role.TARGET) {
                                                 LocationSessionBridge.sendHistoryIfOwnerApproved(context)
                                             }
@@ -1386,8 +1348,16 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                             // The service owns the active peer while the app is backgrounded.
                             // Android cannot reconstruct a live WebRTC/Noise session after process death.
                             SessionForegroundService.startInternetSession(context, created)
-                            status.value = "Connecting to Cloudflare rendezvous"
+                            status.value = "Connecting to encrypted Cloudflare relay"
                             created.connect()
+                            if (role.value == CloudflareSignalingClient.Role.TARGET) {
+                                val invite = "rkremote://pair?worker=${Uri.encode(url.value)}&room=${room.value}"
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_TEXT, invite)
+                                }
+                                context.startActivity(Intent.createChooser(shareIntent, "دعوت گوشی دوم به RKRemote"))
+                            }
                         } catch (failure: Throwable) {
                             createdSession?.let { activePeerRef.compareAndSet(it, null) }
                             createdSession?.close()
@@ -1431,19 +1401,6 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                         status.value = "Disconnected locally"
                     }
                 ) { Text("Stop") }
-                OutlinedButton(
-                    enabled = session.value != null && peerId.value != null,
-                    onClick = {
-                        val requested = runCatching {
-                            session.value?.requestNetworkRecovery() == true
-                        }.getOrDefault(false)
-                        status.value = if (requested) {
-                            "Network recovery requested · waiting for ICE restart"
-                        } else {
-                            "Recovery request unavailable · wait briefly or start a fresh secure session"
-                        }
-                    }
-                ) { Text("Repair connection") }
             }
 
             }
@@ -2149,7 +2106,7 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
             error.value?.let { Text("Error: " + it, color = MaterialTheme.colorScheme.error) }
             Spacer(Modifier.height(2.dp))
             Text(
-                "Setup: deploy cloudflare/worker, enter its WSS URL, share the same fresh room ID with the other device, connect the target first, then controller. TURN credentials must come from a service you control. Cloudflare does not relay media or files.",
+                "تمام پیام‌ها، فایل‌ها، گزارش‌ها و داده‌های رسانه‌ایِ منتقل‌شده از این نشست، پیش از عبور از Worker رمزنگاری می‌شوند. Cloudflare فقط فریم‌های رمز‌شده را عبور می‌دهد.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
