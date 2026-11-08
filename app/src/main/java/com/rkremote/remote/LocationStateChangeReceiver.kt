@@ -6,17 +6,35 @@ import android.content.Intent
 import android.location.LocationManager
 
 /**
- * Android notifies the app when the global location switch or providers change.
- * We enqueue a one-shot sample; the worker still checks the owner's tracking
- * toggle and the current Android permissions before reading anything.
+ * Records location switch/provider transitions as soon as Android broadcasts them.
+ * The periodic worker performs a fresh sample when the system allows it.
  */
 class LocationStateChangeReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         val action = intent?.action ?: return
-        if (action == LocationManager.PROVIDERS_CHANGED_ACTION ||
-            action == "android.location.MODE_CHANGED"
-        ) {
-            if (LocationHistoryStore(context).isTrackingEnabled()) {\n                val enabled = runCatching {\n                    val manager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager\n                    if (android.os.Build.VERSION.SDK_INT >= 28) manager.isLocationEnabled\n                    else manager.isProviderEnabled(LocationManager.GPS_PROVIDER) || manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)\n                }.getOrDefault(false)\n                val previous = LocationHistoryStore(context).latestValidFix()\n                LocationHistoryStore(context).append(\n                    LocationSnapshot(\n                        recordedAtMillis = System.currentTimeMillis(),\n                        locationEnabled = enabled,\n                        latitude = previous?.latitude,\n                        longitude = previous?.longitude,\n                        accuracyMeters = previous?.accuracyMeters,\n                        fixTimeMillis = previous?.fixTimeMillis,\n                        freshFix = false\n                    )\n                )\n                LocationCaptureScheduler.enqueueImmediate(context)\n            }
-        }
+        if (action != LocationManager.PROVIDERS_CHANGED_ACTION &&
+            action != "android.location.MODE_CHANGED"
+        ) return
+        if (!LocationHistoryStore(context).isTrackingEnabled()) return
+
+        val manager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        val enabled = runCatching {
+            if (android.os.Build.VERSION.SDK_INT >= 28) manager.isLocationEnabled
+            else manager.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
+                manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+        }.getOrDefault(false)
+        val previous = LocationHistoryStore(context).latestValidFix()
+        val transition = LocationSnapshot(
+            recordedAtMillis = System.currentTimeMillis(),
+            locationEnabled = enabled,
+            latitude = previous?.latitude,
+            longitude = previous?.longitude,
+            accuracyMeters = previous?.accuracyMeters,
+            fixTimeMillis = previous?.fixTimeMillis,
+            freshFix = false
+        )
+        LocationHistoryStore(context).append(transition)
+        LocationSessionBridge.sendIfOwnerApproved(context, transition)
+        LocationCaptureScheduler.enqueueImmediate(context)
     }
 }
