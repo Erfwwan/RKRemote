@@ -87,7 +87,10 @@ class SecureInternetPeer(
                                         require(payload.size <= RemoteMessage.MAX_MESSAGE_BYTES) { "Secure application message exceeds protocol limit" }
                                         val message = RemoteMessage.parse(payload.toString(Charsets.UTF_8))
                                         require(message.sessionId == sessionId) { "Message belongs to another session" }
-                                        require(kotlin.math.abs(System.currentTimeMillis() - message.sentAt) <= MAX_CLOCK_SKEW_MS) { "Message timestamp is outside the accepted window" }
+                                        val now = System.currentTimeMillis()
+                                        require(message.sentAt >= now - MAX_CLOCK_SKEW_MS && message.sentAt <= now + MAX_CLOCK_SKEW_MS) {
+                                            "Message timestamp is outside the accepted window"
+                                        }
                                         val previous = inboundSequence.get()
                                         require(message.sequence > previous) { "Replayed or out-of-order message sequence" }
                                         synchronized(seenMessageIds) {
@@ -183,6 +186,7 @@ class SecureInternetPeer(
             )
             val bytes = message.toJson().toString().toByteArray(Charsets.UTF_8)
             require(bytes.size <= RemoteMessage.MAX_MESSAGE_BYTES) { "Application message exceeds protocol limit" }
+            RemoteMessage.parse(bytes.toString(Charsets.UTF_8))
             send(bytes)
         }.getOrElse {
             listener.onFailure(it)
