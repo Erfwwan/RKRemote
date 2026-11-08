@@ -862,8 +862,8 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                 check(PttAudioQueue.isEnabled()) {
                                                     "Enable the PTT speaker locally on the target first"
                                                 }
-                                                check(!audioRelayActive.get() && !MicrophoneChunkStore.isCapturing()) {
-                                                    "Stop target microphone monitoring before push-to-talk to keep audio half-duplex"
+                                                check(!audioRelayActive.get()) {
+                                                    "Stop target-side push-to-talk before receiving controller audio"
                                                 }
                                                 check(pttRelayActive.compareAndSet(false, true)) {
                                                     "A push-to-talk transmission is already active"
@@ -873,42 +873,6 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                             register("ptt.stop", RemoteCapability.PUSH_TO_TALK) {
                                                 pttRelayActive.set(false)
                                                 PttAudioQueue.clear()
-                                                null
-                                            }
-                                            register("audio.start.request", RemoteCapability.MICROPHONE) {
-                                                check(!pttRelayActive.get()) {
-                                                    "Stop push-to-talk before starting microphone monitoring"
-                                                }
-                                                check(MicrophoneChunkStore.isCapturing()) {
-                                                    "Start microphone capture locally on the target first"
-                                                }
-                                                check(audioRelayActive.compareAndSet(false, true)) {
-                                                    "Microphone stream is already active"
-                                                }
-                                                audioExecutor.execute {
-                                                    try {
-                                                        while (audioRelayActive.get() && MicrophoneChunkStore.isCapturing()) {
-                                                            val chunk = MicrophoneChunkStore.take()
-                                                            if (chunk == null) {
-                                                                Thread.sleep(12)
-                                                                continue
-                                                            }
-                                                            val sent = activePeer?.sendMessage(
-                                                                "audio.chunk",
-                                                                JSONObject().put("data", Base64.getEncoder().encodeToString(chunk))
-                                                            ) == true
-                                                            if (!sent) break
-                                                        }
-                                                    } catch (_: InterruptedException) {
-                                                        Thread.currentThread().interrupt()
-                                                    } finally {
-                                                        audioRelayActive.set(false)
-                                                    }
-                                                }
-                                                null
-                                            }
-                                            register("audio.stop", RemoteCapability.MICROPHONE) {
-                                                audioRelayActive.set(false)
                                                 null
                                             }
                                             register("notifications.sync.request", RemoteCapability.NOTIFICATIONS) { message ->
@@ -1898,15 +1862,6 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     }.onSuccess { status.value = "Notification sharing allowed for this session" }
                         .onFailure { error.value = it.message ?: "Could not grant notification access" }
                 }) { Text("Allow notification sharing") }
-                OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
-                    runCatching {
-                        check(MicrophoneChunkStore.isCapturing()) {
-                            "Start microphone capture locally on the target first"
-                        }
-                        session.value?.grantOwnerApprovedCapabilities(setOf(RemoteCapability.MICROPHONE))
-                    }.onSuccess { status.value = "Secure microphone streaming allowed for this session" }
-                        .onFailure { error.value = it.message ?: "Could not grant microphone access" }
-                }) { Text("Allow microphone streaming") }
                 OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
                     runCatching {
                         check(PttAudioQueue.isEnabled()) { "Enable the PTT speaker locally on the target first" }
