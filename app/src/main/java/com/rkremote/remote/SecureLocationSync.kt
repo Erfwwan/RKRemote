@@ -173,6 +173,60 @@ class LocationHistoryStore(context: Context) {
  * sends location only while the paired peer has both persistent and live consent.
  */
 object SecureLocationSync {
+    /**
+     * Resolves one fresh location fix for an authenticated, already-authorized
+     * controller request. On older Android versions, returns the best last-known
+     * fix and marks it stale rather than presenting it as current.
+     */
+    @Suppress("MissingPermission")
+    fun requestCurrentResponse(
+        context: Context,
+        requestId: String,
+        send: (JSONObject) -> Unit
+    ) {
+        require(requestId.isNotBlank() && requestId.length <= 128)
+        val app = context.applicationContext
+        val store = LocationHistoryStore(app)
+        val hasFine = ContextCompat.checkSelfPermission(app, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val hasCoarse = ContextCompat.checkSelfPermission(app, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val manager = app.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        val enabled = runCatching { manager.isLocationEnabled }.getOrDefault(false)
+        val provider = (if (hasFine) listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+            else listOf(LocationManager.NETWORK_PROVIDER)).firstOrNull {
+            runCatching { manager.isProviderEnabled(it) }.getOrDefault(false)
+        }
+        val previous = store.latestValidFix()
+        fun respond(location: Location?) {
+            val now = System.currentTimeMillis()
+            val snapshot = if (location != null) {
+                LocationSnapshot(now, enabled, location.latitude, location.longitude,
+                    if (location.hasAccuracy()) location.accuracy else null, location.time, true)
+            } else {
+                LocationSnapshot(now, enabled, previous?.latitude, previous?.longitude,
+                    previous?.accuracyMeters, previous?.fixTimeMillis, false)
+            }
+            store.append(snapshot)
+            val records = JSONArray().put(snapshot.toJson())
+            send(JSONObject().put("requestId", requestId).put("records", records)
+                .put("returned", 1).put("trackingEnabled", store.isTrackingEnabled())
+                .put("isImmediate", true))
+        }
+        if ((!hasFine && !hasCoarse) || !enabled || provider == null) {
+            respond(null)
+            return
+        }
+        if (Build.VERSION.SDK_INT >= 30) {
+            runCatching {
+                manager.getCurrentLocation(provider, CancellationSignal(), app.mainExecutor) { location ->
+                    respond(location)
+                }
+            }.onFailure { respond(null) }
+        } else {
+            @Suppress("DEPRECATION")
+            respond(runCatching { manager.getLastKnownLocation(provider) }.getOrNull())
+        }
+    }
+
     fun buildLatestResponse(context: Context, requestId: String): JSONObject {
         require(requestId.isNotBlank() && requestId.length <= 128)
         val store = LocationHistoryStore(context)
