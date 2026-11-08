@@ -2083,21 +2083,20 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                         onClick = { stopLocalPttSpeaker() }
                     ) { Text("خاموش‌کردن بلندگو") }
                 }
-                Card(
-                    modifier = Modifier.fillMaxWidth().animateContentSize()
-                        .pointerInput(session.value, secureRelayConnected.value, role.value, pttRelayActive.get()) {
-                            detectTapGestures(onPress = {
-                                val approved = session.value?.hasOwnerApprovedCapability(RemoteCapability.PUSH_TO_TALK) == true
-                                if (!secureRelayConnected.value) {
-                                    pttStatus.value = "ابتدا اتصال امن را برقرار کن."
-                                } else if (!approved) {
-                                    pttStatus.value = "ابتدا در «مجوزهای نشست»، واکی‌تاکی را برای این دستگاه مجاز کن."
-                                } else if (!MicrophoneChunkStore.isCapturing()) {
-                                    pttStatus.value = "ابتدا میکروفن را روی همین گوشی فعال کن."
-                                } else if (pttRelayActive.get()) {
-                                    pttStatus.value = "طرف مقابل در حال صحبت است؛ کمی صبر کن."
-                                } else if (audioRelayActive.compareAndSet(false, true)) {
-                                    pttStatus.value = "در حال ارسال صدا · برای پایان رها کن"
+                Button(
+                    onClick = {
+                        if (audioRelayActive.get()) {
+                            audioRelayActive.set(false)
+                            pttStatus.value = "ارسال صدا متوقف شد"
+                        } else {
+                            val approved = session.value?.hasOwnerApprovedCapability(RemoteCapability.PUSH_TO_TALK) == true
+                            when {
+                                !secureRelayConnected.value -> pttStatus.value = "ابتدا اتصال امن را برقرار کن."
+                                !approved -> pttStatus.value = "ابتدا در «مجوزهای نشست»، واکی‌تاکی را برای این دستگاه مجاز کن."
+                                !MicrophoneChunkStore.isCapturing() -> pttStatus.value = "ابتدا میکروفن را روی همین گوشی فعال کن."
+                                pttRelayActive.get() -> pttStatus.value = "طرف مقابل در حال صحبت است؛ کمی صبر کن."
+                                audioRelayActive.compareAndSet(false, true) -> {
+                                    pttStatus.value = "در حال صحبت با کنترل‌کننده…"
                                     audioExecutor.execute {
                                         try {
                                             while (audioRelayActive.get() && MicrophoneChunkStore.isCapturing()) {
@@ -2111,39 +2110,38 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                                                     JSONObject().put("data", Base64.getEncoder().encodeToString(chunk))
                                                 ) == true
                                                 if (!sent) {
-                                                    mainHandler.post { pttStatus.value = "اتصال واکی‌تاکی قطع شد" }
                                                     audioRelayActive.set(false)
+                                                    mainHandler.post { pttStatus.value = "اتصال واکی‌تاکی قطع شد" }
                                                     break
                                                 }
                                             }
                                         } catch (_: InterruptedException) {
                                             Thread.currentThread().interrupt()
                                         } finally {
-                                            audioRelayActive.set(false)
+                                            if (audioRelayActive.getAndSet(false)) {
+                                                mainHandler.post { pttStatus.value = "آماده صحبت" }
+                                            }
                                         }
                                     }
-                                    try {
-                                        tryAwaitRelease()
-                                    } finally {
-                                        audioRelayActive.set(false)
-                                        pttStatus.value = "آماده صحبت"
-                                    }
                                 }
-                            })
-                        },
-                    shape = RoundedCornerShape(22.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(136.dp),
+                    shape = RoundedCornerShape(22.dp)
                 ) {
                     Column(
-                        Modifier.fillMaxWidth().padding(vertical = 24.dp, horizontal = 18.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        Modifier.fillMaxWidth().padding(vertical = 18.dp, horizontal = 14.dp),
+                        verticalArrangement = Arrangement.spacedBy(7.dp),
                         horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
                     ) {
-                        Text("●", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
-                        Text("برای صحبت نگه دار", style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                        Text(pttStatus.value, style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Text("🎙", style = MaterialTheme.typography.headlineMedium)
+                        Text(
+                            if (audioRelayActive.get()) "پایان صحبت" else "برای صحبت بزن",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        Text(pttStatus.value, style = MaterialTheme.typography.bodySmall)
                     }
                 }
                 Text(localAudioStatus.value, style = MaterialTheme.typography.bodySmall)
@@ -2213,79 +2211,74 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     ) { Text("خاموش‌کردن میکروفن محلی") }
                 }
                 Text(localAudioStatus.value, style = MaterialTheme.typography.bodySmall)
-                Card(
-                    modifier = Modifier.fillMaxWidth().height(164.dp).animateContentSize()
-                        .pointerInput(session.value, secureRelayConnected.value, role.value) {
-                        detectTapGestures(onPress = {
-                            if (role.value == CloudflareSignalingClient.Role.CONTROLLER && secureRelayConnected.value) {
-                                if (!MicrophoneChunkStore.isCapturing()) {
-                                    pttStatus.value = "Start microphone capture locally on this phone first"
-                                } else if (pttRelayActive.compareAndSet(false, true)) {
-                                    val started = sendInput("ptt.start", JSONObject())
-                                    if (!started) {
-                                        pttRelayActive.set(false)
-                                        pttStatus.value = "Target did not accept push-to-talk"
-                                    } else {
-                                        pttStatus.value = "Transmitting · release to stop"
-                                        audioExecutor.execute {
-                                            try {
-                                                while (pttRelayActive.get() && MicrophoneChunkStore.isCapturing()) {
-                                                    val chunk = MicrophoneChunkStore.take()
-                                                    if (chunk == null) {
-                                                        Thread.sleep(8)
-                                                        continue
-                                                    }
-                                                    val sent = session.value?.sendMessage(
-                                                        "ptt.audio.chunk",
-                                                        JSONObject().put("data", Base64.getEncoder().encodeToString(chunk))
-                                                    ) == true
-                                                    if (!sent) {
-                                                        mainHandler.post { pttStatus.value = "PTT connection lost" }
-                                                        pttRelayActive.set(false)
-                                                        break
-                                                    }
-                                                }
-                                            } catch (_: InterruptedException) {
-                                                Thread.currentThread().interrupt()
+                Button(
+                    onClick = {
+                        if (pttRelayActive.get()) {
+                            pttRelayActive.set(false)
+                            sendInput("ptt.stop", JSONObject())
+                            pttStatus.value = "واکی‌تاکی متوقف شد"
+                        } else if (!secureRelayConnected.value) {
+                            pttStatus.value = "ابتدا اتصال امن را برقرار کن."
+                        } else if (!MicrophoneChunkStore.isCapturing()) {
+                            pttStatus.value = "ابتدا میکروفن همین گوشی را فعال کن."
+                        } else if (pttRelayActive.compareAndSet(false, true)) {
+                            val started = sendInput("ptt.start", JSONObject())
+                            if (!started) {
+                                pttRelayActive.set(false)
+                                pttStatus.value = "دستگاه مقصد درخواست واکی‌تاکی را نپذیرفت"
+                            } else {
+                                pttStatus.value = "در حال ارسال صدا به دستگاه مقصد…"
+                                audioExecutor.execute {
+                                    try {
+                                        while (pttRelayActive.get() && MicrophoneChunkStore.isCapturing()) {
+                                            val chunk = MicrophoneChunkStore.take()
+                                            if (chunk == null) {
+                                                Thread.sleep(8)
+                                                continue
+                                            }
+                                            val sent = session.value?.sendMessage(
+                                                "ptt.audio.chunk",
+                                                JSONObject().put("data", Base64.getEncoder().encodeToString(chunk))
+                                            ) == true
+                                            if (!sent) {
+                                                pttRelayActive.set(false)
+                                                mainHandler.post { pttStatus.value = "اتصال واکی‌تاکی قطع شد" }
+                                                break
                                             }
                                         }
-                                        try {
-                                            tryAwaitRelease()
-                                        } finally {
-                                            pttRelayActive.set(false)
-                                            sendInput("ptt.stop", JSONObject())
-                                            pttStatus.value = "Push-to-talk stopped"
+                                    } catch (_: InterruptedException) {
+                                        Thread.currentThread().interrupt()
+                                    } finally {
+                                        if (pttRelayActive.getAndSet(false)) {
+                                            mainHandler.post {
+                                                sendInput("ptt.stop", JSONObject())
+                                                pttStatus.value = "واکی‌تاکی متوقف شد"
+                                            }
                                         }
                                     }
                                 }
                             }
-                        })
-                    }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(136.dp),
+                    shape = RoundedCornerShape(22.dp)
                 ) {
                     Column(
-                        Modifier.fillMaxWidth()
-                            .background(
-                                Brush.linearGradient(listOf(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.surfaceVariant)),
-                                RoundedCornerShape(20.dp)
-                            )
-                            .padding(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        Modifier.fillMaxWidth().padding(vertical = 18.dp, horizontal = 14.dp),
+                        verticalArrangement = Arrangement.spacedBy(7.dp),
                         horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
                     ) {
+                        Text("🎙", style = MaterialTheme.typography.headlineMedium)
                         Text(
-                            if (pttRelayActive.get()) "●  در حال صحبت" else "🎙  برای صحبت نگه دار",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = MaterialTheme.colorScheme.primary
+                            if (pttRelayActive.get()) "پایان صحبت" else "برای صحبت بزن",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.ExtraBold
                         )
-                        Text(pttStatus.value, style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer)
-                        Text("دکمه را نگه دار؛ با رهاکردن، ارسال صدا متوقف می‌شود.",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(pttStatus.value, style = MaterialTheme.typography.bodySmall)
                     }
                 }
                 }
+                if (feature == SecureFeatureSection.NOTIFICATIONS)                }
                 if (feature == SecureFeatureSection.NOTIFICATIONS) {
                 OutlinedButton(enabled = session.value != null && secureRelayConnected.value, onClick = {
                     notificationSummary.value = if (sendInput("notifications.sync.request", JSONObject()))
