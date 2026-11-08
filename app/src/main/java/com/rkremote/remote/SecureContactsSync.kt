@@ -10,9 +10,10 @@ import org.json.JSONObject
 
 /** Read-only, explicitly requested address-book export. */
 object SecureContactsSync {
-    const val MAX_REMOTE_RECORDS = 180
+    const val MAX_REMOTE_RECORDS = 300
     const val MAX_LOCAL_RECORDS = 300
     private const val MAX_FIELD_CHARS = 120
+    private const val MAX_RESPONSE_BYTES = 48 * 1024
 
     data class ReadResult(val records: JSONArray, val totalAvailable: Int)
 
@@ -49,7 +50,7 @@ object SecureContactsSync {
                 if (number.isBlank() || !seen.add(key)) continue
                 total++
                 if (records.length() < limit) {
-                    records.put(JSONObject().put("id", contactId).put("name", name.ifBlank { "بدون نام" }).put("number", number))
+                    records.put(JSONObject().put("name", name.ifBlank { "بدون نام" }).put("number", number))
                 }
             }
         } ?: error("Android contacts provider is unavailable")
@@ -58,14 +59,29 @@ object SecureContactsSync {
 
     fun buildLatestResponse(context: Context, requestId: String): JSONObject {
         require(requestId.isNotBlank() && requestId.length <= 128)
-        val result = readLatest(context, MAX_REMOTE_RECORDS)
+        val result = readLatest(context, MAX_LOCAL_RECORDS)
+        val boundedRecords = JSONArray()
+        for (index in 0 until result.records.length()) {
+            val record = result.records.optJSONObject(index) ?: continue
+            boundedRecords.put(record)
+            val candidate = JSONObject()
+                .put("requestId", requestId)
+                .put("records", boundedRecords)
+                .put("returned", boundedRecords.length())
+                .put("available", result.totalAvailable)
+                .put("truncated", result.totalAvailable > boundedRecords.length())
+            if (candidate.toString().toByteArray(Charsets.UTF_8).size > MAX_RESPONSE_BYTES) {
+                boundedRecords.remove(boundedRecords.length() - 1)
+                break
+            }
+        }
         val response = JSONObject()
             .put("requestId", requestId)
-            .put("records", result.records)
-            .put("returned", result.records.length())
+            .put("records", boundedRecords)
+            .put("returned", boundedRecords.length())
             .put("available", result.totalAvailable)
-            .put("truncated", result.totalAvailable > result.records.length())
-        check(response.toString().toByteArray(Charsets.UTF_8).size <= 48 * 1024) {
+            .put("truncated", result.totalAvailable > boundedRecords.length())
+        check(response.toString().toByteArray(Charsets.UTF_8).size <= MAX_RESPONSE_BYTES) {
             "Contacts response exceeds the secure message size limit"
         }
         return response
