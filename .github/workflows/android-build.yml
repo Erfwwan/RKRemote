@@ -1,7 +1,7 @@
 name: Android build
 
 on:
-  # Verify confirmed first-run roles, target permission hub, request-only reports and two-way PTT.
+  # Final build verification: first-run roles, target-only setup, request-only reports and PTT-only audio.
   push:
     branches:
       - feature/remote-agent-foundation
