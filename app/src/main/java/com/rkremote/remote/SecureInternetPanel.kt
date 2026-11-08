@@ -1436,12 +1436,36 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                     SecureFeatureSection.SESSION_PERMISSIONS -> "مجوزهای نشست"
                     SecureFeatureSection.CONNECTION -> "اتصال Cloudflare"
                 }
-                Text(sectionTitle, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text(
-                    "این قابلیت مستقل از بخش‌های دیگر مدیریت می‌شود؛ اتصال امن باید برقرار و تأیید دوطرفه انجام شده باشد.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Box(
+                    modifier = Modifier.fillMaxWidth()
+                        .background(
+                            Brush.linearGradient(
+                                listOf(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.surfaceVariant)
+                            ),
+                            RoundedCornerShape(22.dp)
+                        )
+                        .padding(18.dp)
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            "RKREMOTE  /  FEATURE MODULE",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        Text(
+                            sectionTitle,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Text(
+                            "این قابلیت مستقل از بخش‌های دیگر مدیریت می‌شود؛ اتصال امن باید برقرار و تأیید دوطرفه انجام شده باشد.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
             }
             if (feature == SecureFeatureSection.CONNECTION) {
             Text("راه‌اندازی Cloudflare Relay", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
