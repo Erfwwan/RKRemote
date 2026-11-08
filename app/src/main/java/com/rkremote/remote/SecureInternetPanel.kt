@@ -51,10 +51,21 @@ import java.util.concurrent.atomic.AtomicReference
 @Composable
 fun SecureInternetPanel() {
     val context = LocalContext.current
-    val url = remember { mutableStateOf("") }
+    val initialNetworkProfile = remember(context) {
+        runCatching {
+            val raw = context.getSharedPreferences("rkremote_custom_networks", android.content.Context.MODE_PRIVATE)
+                .getString("active_profile", null) ?: return@runCatching null
+            JSONObject(raw)
+        }.getOrNull()
+    }
+    val url = remember { mutableStateOf(initialNetworkProfile?.optString("signalingUrl").orEmpty()) }
     val room = remember { mutableStateOf("") }
     val role = remember { mutableStateOf(CloudflareSignalingClient.Role.TARGET) }
-    val turnUrls = remember { mutableStateOf("") }
+    val turnUrls = remember {
+        val addresses = initialNetworkProfile?.optJSONArray("iceUrls")
+        mutableStateOf(if (addresses == null) "" else
+            (0 until addresses.length()).joinToString(", ") { addresses.optString(it) })
+    }
     val turnUsername = remember { mutableStateOf("") }
     val turnCredential = remember { mutableStateOf("") }
     val forceTurnRelay = remember { mutableStateOf(false) }
@@ -315,6 +326,21 @@ fun SecureInternetPanel() {
                 singleLine = true
             )
             OutlinedTextField(value = turnUrls.value, onValueChange = { turnUrls.value = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Optional TURN URLs (comma-separated)") }, singleLine = true)
+            OutlinedButton(enabled = session.value == null, onClick = {
+                runCatching {
+                    val raw = context.getSharedPreferences("rkremote_custom_networks", android.content.Context.MODE_PRIVATE)
+                        .getString("active_profile", null) ?: error("No active custom network profile")
+                    val profile = JSONObject(raw)
+                    val addresses = profile.optJSONArray("iceUrls")
+                    url.value = profile.getString("signalingUrl")
+                    turnUrls.value = if (addresses == null) "" else
+                        (0 until addresses.length()).joinToString(", ") { addresses.optString(it) }
+                    turnUsername.value = ""
+                    turnCredential.value = ""
+                    forceTurnRelay.value = false
+                    error.value = "Loaded profile: ${profile.optString("name")} · enter TURN credentials if required"
+                }.onFailure { error.value = it.message ?: "Could not load profile" }
+            }) { Text("Load active custom network profile") }
             OutlinedTextField(value = turnUsername.value, onValueChange = { turnUsername.value = it }, modifier = Modifier.fillMaxWidth(), label = { Text("TURN username") }, singleLine = true)
             OutlinedTextField(value = turnCredential.value, onValueChange = { turnCredential.value = it }, modifier = Modifier.fillMaxWidth(), label = { Text("TURN credential") }, singleLine = true)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
