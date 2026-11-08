@@ -272,6 +272,15 @@ fun SecureInternetPanel() {
                         }
                     }
                 ) { Text("Allow this controller to view my screen") }
+                OutlinedButton(
+                    enabled = session.value != null && dataChannelConnected.value,
+                    onClick = {
+                        streamSenderState.value?.close()
+                        streamSenderState.value = null
+                        session.value?.revokeOwnerApprovedCommands()
+                        status.value = "All remote command permissions revoked for this session"
+                    }
+                ) { Text("Revoke remote control permissions") }
                 Text(
                     "Start Android screen sharing locally first. This permission does not start MediaProjection; the target must already be visibly sharing its screen.",
                     style = MaterialTheme.typography.bodySmall
