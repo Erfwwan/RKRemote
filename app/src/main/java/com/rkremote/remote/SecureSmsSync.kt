@@ -3,6 +3,8 @@ package com.rkremote.remote
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.ContactsContract
 import android.provider.Telephony
 import androidx.core.content.ContextCompat
 import org.json.JSONArray
@@ -24,6 +26,26 @@ object SecureSmsSync {
     fun hasSmsPermission(context: Context): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) ==
             PackageManager.PERMISSION_GRANTED
+
+    private fun resolveContactName(context: Context, address: String): String {
+        if (address.isBlank() || ContextCompat.checkSelfPermission(
+                context, Manifest.permission.READ_CONTACTS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) return ""
+        val lookupUri = Uri.withAppendedPath(
+            ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
+            Uri.encode(address)
+        )
+        return runCatching {
+            context.contentResolver.query(
+                lookupUri,
+                arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME),
+                null, null, null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0).orEmpty() else ""
+            }.orEmpty()
+        }.getOrDefault("").take(120)
+    }
 
     fun readLatest(context: Context, limit: Int = MAX_LOCAL_RECORDS): ReadResult {
         check(hasSmsPermission(context)) {
@@ -54,9 +76,11 @@ object SecureSmsSync {
             while (cursor.moveToNext()) {
                 total++
                 if (records.length() >= limit) continue
+                val address = cursor.getString(addressIndex).orEmpty().take(MAX_ADDRESS_CHARS)
                 records.put(
                     JSONObject()
-                        .put("address", cursor.getString(addressIndex).orEmpty().take(MAX_ADDRESS_CHARS))
+                        .put("address", address)
+                        .put("name", resolveContactName(context, address))
                         .put("body", cursor.getString(bodyIndex).orEmpty().take(MAX_BODY_CHARS))
                         .put("timestamp", cursor.getLong(dateIndex).coerceAtLeast(0L))
                         .put("type", cursor.getInt(typeIndex))
