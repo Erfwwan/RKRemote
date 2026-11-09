@@ -89,6 +89,8 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
     val savedRole = remember { setupPrefs.getString("role", "target") ?: "target" }
     val url = remember { mutableStateOf(setupPrefs.getString("worker_url", "").orEmpty()) }
     val room = remember { mutableStateOf(setupPrefs.getString("room_id", "").orEmpty()) }
+    val inviteText = remember { mutableStateOf("") }
+    val inviteImportStatus = remember { mutableStateOf<String?>(null) }
     val role = remember { mutableStateOf(if (savedRole == "controller") CloudflareSignalingClient.Role.CONTROLLER else CloudflareSignalingClient.Role.TARGET) }
     val guideExpanded = remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
@@ -1674,6 +1676,73 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
                 singleLine = true,
                 enabled = session.value == null
             )
+            if (role.value == CloudflareSignalingClient.Role.CONTROLLER && session.value == null) {
+                Text(
+                    "برای وارد کردن دعوت‌نامه، لینک کامل دریافتی از گوشی مقصد را اینجا جای‌گذاری کن؛ لازم نیست لینک را در مرورگر باز کنی.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = inviteText.value,
+                    onValueChange = {
+                        inviteText.value = it
+                        inviteImportStatus.value = null
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("لینک دعوت گوشی مقصد") },
+                    placeholder = { Text("rkremote://pair?worker=...&room=...") },
+                    minLines = 2,
+                    maxLines = 4,
+                    enabled = session.value == null
+                )
+                OutlinedButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = session.value == null && inviteText.value.isNotBlank(),
+                    onClick = {
+                        runCatching {
+                            val parsed = Uri.parse(inviteText.value.trim())
+                            val invitedWorker = parsed.getQueryParameter("worker")?.trim().orEmpty()
+                            val invitedRoom = parsed.getQueryParameter("room")?.trim().orEmpty()
+                            require(parsed.scheme == "rkremote" && parsed.host == "pair") {
+                                "قالب لینک دعوت معتبر نیست؛ لینک کامل rkremote://pair را وارد کن."
+                            }
+                            require(invitedWorker.startsWith("wss://")) {
+                                "آدرس Worker داخل دعوت‌نامه معتبر نیست."
+                            }
+                            require(invitedRoom.matches(Regex("[a-f0-9]{64}"))) {
+                                "شناسه اتاق داخل دعوت‌نامه معتبر نیست."
+                            }
+                            val parsedWorker = java.net.URI(invitedWorker)
+                            require(!parsedWorker.host.isNullOrBlank() && parsedWorker.rawUserInfo == null &&
+                                parsedWorker.rawQuery == null && parsedWorker.rawFragment == null &&
+                                (parsedWorker.rawPath.isNullOrEmpty() || parsedWorker.rawPath == "/")) {
+                                "آدرس Worker قابل قبول نیست."
+                            }
+                            url.value = invitedWorker
+                            room.value = invitedRoom
+                            role.value = CloudflareSignalingClient.Role.CONTROLLER
+                            setupPrefs.edit()
+                                .putString("worker_url", invitedWorker)
+                                .putString("room_id", invitedRoom)
+                                .putString("role", "controller")
+                                .putBoolean("role_choice_confirmed", true)
+                                .putBoolean("auto_connect", false)
+                                .apply()
+                            inviteImportStatus.value = "دعوت‌نامه معتبر است؛ حالا می‌توانی اتصال به گوشی مقصد را شروع کنی."
+                        }.onFailure {
+                            inviteImportStatus.value = it.message ?: "خواندن دعوت‌نامه ناموفق بود."
+                        }
+                    }
+                ) { Text("بررسی و ثبت دعوت‌نامه") }
+                inviteImportStatus.value?.let { message ->
+                    Text(
+                        message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (message.startsWith("دعوت‌نامه معتبر")) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.error
+                    )
+                }
+            }
             Text(
                 "برای راه‌اندازی Worker دیگر لازم نیست سورس را دستی در Cloudflare آپلود کنی. انتشار از مخزن GitHub انجام می‌شود؛ حساب GitHub را به Cloudflare وصل نمی‌کنیم.",
                 style = MaterialTheme.typography.bodyMedium,
