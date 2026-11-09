@@ -537,25 +537,21 @@ fun SecureInternetPanel(feature: SecureFeatureSection = SecureFeatureSection.CON
             targetActiveUploadIds.clear()
             cameraTransferActive.set(false)
             imageAssembler.abort()
-            cameraExecutor.shutdownNow()
+            // Keep command executors alive with the service-owned peer.
+            // Screen-specific audio playback is still released when this UI leaves.
             audioRelayActive.set(false)
             pttRelayActive.set(false)
             audioPlayback.close()
             microphoneStreamActive.set(false)
             microphonePlayback.close()
-            microphoneExecutor.shutdownNow()
-            audioExecutor.shutdownNow()
             streamSender.value?.close()
             streamSender.value = null
-            val disposingSession = session.value
-            activePeerRef.compareAndSet(disposingSession, null)
-            if (disposingSession != null) {
-                LocationSessionBridge.detach(disposingSession)
-                SessionForegroundService.stopInternetSession(context)
-                disposingSession.revokeOwnerApprovedCommands()
-                disposingSession.close()
-            }
-            session.value = null
+            // The started foreground service owns the relay peer, not this
+            // Compose screen. Disposing the screen must not terminate the
+            // authenticated session or revoke the owner's grants. The service
+            // and peer listener will clean up on explicit Stop or transport loss.
+            // Keep activePeerRef intact so the existing listener can still
+            // recognize this peer and handle a genuine disconnect.
             renderer.value?.close()
             renderer.value = null
             transferExecutor.shutdownNow()
